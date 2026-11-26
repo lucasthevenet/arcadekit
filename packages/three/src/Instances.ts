@@ -13,12 +13,13 @@
  * `@arcadekit/three/Three` gives the same exports. The system it makes
  * requires `Three.plugin`.
  */
+import type * as Assets from "arcadekit/Assets";
 import type * as Color from "arcadekit/Color";
 import type * as System from "arcadekit/System";
 import type { BufferGeometry, InstancedMesh, Material } from "three";
 
 import * as internal from "./internal/instances.ts";
-import type { KindOptions, Needs, TransformOf } from "./Three.ts";
+import type { Entries, KindOptions, Needs, TransformOf } from "./Three.ts";
 
 /**
  * How an instance looks: its mesh's geometry and material.
@@ -31,7 +32,7 @@ export interface Look {
 }
 
 /**
- * The options of `Three.instances` and `Gltf.instances`.
+ * The options of `Three.instances` and `Three.instancesFrom`.
  *
  * @category Options
  */
@@ -98,7 +99,8 @@ export interface InstancesOptions extends InstancesShared, Look {}
  * **When to use**
  *
  * Use for crowds, many entities that look the same. For the few entities that
- * are more than a copy of one mesh, use `Three.objects`.
+ * are more than a copy of one mesh, use `Three.objects`. For a look built from
+ * a bundle's textures or models, use `Three.instancesFrom`.
  *
  * **Details**
  *
@@ -162,4 +164,82 @@ export function instances<const O extends KindOptions["of"]>(
   }
 ): System.System<never, Needs, string, "frame"> {
   return internal.instances(name, options);
+}
+
+/**
+ * The options of `Three.instancesFrom`, whose look is built from assets that
+ * are loaded later and released again, such as a level's texture.
+ *
+ * @category Options
+ */
+export interface InstancesFromOptions<
+  B extends Entries,
+  L extends Look = Look,
+> extends InstancesShared {
+  /** The bundle the look is built from. The instances are drawn while it is loaded. */
+  readonly from: Assets.Bundle<B>;
+  /**
+   * Builds the look from the bundle's assets, once each time they are loaded.
+   * Anything it returns besides a geometry and a material is kept for `free`.
+   */
+  readonly look: (assets: Assets.Loaded<B>) => L;
+  /**
+   * Called with what `look` returned, after the mesh is removed from the scene,
+   * when the assets are released or the app is closed. Use it to dispose
+   * of anything `look` created besides the geometry and the material, which are
+   * disposed of for you. The bundle releases the assets themselves.
+   */
+  readonly free?: (look: L) => void;
+}
+
+/**
+ * Makes a frame-stage system that draws every entity of a kind as one instance
+ * of one mesh, whose look is built from assets, such as a level's texture or a
+ * model's mesh. It is given as the bundle the look comes `from` and a function
+ * that builds it:
+ *
+ *   const Cards = Three.instancesFrom("game/Cards", {
+ *     of: Card,
+ *     transform: Transform2d,
+ *     from: Deck,
+ *     look: ({ face }) => Three.sprite(face, { height: 4 }),
+ *   })
+ *
+ * **When to use**
+ *
+ * Use for a look made of a bundle's textures or models, which exist only while
+ * the bundle is loaded. For a look that exists from the start, use
+ * `Three.instances`.
+ *
+ * **Details**
+ *
+ * It draws as `Three.instances` does, which says how, with a look that exists
+ * only while its assets are loaded:
+ *
+ * - The entities are drawn only while the app has the bundle loaded, which
+ *   `Assets.during` or a system of your own manages. At any other time, no
+ *   mesh of the kind is in the scene.
+ * - `look` is called once each time the bundle loads. When the bundle is
+ *   released or the app is closed, the mesh is disposed of, with the
+ *   geometry and the material once no other system draws with them. Then
+ *   `free` receives what `look` returned. A mesh built from a reloaded bundle
+ *   starts with the room the previous one had grown to.
+ * - The bundle may hold any assets. A model's mesh, from `Gltf.mesh`, is a
+ *   look too, and only a bundle with a model brings Three.js's glTF loader.
+ * - It also requires `Assets.plugin`, as the system's type shows.
+ *
+ * @category Systems
+ */
+export function instancesFrom<
+  B extends Entries,
+  const O extends KindOptions["of"],
+  L extends Look = Look,
+>(
+  name: string,
+  options: InstancesFromOptions<B, L> & {
+    readonly of: O;
+    readonly transform: TransformOf<O>;
+  }
+): System.System<never, Needs | Assets.Store, string, "frame"> {
+  return internal.bundledInstances(name, options);
 }

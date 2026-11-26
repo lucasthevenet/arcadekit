@@ -28,9 +28,17 @@ export interface SceneShape {
   /**
    * The camera the scene is rendered through. It starts as a perspective camera
    * at (0, 0, 10), looking at the origin. Move it, or assign another camera,
-   * such as an `OrthographicCamera`.
+   * such as an `OrthographicCamera`, or let `Three.camera2d` set one.
    */
   camera: Camera;
+  /**
+   * The size of the canvas, in CSS pixels, in the frame the scene was last
+   * drawn: what `Three.toPlane` reads a pointer's position against, and
+   * `Three.camera2d` fits its view to. `Three.plugin` sets it at the start of
+   * each frame from `Three.Renderer`'s `size`. It is 0 by 0 until then, and
+   * stays as a test sets it when its renderer has no `size`.
+   */
+  size: { readonly width: number; readonly height: number };
 }
 
 /**

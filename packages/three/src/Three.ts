@@ -45,14 +45,20 @@
  *   entity first matches to the frame it stops matching, and receives the
  *   entity's transform each frame.
  *
- * Either system takes a look that exists from the start. `Gltf.instances`
- * and `Gltf.objects` build one `from` a bundle's assets instead, while the
- * bundle is loaded. `Three.texture` makes a texture asset for such a bundle.
- * After every frame-stage system has run, `Three.Render` renders the scene
- * through `Three.Renderer`.
+ * Either system takes a look that exists from the start. `Three.instancesFrom`
+ * and `Three.objectsFrom` build one `from` a bundle's assets instead, while the
+ * bundle is loaded. `Three.texture` makes a texture asset for such a bundle,
+ * and `Three.sprite` a flat game's look from a texture. After every
+ * frame-stage system has run, `Three.Render` renders the scene through
+ * `Three.Renderer`.
+ *
+ * A flat game views its plane through `Three.camera2d`, whose unit is the
+ * game's, and turns the pointer into a place of the plane with
+ * `Three.toPlane`.
  *
  * Each part is also a module of its own, which gives the same exports:
- * `@arcadekit/three/Scene`, `Renderer`, `Assets`, `Instances` and `Objects`.
+ * `@arcadekit/three/Scene`, `Renderer`, `Assets`, `Instances`, `Objects`,
+ * `Camera` and `Sprite`.
  */
 import type * as Assets from "arcadekit/Assets";
 import type { ComponentDef, RequiredOf } from "arcadekit/ecs";
@@ -81,10 +87,23 @@ export type {
 } from "./Renderer.ts";
 export { manager, texture } from "./Assets.ts";
 export type { TextureOptions } from "./Assets.ts";
-export { instances } from "./Instances.ts";
-export type { InstancesOptions, InstancesShared, Look } from "./Instances.ts";
-export { objects } from "./Objects.ts";
-export type { ObjectsOptions, ObjectsShared } from "./Objects.ts";
+export { instances, instancesFrom } from "./Instances.ts";
+export type {
+  InstancesFromOptions,
+  InstancesOptions,
+  InstancesShared,
+  Look,
+} from "./Instances.ts";
+export { objects, objectsFrom } from "./Objects.ts";
+export type {
+  ObjectsFromOptions,
+  ObjectsOptions,
+  ObjectsShared,
+} from "./Objects.ts";
+export { camera2d, toPlane } from "./Camera.ts";
+export type { Bounds, Camera2dOptions } from "./Camera.ts";
+export { sprite } from "./Sprite.ts";
+export type { Sprite, SpriteOptions } from "./Sprite.ts";
 
 /**
  * Which entities a drawing system draws. `Three.instances`, `Three.objects`
@@ -189,7 +208,7 @@ export type TransformOf<O> = [Exclude<PositionName, Missing<O>>] extends [never]
 
 /**
  * The assets of a bundle, whatever their types: what a look built `from` a
- * bundle is given, in `Gltf.instances` and `Gltf.objects`.
+ * bundle is given, in `Three.instancesFrom` and `Three.objectsFrom`.
  *
  * @category Type-level
  */
@@ -197,8 +216,8 @@ export type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 /**
  * What a system of `Three.instances` or `Three.objects` requires from an app.
- * One of `Gltf.instances` or `Gltf.objects` requires `Assets.Store`
- * too.
+ * One of `Three.instancesFrom` or `Three.objectsFrom` requires
+ * `Assets.Store` too.
  *
  * @category Type-level
  */

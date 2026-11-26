@@ -26,7 +26,7 @@ The benchmark measures the work that `@arcadekit/three` does before Three.js dra
 | `Three.instances`, a colour each: a position | 14.7 | 7,400 |
 | `Three.instances`, a colour each, as the renderer has it: a position | 10.9 | 7,400 |
 | `Three.instances`, a colour each, smooth: a position | 44.7 | 7,800 |
-| `Gltf.instances`: a position | 8.7 | 8,000 |
+| `Three.instancesFrom`: a position | 8.7 | 8,000 |
 | `Three.objects`: an Object3D each, all three copied | 163.0 | 5,700 |
 | `Three.objects`, flat: an Object3D each, all three copied | 167.8 | 5,700 |
 | By hand: `world.get` and `setMatrixAt`, per entity | 361.6 | 2,480,000 |

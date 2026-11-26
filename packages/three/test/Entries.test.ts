@@ -146,11 +146,13 @@ describe("the entries of @arcadekit/three", () => {
     expect(Object.keys(manifest.exports)).toEqual([
       ".",
       "./Assets",
+      "./Camera",
       "./Gltf",
       "./Instances",
       "./Objects",
       "./Renderer",
       "./Scene",
+      "./Sprite",
       "./Three",
     ]);
     // Nothing in internal/ is named as a module is.
@@ -223,6 +225,12 @@ describe("the entries of @arcadekit/three", () => {
         one.startsWith("three/")
       )
     ).toEqual([]);
+    // A flat game draws a bundle's textures as sprites through a camera of
+    // its own with Three alone, which reaches no file of Gltf.
+    expect(reach(sourceOf("./Three")).files).not.toContain("../src/Gltf.ts");
+    for (const key of ["instancesFrom", "objectsFrom", "sprite", "camera2d"]) {
+      expect(Object.keys(Main.Three)).toContain(key);
+    }
   });
 
   it("gives from Three what each of its parts gives: the same values, so a game imports either", () => {

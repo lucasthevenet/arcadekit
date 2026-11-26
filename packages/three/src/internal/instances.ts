@@ -13,7 +13,7 @@ import type { Placeable, Placing } from "./kind.ts";
 import { Instances } from "./mesh.ts";
 import { stores } from "./smooth.ts";
 
-/** The options of `Gltf.instances`, as its system reads them. */
+/** The options of `Three.instancesFrom`, as its system reads them. */
 interface Bundled<B extends Entries, L extends Look> extends InstancesShared {
   readonly from: Assets.Bundle<B>;
   readonly look: (assets: Assets.Loaded<B>) => L;
@@ -92,7 +92,7 @@ export const instances = (
 };
 
 /**
- * The system of `Gltf.instances`.
+ * The system of `Three.instancesFrom`.
  *
  * @internal
  */

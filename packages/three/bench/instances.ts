@@ -27,7 +27,7 @@ import type { ComponentDef, ComponentInput } from "arcadekit/ecs";
 import { Effect, Layer } from "effect";
 import { BoxGeometry, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 
-import { Gltf, Three } from "../src/index.ts";
+import { Three } from "../src/index.ts";
 
 const N = 10_000;
 const { Position, Rotation, Scale } = Transform3d;
@@ -307,7 +307,7 @@ const Level = Assets.bundle("bench/Level", {
   // An asset that needs no file, since none is fetched here.
   bark: Assets.make("/bark.png", () => Effect.succeed(material)),
 });
-const Sourced = Gltf.instances("q", {
+const Sourced = Three.instancesFrom("q", {
   of: Thing,
   transform: Transform3d,
   from: Level,
@@ -315,7 +315,7 @@ const Sourced = Gltf.instances("q", {
   capacity: N,
 });
 variant(
-  "Gltf.instances: a position",
+  "Three.instancesFrom: a position",
   () => [Thing, place()],
   Sourced,
   Assets.during(Effect.succeed(true), Level)

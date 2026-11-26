@@ -20,6 +20,7 @@ export const sceneLayer = Layer.effect(
       return {
         scene: new ThreeScene(),
         camera,
+        size: { width: 0, height: 0 },
       };
     }),
     // What the systems made goes with the app, and the geometries and

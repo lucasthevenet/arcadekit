@@ -36,6 +36,13 @@ import { Scene } from "./Scene.ts";
 export interface RendererShape {
   /** Renders the scene as the camera sees it. `Three.Render` calls it once per frame. */
   readonly render: (scene: ThreeScene, camera: Camera) => void;
+  /**
+   * The size of the canvas it draws on, in CSS pixels. `Three.plugin` asks it
+   * once per frame, in `"preFrame"`, before the frame's systems fit anything
+   * to the canvas, and keeps it as `Three.Scene`'s `size`. A test's renderer gives one to stand for a canvas,
+   * or none.
+   */
+  readonly size?: () => { readonly width: number; readonly height: number };
 }
 
 /**
@@ -81,13 +88,19 @@ export const layer = (renderer: RendererShape): Layer.Layer<Renderer> =>
 export interface Recorder extends RendererShape {
   /** Every scene it was asked to render, with its camera, oldest first. */
   readonly rendered: { readonly scene: ThreeScene; readonly camera: Camera }[];
+  /**
+   * The size, in CSS pixels, of the canvas it stands for, which its `size`
+   * gives. A test changes it to resize that canvas.
+   */
+  readonly canvas: { width: number; height: number };
 }
 
 /**
  * Makes a renderer that draws nothing and records each scene it is asked to
  * render, for a test or a tool. Three.js builds the scene under Node as it does
  * in a page, so a test finds what was drawn in it: an instanced mesh is named
- * after its system.
+ * after its system. It stands for a canvas of the size it is given, 0 by 0
+ * unless it is, as `Three.Scene`'s `size` reads it.
  *
  *   const renderer = Three.makeRecorder()
  *   const app = yield* App.make(game).pipe(Effect.provide(Three.layer(renderer)))
@@ -96,10 +109,14 @@ export interface Recorder extends RendererShape {
  *
  * @category Testing
  */
-export const makeRecorder = (): Recorder => {
+export const makeRecorder = (
+  canvas: { width: number; height: number } = { width: 0, height: 0 }
+): Recorder => {
   const rendered: { scene: ThreeScene; camera: Camera }[] = [];
   return {
     rendered,
+    canvas,
+    size: () => canvas,
     render(scene, camera) {
       rendered.push({ scene, camera });
     },
@@ -133,8 +150,9 @@ export interface FitOptions {
   /**
    * Whether the image follows the canvas's size on the page. When that size
    * changes, the renderer is resized without touching the canvas's style, and a
-   * perspective camera gets the new aspect ratio. Defaults to true. Your game
-   * fits any other kind of camera itself.
+   * perspective camera gets the new aspect ratio. Defaults to true. The camera
+   * of `Three.camera2d` fits itself to the canvas, and your game fits any other
+   * kind of camera itself.
    */
   readonly fit?: boolean;
   /**
@@ -220,17 +238,29 @@ export const layerWebGL = (
  */
 export const Render = System.frame("arcadekit/three/Render", function* () {
   const shown = yield* Scene;
+  const renderer = yield* Renderer;
   for (const one of heldIn(shown).kept.values()) {
     one.settle?.();
   }
-  (yield* Renderer).render(shown.scene, shown.camera);
+  renderer.render(shown.scene, shown.camera);
 }).pipe(System.inStage("postFrame"));
 
 /**
- * Gives an app a scene, `Three.Scene`, and renders it each frame with
- * `Three.Render`. The plugin that defines how the game looks lists it in its
- * `plugins`, beside its systems made with `Three.instances` and
- * `Three.objects`.
+ * Keeps the canvas's size of this frame, from `Three.Renderer`'s `size`, as
+ * `Three.Scene`'s `size`, before the frame's own systems run.
+ */
+const Measure = System.frame("arcadekit/three/Measure", function* () {
+  const renderer = yield* Renderer;
+  if (renderer.size !== undefined) {
+    (yield* Scene).size = renderer.size();
+  }
+}).pipe(System.inStage("preFrame"));
+
+/**
+ * Gives an app a scene, `Three.Scene`, measures its canvas at the start of
+ * each frame, and renders it at the end with `Three.Render`. The plugin that
+ * defines how the game looks lists it in its `plugins`, beside its systems
+ * made with `Three.instances` and `Three.objects`.
  *
  * **Details**
  *
@@ -245,5 +275,5 @@ export const Render = System.frame("arcadekit/three/Render", function* () {
  */
 export const plugin = Plugin.make("arcadekit/three", {
   layer: sceneLayer,
-  systems: [Render],
+  systems: [Measure, Render],
 });

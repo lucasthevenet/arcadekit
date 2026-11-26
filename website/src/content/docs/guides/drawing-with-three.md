@@ -95,10 +95,10 @@ A frame-stage system of one of two types draws each kind of entity:
 | Entry | Contents | Imports |
 | --- | --- | --- |
 | `@arcadekit/three` | Both modules below, as `import { Gltf, Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects`, and `texture` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Gltf` | `model`, the glTF asset, `mesh`, and `instances` and `objects` for a look built from a bundle | `arcadekit`, `effect`, `three`, and Three.js's glTF loader from `three/addons` |
+| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances` and `objects`, `instancesFrom` and `objectsFrom` for a look built from a bundle, `texture`, `sprite`, `camera2d`, and `toPlane` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Gltf` | `model`, the glTF asset, and `mesh` | `arcadekit`, `effect`, `three`, and Three.js's glTF loader from `three/addons` |
 
-Models have their own module because they bring Three.js's glTF loader, which a game without models doesn't need to ship. Nothing in `Three` imports the loader. `Gltf.instances` and `Gltf.objects` bring it with them, even for a bundle of textures alone.
+Models have their own module because they bring Three.js's glTF loader, which a game without models doesn't need to ship. Nothing in `Three` imports the loader, so a game whose bundles hold textures alone draws them with `Three` and never loads it.
 
 ## Place, rotate, and scale an entity
 
@@ -110,27 +110,7 @@ Each kind names the module that places its entities, as `transform: Transform3d`
 
 ## Draw a flat game
 
-A flat game places its entities with `Transform2d`, and a kind that names it draws them the same way.
-
-```ts sketch
-commands.spawn(
-  Card,
-  Transform2d.Position.of({ x: 120, y: 80 }),
-  Transform2d.Rotation.of({ angle: Math.PI / 6 })
-);
-
-const Cards = Three.instances("game/Cards", {
-  of: Card,
-  transform: Transform2d,
-  geometry,
-  material,
-});
-```
-
-- A kind of `Transform2d` draws an entity at its `Transform2d.Position`, in the x-y plane at z = 0. It rotates the entity about the z axis by its `Transform2d.Rotation`, and scales it along x and y by its `Transform2d.Scale`.
-- Set the draw order per kind, not per entity. For instances, use `prepare: (mesh) => { mesh.position.z = 1 }`. For objects, place the object in `make`. Nothing sorts entities within a kind.
-- To show the plane flat, set the `camera` of `Three.Scene` to an `OrthographicCamera`.
-- A game can draw flat and 3D entities side by side, with a kind for each. A kind reads nothing of the other module. An entity with both positions is drawn by a kind of each, from that kind's own position.
+A flat game places its entities with `Transform2d`, and a kind that names it draws them in the x-y plane at z = 0, turned about the z axis by `Transform2d.Rotation` and scaled along x and y by `Transform2d.Scale`. [Drawing a flat game](drawing-a-flat-game.md) covers its camera, its sprites, the pointer as a place of the game, and what is drawn in front. A game can draw flat and 3D entities side by side, with a kind for each. A kind reads nothing of the other module.
 
 ## Set up the scene, the camera, and the renderer
 
@@ -149,7 +129,7 @@ const Follow = System.frame("game/Follow", function* () {
 });
 ```
 
-- `Three.Scene` is the service. It holds `scene`, a Three.js `Scene`, and `camera`, a perspective camera at (0, 0, 10) until you move or replace it. You can assign `camera`, for example to an `OrthographicCamera`. The service belongs to drawing, not to the game. No tick reads it, and none of it is saved.
+- `Three.Scene` is the service. It holds `scene`, a Three.js `Scene`, `camera`, a perspective camera at (0, 0, 10) until you move or replace it, and `size`, the canvas's size in CSS pixels when the scene was last rendered. You can assign `camera`, for example to an `OrthographicCamera`. The service belongs to drawing, not to the game. No tick reads it, and none of it is saved.
 - `Three.Render` is the system that draws the scene. It runs in `"postFrame"`, so every frame-stage system has run before it, wherever each is listed and with no order declared. Those systems include `Three.instances`, `Three.objects`, and your own frame systems that move the camera or anything else.
 - `Three.Renderer` draws the scene, and comes from outside the app, because it needs a canvas. A game that installs `Three.plugin` without providing a renderer doesn't compile.
 - `Three.layerWebGL({ canvas, antialias: true })` provides a `WebGLRenderer` for a page, with the parameters Three.js accepts. `Three.layerRenderer(() => new WebGPURenderer({ canvas }))` provides a renderer that you create yourself, ready to draw. Initialise a `WebGPURenderer` before you provide it.
@@ -162,7 +142,7 @@ Both layers take these options:
 | `fit` | `true` | Whether the image follows the canvas's size on the page. When the size changes, the layer resizes the renderer without touching the canvas's style, and gives a perspective camera the new aspect ratio |
 | `pixelRatio` | The page's `devicePixelRatio`, capped at 2 | How many pixels are drawn per CSS pixel |
 
-A layer fits only a perspective camera. Fit any other kind of camera yourself when the canvas's size changes.
+A layer fits only a perspective camera. The camera of `Three.camera2d` fits itself. Fit any other kind of camera yourself when the canvas's size changes, from `Three.Scene`'s `size`.
 
 ## Test without a canvas
 
@@ -185,6 +165,6 @@ Frame-stage systems draw a game, in a plugin that only the page installs. A plug
 
 ## Read more
 
-- [Instances and objects](instances-and-objects.md), [textures and models](textures-and-models.md), [interpolation](between-two-ticks.md), and [drawing performance](drawing-performance.md).
+- [Instances and objects](instances-and-objects.md), [textures and models](textures-and-models.md), [drawing a flat game](drawing-a-flat-game.md), [interpolation](between-two-ticks.md), and [drawing performance](drawing-performance.md).
 - [`@arcadekit/three`](/reference/three) in the API reference, with [`Three`](/reference/three/Three) and [`Gltf`](/reference/three/Gltf).
 - [`packages/three/examples/page`](../../../../../packages/three/examples/page): ten thousand moving objects, run with `pnpm --filter @arcadekit/three page`.

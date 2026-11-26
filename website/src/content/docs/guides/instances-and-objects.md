@@ -103,7 +103,7 @@ const Ships = Three.objects("game/Ships", {
 
 The system disposes of the geometries and materials of what `make` creates when the app is closed or the bundle they were made from is released, once no other system draws with them. Use `free` to dispose of what one entity's object alone uses as soon as the entity goes, such as a material made for it. Use it also for anything else that `make` created, such as a texture.
 
-Instances and objects built from a level's assets, such as a model, are made with `Gltf.instances` and `Gltf.objects`, which name the bundle they come `from`. See [textures and models](textures-and-models.md).
+Instances and objects built from a level's assets, such as a model, are made with `Three.instancesFrom` and `Three.objectsFrom`, which name the bundle they come `from`. See [textures and models](textures-and-models.md).
 
 ## Read more
 
