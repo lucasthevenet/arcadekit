@@ -112,15 +112,22 @@ export const layer = (transport: Listener): Layer.Layer<Transport> =>
 
 /**
  * A session connected to a transport, which a driver steps in the session's
- * place, at the session's `delta`. Its `tick` returns whether the session's
- * tick ran.
+ * place, at the session's `delta`. Its `tick` succeeds with whether the
+ * session's tick ran.
+ *
+ * @typeParam E what the session's tick fails with
  *
  * @category Models
  */
-export interface Connected extends Paced {
-  readonly tick: () => boolean;
+export interface Connected<E = never> extends Paced<E | Left> {
+  /**
+   * Hands the session what arrived, runs the session's tick, and sends what
+   * it produced. It fails with what the session's tick fails with, and with
+   * `Transport.Left` when a peer stayed away for longer than `awayFor`.
+   */
+  readonly tick: () => Effect.Effect<boolean, E | Left>;
   /** The session's frame stage, for a driver to draw the game with. */
-  readonly frame: (alpha: number, delta?: number) => void;
+  readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
   /**
    * The peers the transport has said left and that haven't joined again, in
    * order of name. The session waits for them, for as long as `awayFor`
@@ -154,8 +161,8 @@ export interface ConnectOptions {
 
 /**
  * Peers left the room and did not join it again within `awayFor`. The tick
- * that finds it throws this error and its driver stops, instead of the game
- * waiting for ever for peers that are gone.
+ * that finds it fails with this error and its driver stops, instead of the
+ * game waiting for ever for peers that are gone.
  *
  * @category Errors
  */
@@ -181,8 +188,8 @@ export class Left extends Data.TaggedError("TransportLeft")<{
  * dropped, and tells that peer of each peer already there. On such a notice,
  * the session sends again what some peer hasn't heard. A peer the relay says
  * left is in `away` until it joins again. A tick that finds a peer away for
- * as long as `options.awayFor` throws `Transport.Left`, naming every such
- * peer, so the driver stops.
+ * as long as `options.awayFor` fails with `Transport.Left`, naming every
+ * such peer, so the driver stops.
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
  *
@@ -193,13 +200,16 @@ export class Left extends Data.TaggedError("TransportLeft")<{
  *
  * @category Running
  */
-export const connect = (
+export const connect = <E>(
   session: Pick<
     Session<unknown>,
-    "close" | "delta" | "frame" | "outgoing" | "receive" | "resend" | "tick"
-  >,
+    "close" | "delta" | "outgoing" | "receive" | "resend"
+  > & {
+    readonly tick: () => Effect.Effect<boolean, E>;
+    readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
+  },
   options: ConnectOptions = {}
-): Effect.Effect<Connected, never, Transport> =>
+): Effect.Effect<Connected<E>, never, Transport> =>
   Effect.flatMap(Transport, ({ listen: open }) =>
     Effect.suspend(() => {
       const scope = Scope.makeUnsafe();
@@ -218,56 +228,57 @@ export const connect = (
   );
 
 /** A session joined to a transport listened on, which `stop` stops. */
-const joined = (
-  session: Parameters<typeof connect>[0],
+const joined = <E>(
+  session: Parameters<typeof connect<E>>[0],
   transport: Listener,
   stop: Effect.Effect<void>,
   awayFor: number
-): Connected => {
+): Connected<E> => {
   // Per peer away, the connection's tick it was said to leave at.
   const away = new Map<string, number>();
   const allowed = awayFor / 1000 / session.delta;
   let ticks = 0;
   const names = (peers: Iterable<string>): string[] =>
     Array.from(peers).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // What the session produced, sent whether its tick ran, waited or failed.
+  const sent = Effect.sync(() => {
+    for (const message of session.outgoing()) {
+      transport.send(message);
+    }
+  });
+  const ticking = Effect.gen(function* () {
+    let again = false;
+    for (const arrived of transport.receive()) {
+      if ("from" in arrived) {
+        // Whoever speaks is there, whatever the relay said before.
+        away.delete(arrived.from);
+        session.receive(arrived);
+      } else if ("joined" in arrived) {
+        away.delete(arrived.joined);
+        again = true;
+      } else if (!away.has(arrived.left)) {
+        away.set(arrived.left, ticks);
+      }
+    }
+    const gone = names(
+      Array.from(away)
+        .filter(([, since]) => ticks - since >= allowed)
+        .map(([peer]) => peer)
+    );
+    if (gone.length > 0) {
+      return yield* new Left({ peers: gone, awayFor });
+    }
+    ticks++;
+    if (again) {
+      for (const message of session.resend()) {
+        transport.send(message);
+      }
+    }
+    return yield* Effect.ensuring(session.tick(), sent);
+  });
   return {
     delta: session.delta,
-    tick() {
-      let again = false;
-      for (const arrived of transport.receive()) {
-        if ("from" in arrived) {
-          // Whoever speaks is there, whatever the relay said before.
-          away.delete(arrived.from);
-          session.receive(arrived);
-        } else if ("joined" in arrived) {
-          away.delete(arrived.joined);
-          again = true;
-        } else if (!away.has(arrived.left)) {
-          away.set(arrived.left, ticks);
-        }
-      }
-      const gone = names(
-        Array.from(away)
-          .filter(([, since]) => ticks - since >= allowed)
-          .map(([peer]) => peer)
-      );
-      if (gone.length > 0) {
-        throw new Left({ peers: gone, awayFor });
-      }
-      ticks++;
-      if (again) {
-        for (const message of session.resend()) {
-          transport.send(message);
-        }
-      }
-      try {
-        return session.tick();
-      } finally {
-        for (const message of session.outgoing()) {
-          transport.send(message);
-        }
-      }
-    },
+    tick: () => ticking,
     frame: session.frame,
     get away() {
       return names(away.keys());
@@ -719,7 +730,7 @@ export interface Hub {
  *   const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 1 })
  *   const ada = yield* Transport.connect(session).pipe(Effect.provide(hub.layer("ada")))
  *   hub.step()
- *   ada.tick()
+ *   yield* ada.tick()
  *
  * @category Testing
  */

@@ -143,9 +143,11 @@ describe("Driver.run", () => {
         const display = Driver.makeManualDisplay();
         class Menu extends Context.Service<
           Menu,
-          { readonly onStart: (press: () => void) => void }
+          {
+            readonly onStart: (press: Effect.Effect<unknown>) => void;
+          }
         >()("run/Menu") {}
-        let press = (): void => {};
+        let press: Effect.Effect<unknown> = Effect.void;
         const fiber = yield* Effect.forkChild(
           Driver.run(App.define({ plugins: [Game] }), {
             hz: 60,
@@ -153,9 +155,9 @@ describe("Driver.run", () => {
               Effect.gen(function* () {
                 const menu = yield* Menu;
                 // Typed from the game's handlers.
-                menu.onStart(() => app.dispatch(Add, { by: 5 }));
+                menu.onStart(Effect.orDie(app.dispatch(Add, { by: 5 })));
                 // @ts-expect-error not a payload of the action
-                void (() => app.dispatch(Add, { by: "five" }));
+                void app.dispatch(Add, { by: "five" });
                 yield* Effect.addFinalizer(() =>
                   Effect.sync(() => log.push("menu unwired"))
                 );
@@ -173,7 +175,7 @@ describe("Driver.run", () => {
           { startImmediately: true }
         );
         expect(log.at(-1)).toBe("score 0");
-        press();
+        yield* press;
         turn(display, 2);
         yield* Fiber.interrupt(fiber);
         expect(log.includes("menu unwired")).toBe(true);
@@ -269,7 +271,7 @@ describe("Driver.run", () => {
           { startImmediately: true }
         );
         turn(display, 6);
-        const taken = made!.save();
+        const taken = yield* Effect.exit(made!.save());
         assert(Exit.isSuccess(taken));
         const save = taken.value;
         expect(made!.time.tick).toBe(5);
@@ -315,32 +317,33 @@ describe("Driver.run", () => {
       })
   );
 
-  it.effect("dies with what a tick throws, and lets go of everything", () =>
-    Effect.gen(function* () {
-      class Jammed extends Data.TaggedError("Jammed")<{}> {}
-      const { Game, log } = makeGame();
-      const Jam = System.tick("Jam", function* () {
-        if ((yield* Time).tick === 2) {
-          return yield* new Jammed();
-        }
-      });
-      const display = Driver.makeManualDisplay();
-      const fiber = yield* Effect.forkChild(
-        Driver.run(App.define({ plugins: [Game], systems: [Jam] }), {
-          hz: 60,
-        }).pipe(Effect.provideService(Driver.Display, display)),
-        { startImmediately: true }
-      );
-      turn(display, 3);
-      const exit = yield* Fiber.await(fiber);
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(Cause.squash((exit as Exit.Failure<never, never>).cause)).toEqual(
-        new Jammed()
-      );
-      expect(display.pending).toBe(0);
-      expect(display.watching).toBe(0);
-      expect(log.includes("sound closed")).toBe(true);
-    })
+  it.effect(
+    "fails with what a tick fails with, which a program catches by its tag, and lets go of everything",
+    () =>
+      Effect.gen(function* () {
+        class Jammed extends Data.TaggedError("Jammed")<{}> {}
+        const { Game, log } = makeGame();
+        const Jam = System.tick("Jam", function* () {
+          if ((yield* Time).tick === 2) {
+            return yield* new Jammed();
+          }
+        });
+        const display = Driver.makeManualDisplay();
+        const fiber = yield* Effect.forkChild(
+          Driver.run(App.define({ plugins: [Game], systems: [Jam] }), {
+            hz: 60,
+          }).pipe(
+            Effect.provideService(Driver.Display, display),
+            Effect.catchTag("Jammed", (jammed) => Effect.succeed(jammed))
+          ),
+          { startImmediately: true }
+        );
+        turn(display, 3);
+        expect(yield* Fiber.await(fiber)).toEqual(Exit.succeed(new Jammed()));
+        expect(display.pending).toBe(0);
+        expect(display.watching).toBe(0);
+        expect(log.includes("sound closed")).toBe(true);
+      })
   );
 
   it.effect(
@@ -353,7 +356,7 @@ describe("Driver.run", () => {
           frames++;
         });
         let made: App.Any | undefined;
-        let ask = (_by: number): void => {};
+        let ask = (_by: number): Effect.Effect<void> => Effect.void;
         const fiber = yield* Effect.forkChild(
           Driver.run(App.define({ handlers: [add], systems: [Count] }), {
             hz: 60,
@@ -361,7 +364,7 @@ describe("Driver.run", () => {
             ready: (app) =>
               Effect.sync(() => {
                 made = app;
-                ask = (by) => app.enqueue(Add, { by });
+                ask = (by) => Effect.orDie(app.enqueue(Add, { by }));
               }),
           }).pipe(Effect.provideService(Driver.Display, display)),
           { startImmediately: true }
@@ -379,7 +382,7 @@ describe("Driver.run", () => {
         expect(made!.time.tick).toBe(1);
         // A move: the tick that applies it, and the one that finds nothing
         // more to change.
-        ask(4);
+        yield* ask(4);
         repaint(1);
         expect(made!.time.tick).toBe(2);
         expect((yield* made!.read(Score)).points).toBe(4);

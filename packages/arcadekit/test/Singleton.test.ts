@@ -629,13 +629,17 @@ describe("a singleton in an app", () => {
           { checkpointEvery: 1 }
         );
         const world = yield* app.read(World);
-        expect(app.dispatch(EndTurn, { player: 2 })).toEqual(
-          Exit.fail(NotYourTurn.make({ waitingFor: 1 }))
-        );
-        expect(app.dispatch(EndTurn, { player: 1 })).toEqual(Exit.succeed(1));
-        app.tick(1);
-        expect(app.dispatch(EndTurn, { player: 2 })).toEqual(Exit.succeed(2));
-        app.tick(1);
+        expect(
+          yield* Effect.exit(app.dispatch(EndTurn, { player: 2 }))
+        ).toEqual(Exit.fail(NotYourTurn.make({ waitingFor: 1 })));
+        expect(
+          yield* Effect.exit(app.dispatch(EndTurn, { player: 1 }))
+        ).toEqual(Exit.succeed(1));
+        yield* app.tick(1);
+        expect(
+          yield* Effect.exit(app.dispatch(EndTurn, { player: 2 }))
+        ).toEqual(Exit.succeed(2));
+        yield* app.tick(1);
         expect({ ...world.singleton(Turn) }).toEqual({
           player: 1,
           round: 2,
@@ -657,21 +661,23 @@ describe("a singleton in an app", () => {
       const app = yield* App.make(game, { checkpointEvery: 1 });
       const world = yield* app.read(World);
       const before = world.hash();
-      expect(Exit.isFailure(app.dispatch(Cheat, {}))).toBe(true);
+      expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Cheat, {})))).toBe(
+        true
+      );
       // Never written, so never there.
       expect(world.hash()).toBe(before);
       for (let move = 0; move < 12; move++) {
-        app.dispatch(EndTurn, { player: (move % 2) + 1 });
-        app.dispatch(Cheat, {});
-        app.enqueue(Cheat, {});
-        app.tick(1);
+        yield* app.dispatch(EndTurn, { player: (move % 2) + 1 });
+        yield* Effect.exit(app.dispatch(Cheat, {}));
+        yield* app.enqueue(Cheat, {});
+        yield* app.tick(1);
       }
       expect({ ...world.singleton(Turn) }).toEqual({
         player: 1,
         round: 12,
       });
       expect(world.singleton(Score).points).toBe(42);
-      const played = app.record();
+      const played = yield* app.record();
       const again = yield* Journal.replay(played, game, {
         checkpointEvery: 1,
       });
@@ -688,11 +694,11 @@ describe("a singleton in an app", () => {
         });
         const world = yield* app.read(World);
         for (let move = 0; move < 5; move++) {
-          app.dispatch(EndTurn, { player: (move % 2) + 1 });
-          app.tick(1);
+          yield* app.dispatch(EndTurn, { player: (move % 2) + 1 });
+          yield* app.tick(1);
         }
         const savedHash = world.hash();
-        const save = app.save();
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -710,12 +716,12 @@ describe("a singleton in an app", () => {
           player: 2,
           round: 5,
         });
-        expect(loaded.dispatch(EndTurn, { player: 2 })).toEqual(
-          Exit.succeed(6)
-        );
-        app.dispatch(EndTurn, { player: 2 });
-        loaded.tick(1);
-        app.tick(1);
+        expect(
+          yield* Effect.exit(loaded.dispatch(EndTurn, { player: 2 }))
+        ).toEqual(Exit.succeed(6));
+        yield* app.dispatch(EndTurn, { player: 2 });
+        yield* loaded.tick(1);
+        yield* app.tick(1);
         expect(loadedWorld.hash()).toBe(world.hash());
         expect(loadedWorld.singleton(Score).points).toBe(12);
 
@@ -783,41 +789,45 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
         built = 0;
         const app = yield* App.make(Game);
         const byX = () => Effect.map(app.read(Index), (index) => index.byX);
-        app.tick(1);
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(built).toBe(1);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
         // A refused action's replacement is undone with the rest of it.
-        expect(Exit.isFailure(app.dispatch(Clear, { refuse: true }))).toBe(
-          true
-        );
+        expect(
+          Exit.isFailure(
+            yield* Effect.exit(app.dispatch(Clear, { refuse: true }))
+          )
+        ).toBe(true);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
-        const moment = Timeline.capture(app);
+        const moment = yield* Effect.exit(Timeline.capture(app));
         expect(Exit.isSuccess(moment)).toBe(true);
         // A save doesn't hold it: the loaded game builds it again.
-        const save = app.save();
+        const save = yield* Effect.exit(app.save());
         expect(Exit.isSuccess(save)).toBe(true);
         if (Exit.isFailure(save) || Exit.isFailure(moment)) {
           return;
         }
         const loaded = yield* App.make(Game, { save: save.value });
         expect((yield* loaded.read(Index)).byX).toBeUndefined();
-        loaded.tick(1);
+        yield* loaded.tick(1);
         expect(built).toBe(2);
         expect((yield* loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
         // A rewind keeps it, since nothing wrote the singleton since.
-        Timeline.rewind(app, moment.value);
+        yield* Timeline.rewind(app, moment.value);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
-        app.tick(1);
+        yield* app.tick(1);
         expect(built).toBe(2);
         // Written since the moment, it is put back empty: the next tick
         // builds it again.
-        expect(Exit.isSuccess(app.dispatch(Clear, { refuse: false }))).toBe(
-          true
-        );
-        Timeline.rewind(app, moment.value);
+        expect(
+          Exit.isSuccess(
+            yield* Effect.exit(app.dispatch(Clear, { refuse: false }))
+          )
+        ).toBe(true);
+        yield* Timeline.rewind(app, moment.value);
         expect(yield* byX()).toBeUndefined();
-        app.tick(1);
+        yield* app.tick(1);
         expect(built).toBe(3);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });
       })

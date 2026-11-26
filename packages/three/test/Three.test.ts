@@ -52,6 +52,7 @@ import {
 import type { Camera, Scene } from "three";
 
 import { Three } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
 const { Position, Rotation, Scale } = Transform3d;
 
@@ -163,40 +164,48 @@ const Hand = Plugin.make("th/Hand", {
 });
 
 /** Changes an app's game with the actions of `Hand`, each applied at once. */
-const handOf = (app: App.Any) => {
-  const dispatch = (name: string, payload: unknown): unknown => {
-    const exit = app.dispatchByName(name, payload);
+const handOf = <E>(app: {
+  readonly dispatchByName: (
+    name: string,
+    payload: unknown
+  ) => Effect.Effect<unknown, E>;
+}) => {
+  const dispatch = Effect.fnUntraced(function* (
+    name: string,
+    payload: unknown
+  ) {
+    const exit = yield* Effect.exit(app.dispatchByName(name, payload));
     if (Exit.isFailure(exit)) {
       throw new Error(`${name} was refused: ${Cause.pretty(exit.cause)}`);
     }
     return exit.value;
-  };
+  });
   return {
-    spawn: (...inputs: readonly ComponentInput[]): Entity => {
-      const entity = dispatch(Spawn.name, { parts: inputs.map(partOf) });
+    spawn: Effect.fnUntraced(function* (...inputs: readonly ComponentInput[]) {
+      const entity = yield* dispatch(Spawn.name, {
+        parts: inputs.map(partOf),
+      });
       if (!Schema.is(EntityId)(entity)) {
         throw new Error(
           `${Spawn.name} gave ${String(entity)}, which is no entity`
         );
       }
       return entity;
-    },
-    add: (entity: Entity, input: ComponentInput): void => {
-      dispatch(Add.name, { entity, part: partOf(input) });
-    },
-    remove: (entity: Entity, def: ComponentDef): void => {
-      dispatch(Remove.name, { entity, component: def.name });
-    },
+    }),
+    add: (entity: Entity, input: ComponentInput) =>
+      Effect.asVoid(dispatch(Add.name, { entity, part: partOf(input) })),
+    remove: (entity: Entity, def: ComponentDef) =>
+      Effect.asVoid(dispatch(Remove.name, { entity, component: def.name })),
     set: <S extends ComponentDef["schema"]>(
       entity: Entity,
       def: ComponentDef<S>,
       value: Partial<ValueOf<S>>
-    ): void => {
-      dispatch(Change.name, { entity, component: def.name, value });
-    },
-    despawn: (entity: Entity): void => {
-      dispatch(Despawn.name, { entity });
-    },
+    ) =>
+      Effect.asVoid(
+        dispatch(Change.name, { entity, component: def.name, value })
+      ),
+    despawn: (entity: Entity) =>
+      Effect.asVoid(dispatch(Despawn.name, { entity })),
   };
 };
 
@@ -232,11 +241,8 @@ const makeRenderer = () => {
  * An app, which the test closes when it likes, with the world it reads and
  * the hand it changes the game with.
  */
-const start = Effect.fnUntraced(function* <
-  A extends App.Any & { readonly close: Effect.Effect<void> },
-  E,
->(
-  make: Effect.Effect<A, E, Three.Renderer>,
+const start = Effect.fnUntraced(function* <E, HU, E2>(
+  make: Effect.Effect<App.App<E, HU>, E2, Three.Renderer>,
   renderer: { readonly layer: Layer.Layer<Three.Renderer> }
 ) {
   const app = yield* make.pipe(Effect.provide(renderer.layer));
@@ -473,18 +479,18 @@ describe("Three.instances", () => {
         );
         const turn = Transform3d.axisAngle(0, 0, 1, Math.PI / 3);
         const rocks = [
-          hand.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 })),
-          hand.spawn(
+          yield* hand.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 })),
+          yield* hand.spawn(
             Rock,
             Position.of({ x: -4, y: 0.5, z: 9 }),
             Scale.of({ x: 2, y: 3, z: 0.5 })
           ),
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 7, y: 7, z: 7 }),
             Rotation.of(turn)
           ),
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 0, y: -1, z: 0 }),
             Rotation.of(Transform3d.axisAngle(1, 0, 0, 2)),
@@ -492,12 +498,17 @@ describe("Three.instances", () => {
           ),
         ];
         // Not rocks: the same four of another kind, and one that is nowhere.
-        hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }));
-        hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Scale);
-        hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation);
-        hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation, Scale);
-        hand.remove(hand.spawn(Rock), Position);
-        app.frame();
+        yield* hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }));
+        yield* hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Scale);
+        yield* hand.spawn(Ship, Position.of({ x: 5, y: 5, z: 5 }), Rotation);
+        yield* hand.spawn(
+          Ship,
+          Position.of({ x: 5, y: 5, z: 5 }),
+          Rotation,
+          Scale
+        );
+        yield* hand.remove(yield* hand.spawn(Rock), Position);
+        yield* app.frame();
 
         const mesh = meshOf(renderer.scene, "th/Rocks");
         expect(mesh.geometry).toBe(geometry);
@@ -718,14 +729,14 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         App.make(App.define({ plugins: [Look] })),
         renderer
       );
-      hand.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 }), Rotation);
-      hand.spawn(
+      yield* hand.spawn(Rock, Position.of({ x: 1, y: 2, z: 3 }), Rotation);
+      yield* hand.spawn(
         Rock,
         Position.of({ x: 4, y: 5, z: 6 }),
         Rotation,
         Scale.of({ x: 2, y: 2, z: 2 })
       );
-      app.frame();
+      yield* app.frame();
       expect(drawn(meshOf(renderer.scene, "th/Rocks"))).toEqual([
         "1 0 0 0 0 1 0 0 0 0 1 0 1 2 3 1",
         "2 0 0 0 0 2 0 0 0 0 2 0 4 5 6 1",
@@ -745,25 +756,25 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
         const rocks = [
           // Three times too long, and a hundredth of what it should be.
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 1, y: 0, z: 0 }),
             Rotation.of(stretched(quarter, 3))
           ),
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 2, y: 0, z: 0 }),
             Rotation.of(stretched(quarter, 0.01)),
             Scale.of({ x: 2, y: 3, z: 4 })
           ),
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 3, y: 0, z: 0 }),
             Rotation.of(stretched(Transform3d.axisAngle(0.6, 0, 0.8, 1.2), 40)),
             Scale.of({ x: 0.5, y: 1, z: 6 })
           ),
         ];
-        app.frame();
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/Rocks");
         // As Three.js draws the same turns made of length 1.
         expectDrawn(mesh, world, rocks, Transform3d);
@@ -828,23 +839,23 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
               if (random.next() < 0.5) {
                 parts.push(size());
               }
-              alive.push(hand.spawn(...parts));
+              alive.push(yield* hand.spawn(...parts));
             } else if (roll === 3) {
-              hand.despawn(one);
+              yield* hand.despawn(one);
               alive.splice(alive.indexOf(one), 1);
             } else if (roll === 4) {
-              hand.add(one, turn());
+              yield* hand.add(one, turn());
             } else if (roll === 5) {
-              hand.remove(one, Rotation);
+              yield* hand.remove(one, Rotation);
             } else if (roll === 6) {
-              hand.add(one, size());
+              yield* hand.add(one, size());
             } else if (roll === 7) {
-              hand.remove(one, Scale);
+              yield* hand.remove(one, Scale);
             } else {
-              hand.add(one, place());
+              yield* hand.add(one, place());
             }
           }
-          app.frame();
+          yield* app.frame();
           const mesh = meshOf(renderer.scene, "th/Rocks");
           expect(mesh.count).toBe(alive.length);
           expectDrawn(mesh, world, alive, Transform3d);
@@ -894,36 +905,36 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         const size = Scale.of({ x: 2, y: 3, z: 4 });
         // One of each kind of table, shown and hidden.
         const shown = [
-          hand.spawn(Rock, Heavy, at(1)),
-          hand.spawn(Rock, Heavy, at(2), size),
-          hand.spawn(Rock, Heavy, at(3), turn),
-          hand.spawn(Rock, Heavy, at(4), turn, size),
+          yield* hand.spawn(Rock, Heavy, at(1)),
+          yield* hand.spawn(Rock, Heavy, at(2), size),
+          yield* hand.spawn(Rock, Heavy, at(3), turn),
+          yield* hand.spawn(Rock, Heavy, at(4), turn, size),
         ];
         const hidden = [
-          hand.spawn(Rock, Heavy, Hidden, at(5)),
-          hand.spawn(Rock, Heavy, Hidden, at(6), size),
-          hand.spawn(Rock, Heavy, Hidden, at(7), turn),
-          hand.spawn(Rock, Heavy, Hidden, at(8), turn, size),
+          yield* hand.spawn(Rock, Heavy, Hidden, at(5)),
+          yield* hand.spawn(Rock, Heavy, Hidden, at(6), size),
+          yield* hand.spawn(Rock, Heavy, Hidden, at(7), turn),
+          yield* hand.spawn(Rock, Heavy, Hidden, at(8), turn, size),
         ];
         // With one of the two components only, of each kind too.
         for (const only of [Rock, Heavy]) {
-          hand.spawn(only, at(9));
-          hand.spawn(only, at(9), size);
-          hand.spawn(only, at(9), turn);
-          hand.spawn(only, at(9), turn, size);
+          yield* hand.spawn(only, at(9));
+          yield* hand.spawn(only, at(9), size);
+          yield* hand.spawn(only, at(9), turn);
+          yield* hand.spawn(only, at(9), turn, size);
         }
-        app.frame();
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/Heavies");
         expect(mesh.count).toBe(4);
         expect(drawn(mesh)).toEqual(expected(world, shown));
         // Shown again, and hidden.
         for (const one of hidden) {
-          hand.remove(one, Hidden);
+          yield* hand.remove(one, Hidden);
         }
         for (const one of shown) {
-          hand.add(one, Hidden);
+          yield* hand.add(one, Hidden);
         }
-        app.frame();
+        yield* app.frame();
         expect(mesh.count).toBe(4);
         expect(drawn(mesh)).toEqual(expected(world, hidden));
       })
@@ -952,11 +963,11 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
           ),
           renderer
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-        app.frame();
-        app.frame();
-        app.tick(1 / 60);
-        app.frame();
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
+        yield* app.frame();
+        yield* app.frame();
+        yield* app.tick(1 / 60);
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/Shadows");
         expect(prepared).toEqual([mesh]);
         expect(mesh.castShadow).toBe(true);
@@ -985,15 +996,18 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
           renderer
         );
         const rocks: Entity[] = [];
-        const more = (count: number) => {
+        const more = Effect.fnUntraced(function* (count: number) {
           for (let i = 0; i < count; i++) {
             rocks.push(
-              hand.spawn(Rock, Position.of({ x: rocks.length, y: 1, z: 2 }))
+              yield* hand.spawn(
+                Rock,
+                Position.of({ x: rocks.length, y: 1, z: 2 })
+              )
             );
           }
-        };
-        more(4);
-        app.frame();
+        });
+        yield* more(4);
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/Few");
         const first = mesh.instanceMatrix;
         expect(first.array.length).toBe(4 * 16);
@@ -1002,25 +1016,25 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
           dropped++;
         });
         // Full, and not over: nothing is allocated.
-        app.frame();
+        yield* app.frame();
         expect(mesh.instanceMatrix).toBe(first);
         expect(dropped).toBe(0);
-        more(1);
-        app.frame();
+        yield* more(1);
+        yield* app.frame();
         expect(mesh.instanceMatrix).not.toBe(first);
         expect(mesh.instanceMatrix.array.length).toBe(8 * 16);
         expect(dropped).toBe(1);
         expect(drawn(mesh)).toEqual(expected(world, rocks));
         // Far over, in one frame and across two kinds of table.
-        more(40);
+        yield* more(40);
         rocks.push(
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: -1, y: -1, z: -1 }),
             Scale.of({ x: 3, y: 3, z: 3 })
           )
         );
-        app.frame();
+        yield* app.frame();
         expect(mesh.instanceMatrix.array.length).toBe(64 * 16);
         expect(dropped).toBe(2);
         expect(mesh.count).toBe(46);
@@ -1028,9 +1042,9 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         // The room is kept when the entities go.
         const full = mesh.instanceMatrix;
         for (const rock of rocks.splice(2)) {
-          hand.despawn(rock);
+          yield* hand.despawn(rock);
         }
-        app.frame();
+        yield* app.frame();
         expect(mesh.instanceMatrix).toBe(full);
         expect(mesh.count).toBe(2);
         expect(drawn(mesh)).toEqual(expected(world, rocks));
@@ -1046,29 +1060,29 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
           App.make(App.define({ plugins: [Look] })),
           renderer
         );
-        const rocks = [0, 1, 2].map((x) =>
+        const rocks = yield* Effect.forEach([0, 1, 2], (x) =>
           hand.spawn(Rock, Position.of({ x, y: 0, z: 0 }))
         );
-        app.frame();
+        yield* app.frame();
         const attribute = meshOf(renderer.scene, "th/Rocks").instanceMatrix;
         expect(attribute.updateRanges).toEqual([{ start: 0, count: 48 }]);
         const sent = attribute.version;
         expect(sent).toBeGreaterThan(0);
         // The renderer empties the list once it has sent it.
         attribute.clearUpdateRanges();
-        hand.despawn(rocks[0]!);
-        app.frame();
+        yield* hand.despawn(rocks[0]!);
+        yield* app.frame();
         expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
         expect(attribute.version).toBe(sent + 1);
         // A renderer that sent nothing in between is not told twice.
-        app.frame();
+        yield* app.frame();
         expect(attribute.updateRanges).toEqual([{ start: 0, count: 32 }]);
         // Nothing to draw: nothing to send.
-        hand.despawn(rocks[1]!);
-        hand.despawn(rocks[2]!);
+        yield* hand.despawn(rocks[1]!);
+        yield* hand.despawn(rocks[2]!);
         attribute.clearUpdateRanges();
         const before = attribute.version;
-        app.frame();
+        yield* app.frame();
         expect(meshOf(renderer.scene, "th/Rocks").count).toBe(0);
         expect(attribute.updateRanges).toEqual([]);
         expect(attribute.version).toBe(before);
@@ -1184,19 +1198,19 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
                 : Scale.of({ x: 2, y: 2, z: 2 })
             );
           }
-          (flat ? flatRocks : rocks).push(hand.spawn(...parts));
+          (flat ? flatRocks : rocks).push(yield* hand.spawn(...parts));
         }
-        const step = (): void => {
-          app.tick(1 / 60);
-          app.frame(0.5);
-        };
+        const step = Effect.fnUntraced(function* () {
+          yield* app.tick(1 / 60);
+          yield* app.frame(0.5);
+        });
         const startedAt = [
           world.get(rocks[0]!, Position)!.x,
           world.get(flatRocks[0]!, Transform2d.Position)!.x,
         ];
         // Until the loops are compiled, and whatever is made once is made.
         for (let i = 0; i < 200; i++) {
-          step();
+          yield* step();
         }
         const meshes = ["th/Crowd", "th/FlatCrowd"].map((name) =>
           meshOf(renderer.scene, name)
@@ -1209,7 +1223,7 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         const grown: number[] = [];
         for (let i = 0; i < 101; i++) {
           const before = process.memoryUsage().heapUsed;
-          step();
+          yield* step();
           grown.push(process.memoryUsage().heapUsed - before);
         }
         const typical = grown.toSorted((a, b) => a - b)[50]!;
@@ -1227,7 +1241,7 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
         expect(renderer.frames).toBe(301);
         expect(renderer.counts).toEqual([count / 2, count / 2]);
         // All the way to the tick they are at, which is where both draw them.
-        app.frame(1);
+        yield* app.frame(1);
         expect(world.get(rocks[0]!, Position)!.x).toBeGreaterThan(
           startedAt[0]! + 0.01
         );
@@ -1248,8 +1262,8 @@ Gltf.objects("game/Bares", { of: bares, transform: Transform3d, from: Forest, ma
           App.make(App.define({ plugins: [Look] })),
           renderer
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-        app.frame();
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/Rocks");
         const disposed: string[] = [];
         mesh.addEventListener("dispose", () => disposed.push("mesh"));
@@ -1277,14 +1291,14 @@ describe("a flat game's Transform2d", () => {
           renderer
         );
         const rocks = [
-          hand.spawn(FlatRock, at(3, 4)),
-          hand.spawn(FlatRock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
-          hand.spawn(
+          yield* hand.spawn(FlatRock, at(3, 4)),
+          yield* hand.spawn(FlatRock, at(-1, 2), Flat.Scale.of({ x: 2, y: 5 })),
+          yield* hand.spawn(
             FlatRock,
             at(6, -7),
             Flat.Rotation.of({ angle: Math.PI / 2 })
           ),
-          hand.spawn(
+          yield* hand.spawn(
             FlatRock,
             at(0.5, 9),
             Flat.Rotation.of({ angle: 0.7 }),
@@ -1292,13 +1306,13 @@ describe("a flat game's Transform2d", () => {
           ),
         ];
         // Not rocks, and one that is nowhere.
-        hand.spawn(FlatShip, at(8, 8));
-        hand.spawn(FlatShip, at(8, 8), Flat.Rotation, Flat.Scale);
-        hand.remove(
-          hand.spawn(FlatRock, Flat.Rotation.of({ angle: 1 })),
+        yield* hand.spawn(FlatShip, at(8, 8));
+        yield* hand.spawn(FlatShip, at(8, 8), Flat.Rotation, Flat.Scale);
+        yield* hand.remove(
+          yield* hand.spawn(FlatRock, Flat.Rotation.of({ angle: 1 })),
           Flat.Position
         );
-        app.frame();
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/FlatRocks");
         expectDrawn(mesh, world, rocks, Transform2d);
         // By hand, so that the test does not only agree with Three.js. Only
@@ -1329,7 +1343,7 @@ describe("a flat game's Transform2d", () => {
           renderer
         );
         // Both positions, and a turn and a size of each module.
-        const both = hand.spawn(
+        const both = yield* hand.spawn(
           Rock,
           FlatRock,
           Position.of({ x: 1, y: 2, z: 3 }),
@@ -1339,9 +1353,12 @@ describe("a flat game's Transform2d", () => {
           Flat.Rotation.of({ angle: Math.PI / 2 }),
           Flat.Scale.of({ x: 2, y: 3 })
         );
-        const solid = hand.spawn(Rock, Position.of({ x: 5, y: 6, z: 7 }));
-        const flat = hand.spawn(FlatRock, at(30, 40));
-        app.frame();
+        const solid = yield* hand.spawn(
+          Rock,
+          Position.of({ x: 5, y: 6, z: 7 })
+        );
+        const flat = yield* hand.spawn(FlatRock, at(30, 40));
+        yield* app.frame();
         const rocks = meshOf(renderer.scene, "th/Rocks");
         const flatRocks = meshOf(renderer.scene, "th/FlatRocks");
         expectDrawn(rocks, world, [both, solid], Transform3d);
@@ -1355,9 +1372,9 @@ describe("a flat game's Transform2d", () => {
           expect(inPlane[k], `element ${k}`).toBeCloseTo(wanted[k]!, 6);
         }
         // A change to either is drawn by its own kind and by no other.
-        hand.set(both, Flat.Position, { x: 11 });
-        hand.set(both, Position, { z: 9 });
-        app.frame();
+        yield* hand.set(both, Flat.Position, { x: 11 });
+        yield* hand.set(both, Position, { z: 9 });
+        yield* app.frame();
         expect(byPlace(rowsOf(flatRocks))[0]!.slice(12)).toEqual([
           11, 20, 0, 1,
         ]);
@@ -1420,31 +1437,34 @@ describe("a flat game's Transform2d", () => {
               if (random.next() < 0.2) {
                 parts.push(Scale.of({ x: 2, y: 3, z: 4 }));
               }
-              alive.push(hand.spawn(...parts));
+              alive.push(yield* hand.spawn(...parts));
             } else if (roll === 3) {
-              hand.despawn(one);
+              yield* hand.despawn(one);
               alive.splice(alive.indexOf(one), 1);
             } else if (roll === 4) {
-              hand.add(one, turn());
+              yield* hand.add(one, turn());
             } else if (roll === 5) {
-              hand.remove(one, Flat.Rotation);
+              yield* hand.remove(one, Flat.Rotation);
             } else if (roll === 6) {
-              hand.add(one, size());
+              yield* hand.add(one, size());
             } else if (roll === 7) {
-              hand.remove(one, Flat.Scale);
+              yield* hand.remove(one, Flat.Scale);
             } else if (roll === 8 && world.has(one, Flat.Position)) {
-              hand.add(one, place());
+              yield* hand.add(one, place());
             } else if (world.has(one, Flat.Position)) {
               // Lifted out of the plane, or put back in it.
               if (world.has(one, Position)) {
-                hand.remove(one, Position);
+                yield* hand.remove(one, Position);
               } else {
-                hand.add(one, Position.of({ x: frame, y: step, z: -frame }));
-                hand.add(one, Rock);
+                yield* hand.add(
+                  one,
+                  Position.of({ x: frame, y: step, z: -frame })
+                );
+                yield* hand.add(one, Rock);
               }
             }
           }
-          app.frame();
+          yield* app.frame();
           expectDrawn(
             meshOf(renderer.scene, "th/Rocks"),
             world,
@@ -1504,33 +1524,33 @@ describe("a flat game's Transform2d", () => {
         const size = Flat.Scale.of({ x: 2, y: 3 });
         // One of each kind of table, shown and hidden.
         const shown = [
-          hand.spawn(FlatRock, Heavy, at(1, 0)),
-          hand.spawn(FlatRock, Heavy, at(2, 0), size),
-          hand.spawn(FlatRock, Heavy, at(3, 0), turn),
-          hand.spawn(FlatRock, Heavy, at(4, 0), turn, size),
+          yield* hand.spawn(FlatRock, Heavy, at(1, 0)),
+          yield* hand.spawn(FlatRock, Heavy, at(2, 0), size),
+          yield* hand.spawn(FlatRock, Heavy, at(3, 0), turn),
+          yield* hand.spawn(FlatRock, Heavy, at(4, 0), turn, size),
         ];
         const hidden = [
-          hand.spawn(FlatRock, Heavy, Hidden, at(5, 0)),
-          hand.spawn(FlatRock, Heavy, Hidden, at(6, 0), size),
-          hand.spawn(FlatRock, Heavy, Hidden, at(7, 0), turn),
-          hand.spawn(FlatRock, Heavy, Hidden, at(8, 0), turn, size),
+          yield* hand.spawn(FlatRock, Heavy, Hidden, at(5, 0)),
+          yield* hand.spawn(FlatRock, Heavy, Hidden, at(6, 0), size),
+          yield* hand.spawn(FlatRock, Heavy, Hidden, at(7, 0), turn),
+          yield* hand.spawn(FlatRock, Heavy, Hidden, at(8, 0), turn, size),
         ];
         for (const only of [FlatRock, Heavy]) {
-          hand.spawn(only, at(9, 0));
-          hand.spawn(only, at(9, 0), size);
-          hand.spawn(only, at(9, 0), turn);
-          hand.spawn(only, at(9, 0), turn, size);
+          yield* hand.spawn(only, at(9, 0));
+          yield* hand.spawn(only, at(9, 0), size);
+          yield* hand.spawn(only, at(9, 0), turn);
+          yield* hand.spawn(only, at(9, 0), turn, size);
         }
-        app.frame();
+        yield* app.frame();
         const mesh = meshOf(renderer.scene, "th/FlatHeavies");
         expectDrawn(mesh, world, shown, Transform2d);
         for (const one of hidden) {
-          hand.remove(one, Hidden);
+          yield* hand.remove(one, Hidden);
         }
         for (const one of shown) {
-          hand.add(one, Hidden);
+          yield* hand.add(one, Hidden);
         }
-        app.frame();
+        yield* app.frame();
         expectDrawn(mesh, world, hidden, Transform2d);
       })
   );
@@ -1568,20 +1588,26 @@ describe("a flat game's Transform2d", () => {
         );
         const objectOf = (entity: Entity): Object3D =>
           made.findLast((one) => one.entity === entity)!.object;
-        const plain = hand.spawn(FlatShip, at(1, 2));
-        const whole = hand.spawn(
+        const plain = yield* hand.spawn(FlatShip, at(1, 2));
+        const whole = yield* hand.spawn(
           FlatShip,
           at(-3, -4),
           Flat.Rotation.of({ angle: 0.5 }),
           Flat.Scale.of({ x: 2, y: 3 })
         );
         // Turned and sized, and nowhere; and hidden.
-        hand.remove(
-          hand.spawn(FlatShip, Flat.Rotation, Flat.Scale),
+        yield* hand.remove(
+          yield* hand.spawn(FlatShip, Flat.Rotation, Flat.Scale),
           Flat.Position
         );
-        hand.spawn(FlatShip, Hidden, at(9, 9), Flat.Rotation, Flat.Scale);
-        app.frame();
+        yield* hand.spawn(
+          FlatShip,
+          Hidden,
+          at(9, 9),
+          Flat.Rotation,
+          Flat.Scale
+        );
+        yield* app.frame();
         expect(
           made
             .map((one) => one.entity)
@@ -1595,44 +1621,44 @@ describe("a flat game's Transform2d", () => {
         expect(objectOf(whole).rotation.z).toBe(0.5);
         expect(objectOf(whole).scale.toArray()).toEqual([2, 3, 4]);
         // It follows its entity, and is not made again.
-        hand.set(whole, Flat.Position, { x: 10, y: 20 });
-        hand.set(whole, Flat.Rotation, { angle: 1.5 });
-        hand.set(whole, Flat.Scale, { x: 5, y: 6 });
-        app.frame();
+        yield* hand.set(whole, Flat.Position, { x: 10, y: 20 });
+        yield* hand.set(whole, Flat.Rotation, { angle: 1.5 });
+        yield* hand.set(whole, Flat.Scale, { x: 5, y: 6 });
+        yield* app.frame();
         expect(made.length).toBe(2);
         expect(objectOf(whole).position.toArray()).toEqual([10, 20, 5]);
         expect(objectOf(whole).rotation.z).toBe(1.5);
         expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
         // One that is no longer turned, or sized, is as one that never was:
         // in the plane only, the rest as it was made.
-        hand.remove(whole, Flat.Rotation);
-        app.frame();
+        yield* hand.remove(whole, Flat.Rotation);
+        yield* app.frame();
         expect(objectOf(whole).rotation.z).toBe(0);
         expect(objectOf(whole).rotation.x).toBe(0.25);
         expect(objectOf(whole).scale.toArray()).toEqual([5, 6, 4]);
-        hand.remove(whole, Flat.Scale);
-        app.frame();
+        yield* hand.remove(whole, Flat.Scale);
+        yield* app.frame();
         expect(objectOf(whole).scale.toArray()).toEqual([1, 1, 4]);
         // What the game then sets is left alone.
         objectOf(whole).rotation.z = 2;
         objectOf(whole).scale.x = 7;
-        app.frame();
+        yield* app.frame();
         expect(objectOf(whole).rotation.z).toBe(2);
         expect(objectOf(whole).scale.x).toBe(7);
         // Given a place in three dimensions as well, it stays where its flat
         // one puts it: its kind reads nothing of Transform3d.
-        hand.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
-        hand.add(plain, Rotation.of(Transform3d.axisAngle(1, 0, 0, 1)));
-        hand.add(plain, Scale.of({ x: 6, y: 6, z: 6 }));
-        app.frame();
+        yield* hand.add(plain, Position.of({ x: 7, y: 8, z: 9 }));
+        yield* hand.add(plain, Rotation.of(Transform3d.axisAngle(1, 0, 0, 1)));
+        yield* hand.add(plain, Scale.of({ x: 6, y: 6, z: 6 }));
+        yield* app.frame();
         expect(objectOf(plain).position.toArray()).toEqual([1, 2, 5]);
         expect(objectOf(plain).rotation.toArray()).toEqual([0.25, 0, 0, "XYZ"]);
         expect(objectOf(plain).scale.toArray()).toEqual([1, 1, 4]);
         expect(made.length).toBe(2);
         // And it goes with its entity like any other.
-        hand.despawn(plain);
-        hand.add(whole, Hidden);
-        app.frame();
+        yield* hand.despawn(plain);
+        yield* hand.add(whole, Hidden);
+        yield* app.frame();
         expect(
           freed.toSorted((a, b) => entityIndex(a) - entityIndex(b))
         ).toEqual(
@@ -1663,20 +1689,20 @@ describe("a flat game's Transform2d", () => {
           ),
           makeRenderer()
         );
-        const first = hand.spawn(
+        const first = yield* hand.spawn(
           FlatShip,
           at(1, 1),
           Flat.Rotation.of({ angle: 2 })
         );
-        app.frame();
+        yield* app.frame();
         expect(made.get(first)!.rotation.z).toBe(2);
         // In one frame: the first is no longer turned, and a crowd arrives
         // after it, more than there was room for.
-        hand.remove(first, Flat.Rotation);
+        yield* hand.remove(first, Flat.Rotation);
         for (let i = 0; i < 200; i++) {
-          hand.spawn(FlatShip, at(i, 2));
+          yield* hand.spawn(FlatShip, at(i, 2));
         }
-        app.frame();
+        yield* app.frame();
         expect(made.size).toBe(201);
         // Its turn in the plane is gone, and the turn it was made with is not.
         expect(made.get(first)!.rotation.z).toBe(0);
@@ -1696,13 +1722,13 @@ describe("a flat game's Transform2d", () => {
           App.make(App.define({ plugins: [Flatland] })),
           makeRenderer()
         );
-        const rock = first.hand.spawn(
+        const rock = yield* first.hand.spawn(
           FlatRock,
           at(4, 5),
           Flat.Rotation.of({ angle: 1 }),
           Flat.Scale.of({ x: 2, y: 2 })
         );
-        const save = first.app.save();
+        const save = yield* Effect.exit(first.app.save());
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }
@@ -1712,7 +1738,7 @@ describe("a flat game's Transform2d", () => {
           renderer
         );
         expect(world.hash()).toBe(first.world.hash());
-        app.frame();
+        yield* app.frame();
         expectDrawn(
           meshOf(renderer.scene, "th/FlatRocks"),
           world,
@@ -1795,30 +1821,30 @@ describe("an entity drawn between two ticks", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Slide, Smoothed] })
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
         // Never drawn before: there is nowhere to come from, whatever the frame.
-        app.frame(0.5);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(0);
-        app.tick(1);
+        yield* app.tick(1);
         // Just after the tick it is still where it was, and then on its way.
-        app.frame(0);
+        yield* app.frame(0);
         expect(xAt(mesh(), 1)).toBe(0);
-        app.frame(0.25);
+        yield* app.frame(0.25);
         expect(xAt(mesh(), 1)).toBe(2.5);
-        app.frame(0.75);
+        yield* app.frame(0.75);
         expect(xAt(mesh(), 1)).toBe(7.5);
         // A tick later the place it has come to is the one it comes from.
-        app.tick(1);
-        app.frame(0);
+        yield* app.tick(1);
+        yield* app.frame(0);
         expect(xAt(mesh(), 1)).toBe(10);
-        app.frame(0.5);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(15);
         // No further than where it is, and no further back than where it was.
-        app.frame(1);
+        yield* app.frame(1);
         expect(xAt(mesh(), 1)).toBe(20);
-        app.frame(3);
+        yield* app.frame(3);
         expect(xAt(mesh(), 1)).toBe(20);
-        app.frame(-2);
+        yield* app.frame(-2);
         expect(xAt(mesh(), 1)).toBe(10);
       })
   );
@@ -1830,13 +1856,13 @@ describe("an entity drawn between two ticks", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Slide, Smoothed] })
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        app.frame();
-        app.tick(1);
-        app.frame();
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         expect(xAt(mesh(), 1)).toBe(10);
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         expect(xAt(mesh(), 1)).toBe(20);
       })
   );
@@ -1850,17 +1876,17 @@ describe("an entity drawn between two ticks", () => {
         );
         // A slot given out 1,100 times: the next entity in it has such an id.
         for (let n = 0; n < 1100; n++) {
-          hand.despawn(hand.spawn(Rock));
+          yield* hand.despawn(yield* hand.spawn(Rock));
         }
-        const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        const rock = yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
         expect(rock).toBeGreaterThan(2 ** 32);
-        app.frame(0.5);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(0);
-        app.tick(1);
+        yield* app.tick(1);
         // It is known for the entity it was a frame ago, and is on its way.
-        app.frame(0.25);
+        yield* app.frame(0.25);
         expect(xAt(mesh(), 1)).toBe(2.5);
-        app.frame(0.75);
+        yield* app.frame(0.75);
         expect(xAt(mesh(), 1)).toBe(7.5);
       })
   );
@@ -1872,26 +1898,26 @@ describe("an entity drawn between two ticks", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Slide, Smoothed] })
         );
-        const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        app.frame();
-        app.tick(1);
-        app.frame(0.5);
+        const rock = yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(5);
         // Three ticks and then a frame: from 10, where it was, to 40.
-        app.tick(1);
-        app.tick(1);
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(25);
         // Frames with no tick between them: the same two places.
-        app.frame(0.1);
+        yield* app.frame(0.1);
         expect(xAt(mesh(), 1)).toBe(13);
-        app.frame(0.9);
+        yield* app.frame(0.9);
         expect(xAt(mesh(), 1)).toBe(37);
         // Moved with no tick, by an action: it goes there from
         // where it was coming from.
-        hand.set(rock, Position, { x: 110 });
-        app.frame(0.5);
+        yield* hand.set(rock, Position, { x: 110 });
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(60);
       })
   );
@@ -1903,33 +1929,39 @@ describe("an entity drawn between two ticks", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Slide, Smoothed] })
         );
-        const old = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        const hidden = hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }));
-        app.frame();
-        app.tick(1);
-        app.frame(0.5);
+        const old = yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        const hidden = yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 2, z: 0 })
+        );
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(5);
         // Gone, and its slot taken by another, far away: not drawn on the way
         // from where the old one was.
-        hand.despawn(old);
-        const fresh = hand.spawn(Rock, Position.of({ x: 500, y: 3, z: 0 }));
+        yield* hand.despawn(old);
+        const fresh = yield* hand.spawn(
+          Rock,
+          Position.of({ x: 500, y: 3, z: 0 })
+        );
         expect(entityIndex(fresh)).toBe(entityIndex(old));
-        hand.add(hidden, Hidden);
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.add(hidden, Hidden);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(mesh().count).toBe(1);
         expect(xAt(mesh(), 3)).toBe(510);
         // From its second frame on it is on its way like any other.
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 3)).toBe(515);
         // Shown again after frames in which it was not drawn: where it is.
-        hand.remove(hidden, Hidden);
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.remove(hidden, Hidden);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 2)).toBe(40);
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 2)).toBe(45);
       })
   );
@@ -1941,17 +1973,17 @@ describe("an entity drawn between two ticks", () => {
       const { app, hand, mesh } = yield* play(
         App.define({ plugins, systems: [Slide, Gated] })
       );
-      hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-      app.frame();
-      app.tick(1);
-      app.frame(0.5);
+      yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+      yield* app.frame();
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       expect(xAt(mesh(), 1)).toBe(5);
       Phase.on = false;
-      app.tick(1);
-      app.frame(0.5);
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       Phase.on = true;
-      app.tick(1);
-      app.frame(0.5);
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       // Not from 10, where it was last drawn from, two frames ago.
       expect(xAt(mesh(), 1)).toBe(30);
     })
@@ -1984,45 +2016,48 @@ describe("an entity drawn between two ticks", () => {
             ],
           })
         );
-        const rock = hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        const card = hand.spawn(FlatRock, Flat.Position.of({ x: 0, y: 2 }));
-        app.frame();
-        app.tick(1);
-        app.frame(0.5);
+        const rock = yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        const card = yield* hand.spawn(
+          FlatRock,
+          Flat.Position.of({ x: 0, y: 2 })
+        );
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(5);
         expect(xAt(flatMesh(), 2)).toBe(5);
         // Off one edge and in at the other: not drawn crossing the screen.
-        hand.set(rock, Position, { x: -400 });
-        hand.set(card, Flat.Position, { x: 300 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.set(rock, Position, { x: -400 });
+        yield* hand.set(card, Flat.Position, { x: 300 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(-390);
         expect(xAt(flatMesh(), 2)).toBe(310);
         // And on its way again from there.
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(-385);
         expect(xAt(flatMesh(), 2)).toBe(315);
         // Wherever it went: up and away as well as along.
-        hand.set(rock, Position, { x: -380, y: 91, z: 60 });
-        hand.set(card, Flat.Position, { x: 320, y: 92 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.set(rock, Position, { x: -380, y: 91, z: 60 });
+        yield* hand.set(card, Flat.Position, { x: 320, y: 92 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(rowAt(mesh(), 91).slice(12, 15)).toEqual([-370, 91, 60]);
         expect(rowAt(flatMesh(), 92).slice(12, 15)).toEqual([330, 92, 0]);
-        hand.set(rock, Position, { y: 1, z: 0 });
-        app.tick(1);
-        app.frame(1);
+        yield* hand.set(rock, Position, { y: 1, z: 0 });
+        yield* app.tick(1);
+        yield* app.frame(1);
         // Exactly as far as it may go is not too far.
         // (It is at -360 now, and goes ten more with the tick.)
-        hand.set(rock, Position, { x: -320 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.set(rock, Position, { x: -320 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(-335);
         // And a hair further is.
-        hand.set(rock, Position, { x: -269.5 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.set(rock, Position, { x: -269.5 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(-259.5);
       })
   );
@@ -2035,32 +2070,32 @@ describe("an entity drawn between two ticks", () => {
           App.define({ plugins, systems: [Slide, Smoothed, SmoothedFlat] })
         );
         const olds = [
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 0, y: 1, z: 0 }),
             Rotation.of(Transform3d.axisAngle(0, 0, 1, 0.2)),
             Scale.of({ x: 1, y: 1, z: 1 })
           ),
-          hand.spawn(
+          yield* hand.spawn(
             FlatRock,
             Flat.Position.of({ x: 0, y: 2 }),
             Flat.Rotation.of({ angle: 0.2 }),
             Flat.Scale.of({ x: 1, y: 1 })
           ),
         ];
-        app.frame();
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         // Both gone, and their slots taken at once, the second's first.
-        hand.despawn(olds[0]!);
-        hand.despawn(olds[1]!);
-        const flat = hand.spawn(
+        yield* hand.despawn(olds[0]!);
+        yield* hand.despawn(olds[1]!);
+        const flat = yield* hand.spawn(
           FlatRock,
           Flat.Position.of({ x: 100, y: 4 }),
           Flat.Rotation.of({ angle: 2.5 }),
           Flat.Scale.of({ x: 6, y: 7 })
         );
-        const solid = hand.spawn(
+        const solid = yield* hand.spawn(
           Rock,
           Position.of({ x: 100, y: 3, z: 0 }),
           Rotation.of(Transform3d.axisAngle(0, 0, 1, 2.5)),
@@ -2071,8 +2106,8 @@ describe("an entity drawn between two ticks", () => {
         ).toEqual(
           olds.map((one) => entityIndex(one)).toSorted((a, b) => a - b)
         );
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         expectDrawn(mesh(), world, [solid], Transform3d);
         expectDrawn(flatMesh(), world, [flat], Transform2d);
       })
@@ -2087,18 +2122,18 @@ describe("an entity drawn between two ticks", () => {
         );
         // About an axis that leans, so that every number of the turn changes.
         const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
-        const rock = hand.spawn(
+        const rock = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
           Scale.of({ x: 1, y: 1, z: 1 })
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), Rotation);
-        app.frame();
-        hand.set(rock, Rotation, quarter);
-        hand.set(rock, Scale, { x: 3, y: 5, z: 7 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), Rotation);
+        yield* app.frame();
+        yield* hand.set(rock, Rotation, quarter);
+        yield* hand.set(rock, Scale, { x: 3, y: 5, z: 7 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         // Half of a quarter turn, at twice, three and four times the size.
         const eighth = new Matrix4().compose(
           new Vector3(5, 1, 0),
@@ -2114,7 +2149,7 @@ describe("an entity drawn between two ticks", () => {
           for (let k = 0; k < 16; k++) {
             expect(drawnRow[k], `element ${k}`).toBeCloseTo(eighth[k]!, 5);
           }
-          app.frame(0.5);
+          yield* app.frame(0.5);
         }
         // One that is not turned at all stays so.
         expect(rowAt(mesh(), 2).slice(0, 11)).toEqual([
@@ -2122,18 +2157,18 @@ describe("an entity drawn between two ticks", () => {
         ]);
         // The opposite quaternion is the same turn: it does not swing round
         // to get there.
-        app.frame(1);
+        yield* app.frame(1);
         const there = rowAt(mesh(), 1);
-        hand.set(rock, Rotation, {
+        yield* hand.set(rock, Rotation, {
           x: -quarter.x,
           y: -quarter.y,
           z: -quarter.z,
           w: -quarter.w,
         });
-        hand.set(rock, Scale, { x: 3, y: 5, z: 7 });
-        app.tick(1);
+        yield* hand.set(rock, Scale, { x: 3, y: 5, z: 7 });
+        yield* app.tick(1);
         for (const alpha of [0, 0.3, 0.5, 0.9, 1]) {
-          app.frame(alpha);
+          yield* app.frame(alpha);
           const now = rowAt(mesh(), 1);
           for (let k = 0; k < 11; k++) {
             expect(now[k], `alpha ${alpha}, element ${k}`).toBeCloseTo(
@@ -2156,17 +2191,17 @@ describe("an entity drawn between two ticks", () => {
         } = yield* play(
           App.define({ plugins, systems: [Slide, SmoothedFlat] })
         );
-        const card = hand.spawn(
+        const card = yield* hand.spawn(
           FlatRock,
           Flat.Position.of({ x: 0, y: 1 }),
           Flat.Rotation.of({ angle: 0.2 }),
           Flat.Scale.of({ x: 1, y: 1 })
         );
-        app.frame();
-        hand.set(card, Flat.Rotation, { angle: 1 });
-        hand.set(card, Flat.Scale, { x: 3, y: 5 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.frame();
+        yield* hand.set(card, Flat.Rotation, { angle: 1 });
+        yield* hand.set(card, Flat.Scale, { x: 3, y: 5 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         const half = new Matrix4().compose(
           new Vector3(5, 1, 0),
           new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 0.6),
@@ -2177,21 +2212,21 @@ describe("an entity drawn between two ticks", () => {
           for (let k = 0; k < 16; k++) {
             expect(drawnRow[k], `element ${k}`).toBeCloseTo(half[k]!, 5);
           }
-          app.frame(0.5);
+          yield* app.frame(0.5);
         }
         // From a little past nothing to a little short of a whole turn is a
         // little way back, through nothing, not nearly all the way round.
-        app.frame(1);
-        hand.set(card, Flat.Rotation, { angle: 0.25 });
-        app.tick(1);
-        app.frame(1);
-        hand.set(card, Flat.Rotation, { angle: Math.PI * 2 - 0.25 });
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.frame(1);
+        yield* hand.set(card, Flat.Rotation, { angle: 0.25 });
+        yield* app.tick(1);
+        yield* app.frame(1);
+        yield* hand.set(card, Flat.Rotation, { angle: Math.PI * 2 - 0.25 });
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         const through = rowAt(mesh(), 1);
         expect(through[0]! / 3).toBeCloseTo(1, 5);
         expect(through[1]! / 3).toBeCloseTo(0, 5);
-        app.frame(1);
+        yield* app.frame(1);
         const end = rowAt(mesh(), 1);
         expect(end[0]! / 3).toBeCloseTo(Math.cos(0.25), 5);
         expect(end[1]! / 3).toBeCloseTo(-Math.sin(0.25), 5);
@@ -2225,7 +2260,7 @@ describe("an entity drawn between two ticks", () => {
         for (let frame = 1; frame <= 300; frame++) {
           const ticks = random.int(4);
           for (let i = 0; i < ticks; i++) {
-            app.tick(1);
+            yield* app.tick(1);
           }
           for (let step = 0; step < 3; step++) {
             const roll = random.int(6);
@@ -2236,25 +2271,25 @@ describe("an entity drawn between two ticks", () => {
               const x = random.int(1000);
               alive.push({
                 entity: flat
-                  ? hand.spawn(FlatRock, Flat.Position.of({ x, y }))
-                  : hand.spawn(Rock, Position.of({ x, y, z: 0 })),
+                  ? yield* hand.spawn(FlatRock, Flat.Position.of({ x, y }))
+                  : yield* hand.spawn(Rock, Position.of({ x, y, z: 0 })),
                 y,
                 flat,
               });
             } else if (roll === 2) {
-              hand.despawn(one.entity);
+              yield* hand.despawn(one.entity);
               alive.splice(alive.indexOf(one), 1);
             } else if (roll === 3) {
               // Hidden for a while, or shown again.
               if (world.has(one.entity, Hidden)) {
-                hand.remove(one.entity, Hidden);
+                yield* hand.remove(one.entity, Hidden);
               } else {
-                hand.add(one.entity, Hidden);
+                yield* hand.add(one.entity, Hidden);
               }
             }
           }
           const alpha = random.next();
-          app.frame(alpha);
+          yield* app.frame(alpha);
           const shown = alive.filter((one) => !world.has(one.entity, Hidden));
           expect(mesh().count).toBe(shown.filter((one) => !one.flat).length);
           expect(flatMesh().count).toBe(shown.filter((one) => one.flat).length);
@@ -2287,22 +2322,22 @@ describe("an entity drawn between two ticks", () => {
           App.define({ plugins, systems: [Slide, Smoothed] })
         );
         const quarter = Transform3d.axisAngle(0.6, 0, 0.8, Math.PI / 2);
-        const rock = hand.spawn(
+        const rock = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           Rotation.of({ x: 0, y: 0, z: 0, w: 3 }),
           Scale.of({ x: 2, y: 3, z: 4 })
         );
-        const bare = hand.spawn(
+        const bare = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 2, z: 0 }),
           Rotation.of({ x: 0, y: 0, z: 0, w: 0.2 })
         );
-        app.frame();
-        hand.set(rock, Rotation, stretched(quarter, 3));
-        hand.set(bare, Rotation, stretched(quarter, 0.2));
-        app.tick(1);
-        app.frame(0.5);
+        yield* app.frame();
+        yield* hand.set(rock, Rotation, stretched(quarter, 3));
+        yield* hand.set(bare, Rotation, stretched(quarter, 0.2));
+        yield* app.tick(1);
+        yield* app.frame(0.5);
         // Half of the quarter turn, at the size the entity has and no other.
         const turn = new Quaternion().setFromAxisAngle(
           new Vector3(0.6, 0, 0.8),
@@ -2330,11 +2365,11 @@ describe("an entity drawn between two ticks", () => {
         }
         // From one length to another, it is still a turn about that axis:
         // each column is as long as the entity is large along it.
-        hand.set(bare, Rotation, stretched(quarter, 5));
-        hand.set(bare, Rotation, { x: 0, y: 0, z: 0, w: 5 });
-        hand.set(rock, Rotation, { x: 0, y: 0, z: 0, w: 0.1 });
-        app.tick(1);
-        app.frame(0.25);
+        yield* hand.set(bare, Rotation, stretched(quarter, 5));
+        yield* hand.set(bare, Rotation, { x: 0, y: 0, z: 0, w: 5 });
+        yield* hand.set(rock, Rotation, { x: 0, y: 0, z: 0, w: 0.1 });
+        yield* app.tick(1);
+        yield* app.frame(0.25);
         for (const [y, sizes] of [
           [1, [2, 3, 4]],
           [2, [1, 1, 1]],
@@ -2394,27 +2429,31 @@ describe("an entity drawn between two ticks", () => {
           ],
         })
       );
-      const ship = hand.spawn(
+      const ship = yield* hand.spawn(
         Ship,
         Position.of({ x: 0, y: 1, z: 2 }),
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
         Scale.of({ x: 1, y: 1, z: 1 })
       );
-      const card = hand.spawn(
+      const card = yield* hand.spawn(
         FlatShip,
         Flat.Position.of({ x: 0, y: 4 }),
         Flat.Rotation.of({ angle: 0.5 }),
         Flat.Scale.of({ x: 1, y: 1 })
       );
-      app.frame(0.5);
+      yield* app.frame(0.5);
       expect(made.get(ship)!.position.toArray()).toEqual([0, 1, 2]);
       expect(made.get(card)!.position.toArray()).toEqual([0, 4, 9]);
-      hand.set(ship, Rotation, Transform3d.axisAngle(0, 0, 1, Math.PI / 2));
-      hand.set(ship, Scale, { x: 3, y: 3, z: 3 });
-      hand.set(card, Flat.Rotation, { angle: 1.5 });
-      hand.set(card, Flat.Scale, { x: 5, y: 7 });
-      app.tick(1);
-      app.frame(0.5);
+      yield* hand.set(
+        ship,
+        Rotation,
+        Transform3d.axisAngle(0, 0, 1, Math.PI / 2)
+      );
+      yield* hand.set(ship, Scale, { x: 3, y: 3, z: 3 });
+      yield* hand.set(card, Flat.Rotation, { angle: 1.5 });
+      yield* hand.set(card, Flat.Scale, { x: 5, y: 7 });
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       expect(made.get(ship)!.position.toArray()).toEqual([5, 1, 2]);
       expect(made.get(ship)!.scale.toArray()).toEqual([2, 2, 2]);
       const half = new Quaternion().setFromAxisAngle(
@@ -2429,20 +2468,20 @@ describe("an entity drawn between two ticks", () => {
       expect(made.get(card)!.rotation.z).toBeCloseTo(1, 6);
       expect(made.get(card)!.scale.toArray()).toEqual([3, 4, 1]);
       // Too far to have gone in a tick: it is where it is.
-      hand.set(ship, Position, { x: 1000 });
-      app.tick(1);
-      app.frame(0.5);
+      yield* hand.set(ship, Position, { x: 1000 });
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       expect(made.get(ship)!.position.x).toBe(1010);
       expect(made.size).toBe(2);
       // Between two rotations of any length an object is turned, and its
       // quaternion is of length 1, as Three.js needs it.
       const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
-      hand.set(ship, Rotation, { x: 0, y: 0, z: 0, w: 6 });
-      app.tick(1);
-      app.frame(1);
-      hand.set(ship, Rotation, stretched(quarter, 6));
-      app.tick(1);
-      app.frame(0.5);
+      yield* hand.set(ship, Rotation, { x: 0, y: 0, z: 0, w: 6 });
+      yield* app.tick(1);
+      yield* app.frame(1);
+      yield* hand.set(ship, Rotation, stretched(quarter, 6));
+      yield* app.tick(1);
+      yield* app.frame(0.5);
       expect(made.get(ship)!.quaternion.x).toBeCloseTo(half.x, 6);
       expect(made.get(ship)!.quaternion.y).toBeCloseTo(half.y, 6);
       expect(made.get(ship)!.quaternion.z).toBeCloseTo(half.z, 6);
@@ -2480,25 +2519,25 @@ describe("an entity drawn between two ticks", () => {
           hand: made.hand,
           mesh: () => meshOf(renderer.scene, "th/Smoothed"),
         };
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
         const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
         for (let i = 0; i < 10; i++) {
-          advance(1 / 120);
+          yield* advance(1 / 120);
         }
         // At rest, after the tick a new game runs.
         expect(app.time.tick).toBe(1);
         expect(xAt(mesh(), 1)).toBe(0);
         // Told to go: the tick runs in that frame, and it is on its way.
-        app.enqueue(Go, {});
-        advance(1 / 120);
+        yield* app.enqueue(Go, {});
+        yield* advance(1 / 120);
         expect(app.time.tick).toBe(2);
         expect(xAt(mesh(), 1)).toBe(0);
-        advance(1 / 120);
+        yield* advance(1 / 120);
         expect(xAt(mesh(), 1)).toBe(5);
         // The game comes to rest, and the piece is where the game has it: not
         // a tick behind, waiting for a tick that is not coming.
         for (let i = 0; i < 10; i++) {
-          advance(1 / 120);
+          yield* advance(1 / 120);
         }
         expect(app.time.tick).toBe(3);
         expect(xAt(mesh(), 1)).toBe(10);
@@ -2518,11 +2557,11 @@ describe("an entity drawn between two ticks", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Slide, Plain] })
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        app.frame();
-        app.tick(1);
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* app.frame();
+        yield* app.tick(1);
         for (const alpha of [0, 0.5, 0.99]) {
-          app.frame(alpha);
+          yield* app.frame(alpha);
           expect(xAt(mesh(), 1)).toBe(10);
         }
       })
@@ -2562,21 +2601,26 @@ describe("an entity drawn between two ticks", () => {
           hand: handOf(bareApp),
         };
         for (const { hand } of [drawnGame, bare]) {
-          hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), Rotation);
-          hand.spawn(FlatRock, Flat.Position.of({ x: 0, y: 2 }), Flat.Rotation);
-          hand.spawn(Ship, Position.of({ x: 0, y: 3, z: 0 }), Scale);
+          yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), Rotation);
+          yield* hand.spawn(
+            FlatRock,
+            Flat.Position.of({ x: 0, y: 2 }),
+            Flat.Rotation
+          );
+          yield* hand.spawn(Ship, Position.of({ x: 0, y: 3, z: 0 }), Scale);
         }
         for (let tick = 0; tick < 40; tick++) {
-          drawnGame.app.tick(1);
-          drawnGame.app.frame(0.2);
-          drawnGame.app.frame(0.7);
-          bare.app.tick(1);
+          yield* drawnGame.app.tick(1);
+          yield* drawnGame.app.frame(0.2);
+          yield* drawnGame.app.frame(0.7);
+          yield* bare.app.tick(1);
           expect(drawnGame.world.hash()).toBe(bare.world.hash());
         }
         expect(drawnGame.app.actionLog).toEqual(bare.app.actionLog);
-        const saves = [drawnGame.app.save(), bare.app.save()].map((save) =>
-          Exit.isSuccess(save) ? save.value : undefined
-        );
+        const saves = [
+          yield* Effect.exit(drawnGame.app.save()),
+          yield* Effect.exit(bare.app.save()),
+        ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
       })
@@ -2654,14 +2698,14 @@ describe("a colour per instance", () => {
         const flat = (y: number) => Flat.Position.of({ x: 0, y });
         // One of each of the four of either transform, each of a colour of its own.
         const rocks = [
-          hand.spawn(Rock, at(1), paint(0.125, 0, 0)),
-          hand.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
-          hand.spawn(Rock, at(3), turn, paint(0.375, 0, 0)),
-          hand.spawn(Rock, at(4), turn, size, paint(0.5, 0, 0)),
-          hand.spawn(FlatRock, flat(5), paint(0, 0.125, 0.75)),
-          hand.spawn(FlatRock, flat(6), flatSize, paint(0, 0.25, 0.75)),
-          hand.spawn(FlatRock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
-          hand.spawn(
+          yield* hand.spawn(Rock, at(1), paint(0.125, 0, 0)),
+          yield* hand.spawn(Rock, at(2), size, paint(0.25, 0, 0)),
+          yield* hand.spawn(Rock, at(3), turn, paint(0.375, 0, 0)),
+          yield* hand.spawn(Rock, at(4), turn, size, paint(0.5, 0, 0)),
+          yield* hand.spawn(FlatRock, flat(5), paint(0, 0.125, 0.75)),
+          yield* hand.spawn(FlatRock, flat(6), flatSize, paint(0, 0.25, 0.75)),
+          yield* hand.spawn(FlatRock, flat(7), flatTurn, paint(0, 0.375, 0.75)),
+          yield* hand.spawn(
             FlatRock,
             flat(8),
             flatTurn,
@@ -2671,19 +2715,19 @@ describe("a colour per instance", () => {
         ];
         // Not painted, of every kind: drawn in the material's own colour.
         const bare = [
-          hand.spawn(Rock, at(9)),
-          hand.spawn(Rock, at(10), size),
-          hand.spawn(Rock, at(11), turn),
-          hand.spawn(Rock, at(12), turn, size),
-          hand.spawn(FlatRock, flat(13)),
-          hand.spawn(FlatRock, flat(14), flatSize),
-          hand.spawn(FlatRock, flat(15), flatTurn),
-          hand.spawn(FlatRock, flat(16), flatTurn, flatSize),
+          yield* hand.spawn(Rock, at(9)),
+          yield* hand.spawn(Rock, at(10), size),
+          yield* hand.spawn(Rock, at(11), turn),
+          yield* hand.spawn(Rock, at(12), turn, size),
+          yield* hand.spawn(FlatRock, flat(13)),
+          yield* hand.spawn(FlatRock, flat(14), flatSize),
+          yield* hand.spawn(FlatRock, flat(15), flatTurn),
+          yield* hand.spawn(FlatRock, flat(16), flatTurn, flatSize),
         ];
         // Painted and not a rock; and hidden.
-        hand.spawn(Ship, at(20), paint(1, 1, 1));
-        hand.spawn(Rock, Hidden, at(20), paint(1, 1, 1));
-        app.frame();
+        yield* hand.spawn(Ship, at(20), paint(1, 1, 1));
+        yield* hand.spawn(Rock, Hidden, at(20), paint(1, 1, 1));
+        yield* app.frame();
         expectDrawn(
           mesh(),
           world,
@@ -2713,12 +2757,12 @@ describe("a colour per instance", () => {
         expect(colors.itemSize).toBe(3);
         expect(colors.usage).toBe(mesh().instanceMatrix.usage);
         // It follows the entity: repainted, and gone.
-        hand.set(rocks[0]!, Color.Rgb, { r: 0, g: 1, b: 0.5 });
-        hand.despawn(rocks[1]!);
+        yield* hand.set(rocks[0]!, Color.Rgb, { r: 0, g: 1, b: 0.5 });
+        yield* hand.despawn(rocks[1]!);
         // Painted, and no longer.
-        hand.add(bare[0]!, paint(0.5, 0.5, 0.5));
-        hand.remove(rocks[2]!, Color.Rgb);
-        app.frame();
+        yield* hand.add(bare[0]!, paint(0.5, 0.5, 0.5));
+        yield* hand.remove(rocks[2]!, Color.Rgb);
+        yield* app.frame();
         expect(mesh().count).toBe(7);
         expect(flatMesh().count).toBe(8);
         expect(colorAt(mesh(), 1)).toEqual([0, 1, 0.5]);
@@ -2763,23 +2807,23 @@ describe("a colour per instance", () => {
                   Flat.Scale.of({ x: 2, y: 2 })
                 );
               }
-              alive.push({ entity: hand.spawn(...parts), y, flat });
+              alive.push({ entity: yield* hand.spawn(...parts), y, flat });
             } else if (roll === 4) {
-              hand.despawn(one.entity);
+              yield* hand.despawn(one.entity);
               alive.splice(alive.indexOf(one), 1);
             } else if (roll === 5) {
-              hand.set(one.entity, Color.Rgb, {
+              yield* hand.set(one.entity, Color.Rgb, {
                 r: random.next(),
                 g: random.next(),
               });
             } else if (world.has(one.entity, Color.Rgb)) {
               // Unpainted for a while, and painted again.
-              hand.remove(one.entity, Color.Rgb);
+              yield* hand.remove(one.entity, Color.Rgb);
             } else {
-              hand.add(one.entity, paint(random.next(), 0, 0));
+              yield* hand.add(one.entity, paint(random.next(), 0, 0));
             }
           }
-          app.frame();
+          yield* app.frame();
           if (frame === 0) {
             for (const [k, kind] of [mesh(), flatMesh()].entries()) {
               kind.addEventListener("dispose", () => {
@@ -2819,30 +2863,30 @@ describe("a colour per instance", () => {
     () =>
       Effect.gen(function* () {
         const { app, hand, mesh } = yield* play();
-        const rocks = [1, 2, 3].map((y) =>
+        const rocks = yield* Effect.forEach([1, 2, 3], (y) =>
           hand.spawn(Rock, Position.of({ x: 0, y, z: 0 }), paint(1, 1, 1))
         );
-        app.frame();
+        yield* app.frame();
         const colors = mesh().instanceColor!;
         expect(colors.updateRanges).toEqual([{ start: 0, count: 9 }]);
         const [range] = colors.updateRanges;
         const sent = colors.version;
         expect(sent).toBeGreaterThan(0);
         colors.clearUpdateRanges();
-        hand.despawn(rocks[0]!);
-        app.frame();
+        yield* hand.despawn(rocks[0]!);
+        yield* app.frame();
         expect(colors.updateRanges).toEqual([{ start: 0, count: 6 }]);
         expect(colors.updateRanges[0]).toBe(range);
         expect(colors.version).toBe(sent + 1);
         // A renderer that sent nothing in between is not told twice.
-        app.frame();
+        yield* app.frame();
         expect(colors.updateRanges.length).toBe(1);
         // Nothing to draw: nothing to send.
-        hand.despawn(rocks[1]!);
-        hand.despawn(rocks[2]!);
+        yield* hand.despawn(rocks[1]!);
+        yield* hand.despawn(rocks[2]!);
         colors.clearUpdateRanges();
         const before = colors.version;
-        app.frame();
+        yield* app.frame();
         expect(colors.updateRanges).toEqual([]);
         expect(colors.version).toBe(before);
         expect(mesh().instanceColor).toBe(colors);
@@ -2866,20 +2910,20 @@ describe("a colour per instance", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Fading] })
         );
-        const rock = hand.spawn(
+        const rock = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           paint(0, 0.5, 1)
         );
-        app.frame(0.5);
+        yield* app.frame(0.5);
         expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
-        hand.set(rock, Color.Rgb, { r: 1, g: 0.5, b: 0 });
-        app.tick(1);
-        app.frame(0);
+        yield* hand.set(rock, Color.Rgb, { r: 1, g: 0.5, b: 0 });
+        yield* app.tick(1);
+        yield* app.frame(0);
         expect(colorAt(mesh(), 1)).toEqual([0, 0.5, 1]);
-        app.frame(0.25);
+        yield* app.frame(0.25);
         expect(colorAt(mesh(), 1)).toEqual([0.25, 0.5, 0.75]);
-        app.frame(1);
+        yield* app.frame(1);
         expect(colorAt(mesh(), 1)).toEqual([1, 0.5, 0]);
       })
   );
@@ -2903,7 +2947,7 @@ describe("a colour per instance", () => {
         const between = [0.003, 0.0401, 0.0409, 0.2, 0.5173, 0.9999];
         for (const [i, code] of codes.entries()) {
           const hex = Number.parseInt(code.slice(1), 16);
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 0, y: i + 1, z: 0 }),
             srgb((hex >> 16) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255)
@@ -2911,14 +2955,14 @@ describe("a colour per instance", () => {
         }
         for (const [i, c] of between.entries()) {
           // Of every kind of entity: the conversion is one, whatever the loop.
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 0, y: i + 11, z: 0 }),
             ...(i % 2 === 0 ? [] : [Rotation, Scale.of({ x: 1, y: 1, z: 1 })]),
             srgb(c, 1 - c, c)
           );
         }
-        app.frame();
+        yield* app.frame();
         for (const [i, code] of codes.entries()) {
           // What Three.js itself holds of the code, in the space it works in.
           const { b, g, r } = new ThreeColor(code);
@@ -2977,13 +3021,13 @@ describe("a colour per instance", () => {
           colours.push([random.next(), random.next(), random.next()]);
         }
         for (const [i, [r, g, b]] of colours.entries()) {
-          hand.spawn(
+          yield* hand.spawn(
             Rock,
             Position.of({ x: 0, y: i + 1, z: 0 }),
             srgb(r, g, b)
           );
         }
-        app.frame();
+        yield* app.frame();
         const drawnColours = mesh().instanceColor!.array;
         const heights = mesh().instanceMatrix.array;
         const want = new ThreeColor();
@@ -3006,12 +3050,12 @@ describe("a colour per instance", () => {
     () =>
       Effect.gen(function* () {
         const { app, hand, mesh } = yield* play();
-        const given = hand.spawn(
+        const given = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           srgb(0, 0, 0)
         );
-        const clamped = hand.spawn(
+        const clamped = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 2, z: 0 }),
           srgb(0, 0, 0)
@@ -3027,9 +3071,13 @@ describe("a colour per instance", () => {
           // Past what a 32-bit integer holds, which would wrap back into range.
           [1052689, 0.5, 0.5, [1, 0.5, 0.5]],
         ] as const) {
-          hand.set(given, Color.Rgb, { r, g, b });
-          hand.set(clamped, Color.Rgb, { r: same[0], g: same[1], b: same[2] });
-          app.frame();
+          yield* hand.set(given, Color.Rgb, { r, g, b });
+          yield* hand.set(clamped, Color.Rgb, {
+            r: same[0],
+            g: same[1],
+            b: same[2],
+          });
+          yield* app.frame();
           expect(colorAt(mesh(), 1)).toEqual(colorAt(mesh(), 2));
         }
       })
@@ -3068,7 +3116,7 @@ describe("a colour per instance", () => {
           ),
           renderer
         );
-        const rock = hand.spawn(
+        const rock = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           srgb(1, 1, 1)
@@ -3077,9 +3125,9 @@ describe("a colour per instance", () => {
           [0, Number.NaN],
           [1, Number.POSITIVE_INFINITY],
         ] as const) {
-          hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
-          app.tick(1);
-          expect(() => app.frame()).toThrow(
+          yield* hand.set(rock, Color.Rgb, { r, g: 0.5, b: 0.5 });
+          yield* app.tick(1);
+          expect(yield* thrown(app.frame())).toThrow(
             `Three.instances("th/Painted") was given the colour (${spoilt}, 0.5, 0.5) by the entity of slot ${entityIndex(rock)}, generation ${entityGeneration(rock)}, which is no colour: each number of a colour in Color.Srgb is finite. One below 0 is drawn as 0 and one over 1 as 1, but NaN and an infinity, such as a division by zero leaves, have no colour to be drawn as.`
           );
         }
@@ -3091,8 +3139,12 @@ describe("a colour per instance", () => {
     () =>
       Effect.gen(function* () {
         const { app, hand, mesh } = yield* play();
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(4, 0, -1));
-        app.frame();
+        yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 1, z: 0 }),
+          paint(4, 0, -1)
+        );
+        yield* app.frame();
         expect(colorAt(mesh(), 1)).toEqual([4, 0, -1]);
       })
   );
@@ -3112,21 +3164,21 @@ describe("a colour per instance", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Fading] })
         );
-        const rock = hand.spawn(
+        const rock = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 1, z: 0 }),
           srgb(0, 0.2, 1)
         );
-        app.frame(0.5);
-        hand.set(rock, Color.Rgb, { r: 1, g: 0.2, b: 0 });
-        app.tick(1);
-        app.frame(0.25);
+        yield* app.frame(0.5);
+        yield* hand.set(rock, Color.Rgb, { r: 1, g: 0.2, b: 0 });
+        yield* app.tick(1);
+        yield* app.frame(0.25);
         // A quarter of the way between the two codes, as a code.
         const there = new ThreeColor().setRGB(0.25, 0.2, 0.75, SRGBColorSpace);
         expect(colorAt(mesh(), 1)[0]).toBeCloseTo(there.r, 3);
         expect(colorAt(mesh(), 1)[1]).toBeCloseTo(there.g, 3);
         expect(colorAt(mesh(), 1)[2]).toBeCloseTo(there.b, 3);
-        app.frame(1);
+        yield* app.frame(1);
         expect(colorAt(mesh(), 1)[0]).toBe(1);
         expect(colorAt(mesh(), 1)[2]).toBe(0);
       })
@@ -3145,9 +3197,13 @@ describe("a colour per instance", () => {
         const { app, hand, mesh } = yield* play(
           App.define({ plugins, systems: [Plain] })
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
-        hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(1, 0, 0));
-        app.frame();
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }));
+        yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 2, z: 0 }),
+          paint(1, 0, 0)
+        );
+        yield* app.frame();
         expect(mesh().count).toBe(2);
         expect(mesh().instanceColor).toBeNull();
       })
@@ -3195,25 +3251,33 @@ describe("a colour per instance", () => {
         // linear one brighter than white.
         const { app, hand, mesh } = yield* play();
         const half = new ThreeColor().setRGB(0.5, 0.5, 0.5, SRGBColorSpace).r;
-        hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), srgb(1, 0.5, 0));
-        hand.spawn(Rock, Position.of({ x: 0, y: 2, z: 0 }), paint(4, 0.5, 0));
-        const turned = hand.spawn(
+        yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 1, z: 0 }),
+          srgb(1, 0.5, 0)
+        );
+        yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 2, z: 0 }),
+          paint(4, 0.5, 0)
+        );
+        const turned = yield* hand.spawn(
           Rock,
           Position.of({ x: 0, y: 3, z: 0 }),
           paint(0, 0, 1)
         );
-        app.frame();
+        yield* app.frame();
         expect(colorAt(mesh(), 1)[0]).toBe(1);
         expect(colorAt(mesh(), 1)[1]).toBeCloseTo(half, 6);
         expect(colorAt(mesh(), 2)).toEqual([4, 0.5, 0]);
         expect(colorAt(mesh(), 3)).toEqual([0, 0, 1]);
         // The same numbers in the other space are another colour.
-        hand.set(turned, Color.Rgb, { b: 0.5, space: Color.Srgb });
-        app.frame();
+        yield* hand.set(turned, Color.Rgb, { b: 0.5, space: Color.Srgb });
+        yield* app.frame();
         expect(colorAt(mesh(), 3)[2]).toBeCloseTo(half, 6);
         // @ts-expect-error a space is Color.Srgb or Color.Linear
-        hand.set(turned, Color.Rgb, { space: 2 });
-        expect(() => app.frame()).toThrow(
+        yield* hand.set(turned, Color.Rgb, { space: 2 });
+        expect(yield* thrown(app.frame())).toThrow(
           `Three.instances("th/Painted") was given the colour (0, 0, 0.5) by the entity of slot ${entityIndex(turned)}, generation ${entityGeneration(turned)}, which is no colour: its space is 2, and a colour's space is Color.Srgb (0) or Color.Linear (1).`
         );
       })
@@ -3222,8 +3286,12 @@ describe("a colour per instance", () => {
   it.effect("goes with the mesh when the app's scope closes", () =>
     Effect.gen(function* () {
       const { app, close, hand, mesh } = yield* play();
-      hand.spawn(Rock, Position.of({ x: 0, y: 1, z: 0 }), paint(1, 1, 1));
-      app.frame();
+      yield* hand.spawn(
+        Rock,
+        Position.of({ x: 0, y: 1, z: 0 }),
+        paint(1, 1, 1)
+      );
+      yield* app.frame();
       const kept = mesh();
       let disposed = 0;
       kept.instanceColor!.addEventListener("dispose", () => {
@@ -3281,24 +3349,24 @@ describe("Three.objects", () => {
       Effect.gen(function* () {
         const { app, hand } = yield* fresh();
         const quarter = Transform3d.axisAngle(0, 0, 1, Math.PI / 2);
-        const long = hand.spawn(
+        const long = yield* hand.spawn(
           Ship,
           Position.of({ x: 1, y: 0, z: 0 }),
           Rotation.of(stretched(quarter, 7)),
           Scale.of({ x: 2, y: 3, z: 4 })
         );
-        const short = hand.spawn(
+        const short = yield* hand.spawn(
           Ship,
           Position.of({ x: 2, y: 0, z: 0 }),
           Rotation.of(stretched(quarter, 0.001))
         );
         // All zeros is not turned at all.
-        const still = hand.spawn(
+        const still = yield* hand.spawn(
           Ship,
           Position.of({ x: 3, y: 0, z: 0 }),
           Rotation
         );
-        app.frame();
+        yield* app.frame();
         for (const ship of [long, short]) {
           const object = objectOf(ship)!;
           expect(object.quaternion.length()).toBeCloseTo(1, 6);
@@ -3326,17 +3394,20 @@ describe("Three.objects", () => {
       Effect.gen(function* () {
         const { app, hand, renderer } = yield* fresh();
         const turn = Transform3d.axisAngle(0, 1, 0, 0.75);
-        const plain = hand.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
-        const whole = hand.spawn(
+        const plain = yield* hand.spawn(
+          Ship,
+          Position.of({ x: 1, y: 2, z: 3 })
+        );
+        const whole = yield* hand.spawn(
           Ship,
           Position.of({ x: -1, y: -2, z: -3 }),
           Rotation.of(turn),
           Scale.of({ x: 2, y: 3, z: 4 })
         );
-        hand.spawn(Rock, Position.of({ x: 9, y: 9, z: 9 }));
+        yield* hand.spawn(Rock, Position.of({ x: 9, y: 9, z: 9 }));
         // One that is turned and sized, and nowhere.
-        hand.remove(hand.spawn(Ship, Rotation, Scale), Position);
-        app.frame();
+        yield* hand.remove(yield* hand.spawn(Ship, Rotation, Scale), Position);
+        yield* app.frame();
         expect(
           made
             .map((one) => one.entity)
@@ -3354,10 +3425,10 @@ describe("Three.objects", () => {
         expectTurned(objectOf(whole)!, turn);
         expect(objectOf(whole)!.scale.toArray()).toEqual([2, 3, 4]);
         // It moves with its entity, and is not made again.
-        hand.set(plain, Position, { x: 10, y: 20, z: 30 });
-        hand.set(whole, Scale, { x: 5, y: 5, z: 5 });
-        hand.set(whole, Rotation, { x: 0, y: 0, z: 1, w: 0 });
-        app.frame();
+        yield* hand.set(plain, Position, { x: 10, y: 20, z: 30 });
+        yield* hand.set(whole, Scale, { x: 5, y: 5, z: 5 });
+        yield* hand.set(whole, Rotation, { x: 0, y: 0, z: 1, w: 0 });
+        yield* app.frame();
         expect(made.length).toBe(2);
         expect(freed).toEqual([]);
         expect(objectOf(plain)!.position.toArray()).toEqual([10, 20, 30]);
@@ -3373,14 +3444,14 @@ describe("Three.objects", () => {
         const { app, hand } = yield* fresh();
         // A slot given out 1,100 times: the next entity in it has such an id.
         for (let n = 0; n < 1100; n++) {
-          hand.despawn(hand.spawn(Ship));
+          yield* hand.despawn(yield* hand.spawn(Ship));
         }
-        const ship = hand.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
+        const ship = yield* hand.spawn(Ship, Position.of({ x: 1, y: 2, z: 3 }));
         expect(ship).toBeGreaterThan(2 ** 32);
-        app.frame();
-        hand.set(ship, Position, { x: 4, y: 5, z: 6 });
-        app.frame();
-        app.frame();
+        yield* app.frame();
+        yield* hand.set(ship, Position, { x: 4, y: 5, z: 6 });
+        yield* app.frame();
+        yield* app.frame();
         // Made once, for this entity, and not again for every frame that
         // finds it.
         expect(made.map((one) => one.entity)).toEqual([ship]);
@@ -3395,17 +3466,18 @@ describe("Three.objects", () => {
       Effect.gen(function* () {
         const { app, hand, renderer } = yield* fresh();
         const at = (x: number) => Position.of({ x, y: 0, z: 0 });
-        const [gone, unmarked, hidden, nowhere, stays] = [1, 2, 3, 4, 5].map(
+        const [gone, unmarked, hidden, nowhere, stays] = (yield* Effect.forEach(
+          [1, 2, 3, 4, 5],
           (x) => hand.spawn(Ship, at(x))
-        ) as [Entity, Entity, Entity, Entity, Entity];
-        app.frame();
+        )) as [Entity, Entity, Entity, Entity, Entity];
+        yield* app.frame();
         expect(made.length).toBe(5);
         const objects = new Map(made.map((one) => [one.entity, one.object]));
-        hand.despawn(gone);
-        hand.remove(unmarked, Ship);
-        hand.add(hidden, Hidden);
-        hand.remove(nowhere, Position);
-        app.frame();
+        yield* hand.despawn(gone);
+        yield* hand.remove(unmarked, Ship);
+        yield* hand.add(hidden, Hidden);
+        yield* hand.remove(nowhere, Position);
+        yield* app.frame();
         expect(
           freed
             .map((one) => one.entity)
@@ -3421,11 +3493,11 @@ describe("Three.objects", () => {
         }
         expect(renderer.scene?.children).toEqual([objects.get(stays)]);
         // Each was freed once.
-        app.frame();
+        yield* app.frame();
         expect(freed.length).toBe(4);
         // One that is one of these again gets a new object.
-        hand.remove(hidden, Hidden);
-        app.frame();
+        yield* hand.remove(hidden, Hidden);
+        yield* app.frame();
         expect(made.length).toBe(6);
         expect(objectOf(hidden)).not.toBe(objects.get(hidden));
         expect(objectOf(hidden)!.position.x).toBe(3);
@@ -3438,27 +3510,30 @@ describe("Three.objects", () => {
     () =>
       Effect.gen(function* () {
         const { app, hand } = yield* fresh();
-        const first = hand.spawn(
+        const first = yield* hand.spawn(
           Ship,
           Position.of({ x: 1, y: 1, z: 1 }),
           Rotation.of({ x: 0, y: 0, z: 1, w: 0 }),
           Scale.of({ x: 3, y: 3, z: 3 })
         );
-        app.frame();
+        yield* app.frame();
         const old = objectOf(first)!;
-        hand.despawn(first);
+        yield* hand.despawn(first);
         tilted = true;
-        const second = hand.spawn(Ship, Position.of({ x: 2, y: 2, z: 2 }));
+        const second = yield* hand.spawn(
+          Ship,
+          Position.of({ x: 2, y: 2, z: 2 })
+        );
         // The same slot, and another entity.
         expect(entityIndex(second)).toBe(entityIndex(first));
         expect(second).not.toBe(first);
-        app.frame();
+        yield* app.frame();
         expect(freed).toEqual([{ object: old, entity: first }]);
         expect(objectOf(second)).not.toBe(old);
         expect(objectOf(second)!.position.toArray()).toEqual([2, 2, 2]);
         // The new one was never turned or sized: what `make` gave it stands,
         // this frame and the next.
-        app.frame();
+        yield* app.frame();
         expect(objectOf(second)!.quaternion.toArray()).toEqual([0, 1, 0, 0]);
         expect(objectOf(second)!.scale.toArray()).toEqual([2, 2, 2]);
         expect(old.parent).toBeNull();
@@ -3472,26 +3547,26 @@ describe("Three.objects", () => {
     () =>
       Effect.gen(function* () {
         const { app, hand } = yield* fresh();
-        const ship = hand.spawn(
+        const ship = yield* hand.spawn(
           Ship,
           Position.of({ x: 0, y: 0, z: 0 }),
           Rotation.of({ x: 1, y: 0, z: 0, w: 0 }),
           Scale.of({ x: 3, y: 3, z: 3 })
         );
-        app.frame();
+        yield* app.frame();
         const object = objectOf(ship)!;
         expect(object.quaternion.toArray()).toEqual([1, 0, 0, 0]);
-        hand.remove(ship, Rotation);
-        app.frame();
+        yield* hand.remove(ship, Rotation);
+        yield* app.frame();
         expect(object.quaternion.toArray()).toEqual([0, 0, 0, 1]);
         expect(object.scale.toArray()).toEqual([3, 3, 3]);
-        hand.remove(ship, Scale);
-        app.frame();
+        yield* hand.remove(ship, Scale);
+        yield* app.frame();
         expect(object.scale.toArray()).toEqual([1, 1, 1]);
         // What the game itself then sets on the object is left alone.
         object.scale.set(7, 7, 7);
         object.quaternion.set(0, 1, 0, 0);
-        app.frame();
+        yield* app.frame();
         expect(object.scale.toArray()).toEqual([7, 7, 7]);
         expect(object.quaternion.toArray()).toEqual([0, 1, 0, 0]);
         expect(made.length).toBe(1);
@@ -3527,22 +3602,22 @@ describe("Three.objects", () => {
               if (random.next() < 0.3) {
                 parts.push(Scale.of({ x: 2, y: 2, z: 2 }));
               }
-              all.push(hand.spawn(...parts));
+              all.push(yield* hand.spawn(...parts));
             } else if (roll === 3) {
-              hand.despawn(one);
+              yield* hand.despawn(one);
               all.splice(all.indexOf(one), 1);
             } else if (roll === 4) {
-              hand.add(one, Hidden);
+              yield* hand.add(one, Hidden);
             } else if (roll === 5) {
-              hand.remove(one, Hidden);
+              yield* hand.remove(one, Hidden);
             } else if (roll === 6) {
-              hand.remove(one, Ship);
+              yield* hand.remove(one, Ship);
             } else if (roll === 7) {
-              hand.add(one, Ship);
+              yield* hand.add(one, Ship);
             } else if (roll === 8) {
-              hand.remove(one, Rotation);
+              yield* hand.remove(one, Rotation);
             } else {
-              hand.add(
+              yield* hand.add(
                 one,
                 Position.of({
                   x: random.int(100),
@@ -3552,7 +3627,7 @@ describe("Three.objects", () => {
               );
             }
           }
-          app.frame();
+          yield* app.frame();
           const shown = all.filter(
             (one) => world.has(one, Ship) && !world.has(one, Hidden)
           );
@@ -3595,11 +3670,14 @@ describe("Three.objects", () => {
     () =>
       Effect.gen(function* () {
         const first = yield* fresh();
-        const ship = first.hand.spawn(Ship, Position.of({ x: 4, y: 5, z: 6 }));
-        first.app.frame();
-        first.app.tick(1 / 60);
+        const ship = yield* first.hand.spawn(
+          Ship,
+          Position.of({ x: 4, y: 5, z: 6 })
+        );
+        yield* first.app.frame();
+        yield* first.app.tick(1 / 60);
         const hash = first.world.hash();
-        const save = first.app.save();
+        const save = yield* Effect.exit(first.app.save());
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }
@@ -3611,7 +3689,7 @@ describe("Three.objects", () => {
         );
         expect(world.hash()).toBe(hash);
         expect(made).toEqual([]);
-        app.frame();
+        yield* app.frame();
         expect(made.map((one) => one.entity)).toEqual([ship]);
         expect(objectOf(ship)!.position.toArray()).toEqual([4, 5, 6]);
         expect(renderer.scene?.children).toEqual([objectOf(ship)]);
@@ -3621,12 +3699,12 @@ describe("Three.objects", () => {
   it.effect("frees every object it still has when the app's scope closes", () =>
     Effect.gen(function* () {
       const { app, close, hand, renderer } = yield* fresh();
-      const ships = [1, 2, 3].map((x) =>
+      const ships = yield* Effect.forEach([1, 2, 3], (x) =>
         hand.spawn(Ship, Position.of({ x, y: 0, z: 0 }))
       );
-      app.frame();
-      hand.despawn(ships[0]!);
-      app.frame();
+      yield* app.frame();
+      yield* hand.despawn(ships[0]!);
+      yield* app.frame();
       expect(freed.length).toBe(1);
       yield* close;
       expect(
@@ -3679,20 +3757,20 @@ describe("Three.plugin", () => {
         );
         expect(app.frameOrder.at(-1)).toBe("arcadekit/three/Render");
         for (let i = 0; i < 3; i++) {
-          hand.spawn(Rock, Position.of({ x: i, y: 0, z: 0 }));
+          yield* hand.spawn(Rock, Position.of({ x: i, y: 0, z: 0 }));
         }
-        hand.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
+        yield* hand.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
         // Nothing is drawn by a tick.
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         expect(renderer.frames).toBe(0);
-        app.frame();
+        yield* app.frame();
         expect(order).toEqual(["make", "aim", "render"]);
         expect(renderer.frames).toBe(1);
         expect(renderer.camera).toBe(camera);
         // The instances were counted before the scene was drawn.
         expect(renderer.counts).toEqual([3]);
-        app.frame(0.5);
-        app.frame(0.9);
+        yield* app.frame(0.5);
+        yield* app.frame(0.9);
         expect(renderer.frames).toBe(3);
       })
   );
@@ -3719,7 +3797,7 @@ describe("Three.plugin", () => {
         );
         expect(seen?.camera).toBeInstanceOf(PerspectiveCamera);
         expect(seen?.camera.position.toArray()).toEqual([0, 0, 10]);
-        app.frame();
+        yield* app.frame();
         expect(renderer.scene).toBe(seen?.scene);
         expect(renderer.camera).toBe(seen?.camera);
         expect(renderer.scene?.children).toEqual([light]);
@@ -3780,10 +3858,10 @@ describe("Three.plugin", () => {
         });
         const bareWorld = yield* bare.read(World);
         for (let tick = 0; tick < 60; tick++) {
-          drawnGame.tick(1 / 60);
-          drawnGame.frame(0.3);
-          drawnGame.frame(0.8);
-          bare.tick(1 / 60);
+          yield* drawnGame.tick(1 / 60);
+          yield* drawnGame.frame(0.3);
+          yield* drawnGame.frame(0.8);
+          yield* bare.tick(1 / 60);
           expect(drawnWorld.hash()).toBe(bareWorld.hash());
         }
         expect(drawnGame.actionLog).toEqual(bare.actionLog);
@@ -4006,8 +4084,8 @@ describe("the geometries and materials a system draws with", () => {
           App.make(App.define({ plugins: [Rocks] })),
           renderer
         );
-        hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
-        app.frame();
+        yield* hand.spawn(Rock, Position.of({ x: 0, y: 0, z: 0 }));
+        yield* app.frame();
         const seen = disposals(shared, own, other);
         yield* close;
         expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);
@@ -4049,12 +4127,15 @@ describe("the geometries and materials a system draws with", () => {
           App.make(App.define({ plugins: [Ships] })),
           renderer
         );
-        const first = hand.spawn(Ship, Position.of({ x: 0, y: 0, z: 0 }));
-        hand.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
-        app.frame();
+        const first = yield* hand.spawn(
+          Ship,
+          Position.of({ x: 0, y: 0, z: 0 })
+        );
+        yield* hand.spawn(Ship, Position.of({ x: 1, y: 0, z: 0 }));
+        yield* app.frame();
         const seen = disposals(hull, ...paints);
-        hand.despawn(first);
-        app.frame();
+        yield* hand.despawn(first);
+        yield* app.frame();
         expect(seen).toEqual([1]);
         yield* close;
         expect(seen.toSorted((a, b) => a - b)).toEqual([0, 1, 2]);

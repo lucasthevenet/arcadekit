@@ -113,7 +113,7 @@ describe("Transform2d", () => {
         const world = yield* app.read(World);
         const placed = spawned.map((id) => placedIn(world, id));
         const flat = yield* app.read(Query.all(Position));
-        app.dispatch(Slide, { x: 3, y: 4 });
+        yield* app.dispatch(Slide, { x: 3, y: 4 });
         expect(
           placed.map((both) => [
             world.get(both, Position),
@@ -126,7 +126,7 @@ describe("Transform2d", () => {
           ],
         ]);
         expect(flat.count()).toBe(1);
-        app.dispatch(Lift, {});
+        yield* app.dispatch(Lift, {});
         expect(flat.count()).toBe(0);
         expect(
           placed.map((both) => world.get(both, Transform3d.Position))
@@ -169,7 +169,7 @@ describe("Transform2d", () => {
           App.define({ plugins: [Deal], systems: [Drift] })
         );
         const world = yield* app.read(World);
-        app.tick(0.5);
+        yield* app.tick(0.5);
         const moved = spawned
           .map((id) => placedIn(world, id))
           .map((card) => [
@@ -209,7 +209,7 @@ describe("Transform2d", () => {
         const Flat = App.define({ plugins: [Deal] });
         const app = yield* App.make(Flat);
         const made = (yield* app.read(World)).hash();
-        const save = app.save();
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }

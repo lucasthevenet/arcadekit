@@ -104,11 +104,13 @@ describe("actions with a schema", () => {
     withApp(game, ({ app, target }) =>
       Effect.gen(function* () {
         received.length = 0;
-        const exit = app.dispatch(Damage, {
-          target,
-          amount: 4,
-          seed: 12_345_678_901_234_567_890n,
-        });
+        const exit = yield* Effect.exit(
+          app.dispatch(Damage, {
+            target,
+            amount: 4,
+            seed: 12_345_678_901_234_567_890n,
+          })
+        );
         expect(exit).toEqual(Exit.succeed(46));
         // The handler gets the value as given...
         expect(received).toEqual([
@@ -138,11 +140,13 @@ describe("actions with a schema", () => {
       withApp(game, ({ app, world, target }) =>
         Effect.gen(function* () {
           received.length = 0;
-          const exit = app.dispatch(Damage, {
-            target,
-            amount: 999,
-            seed: 1n,
-          });
+          const exit = yield* Effect.exit(
+            app.dispatch(Damage, {
+              target,
+              amount: 999,
+              seed: 1n,
+            })
+          );
           const error = failure(exit);
           assert(error._tag === "InvalidPayload");
           expect(error.action).toBe("Damage");
@@ -159,12 +163,14 @@ describe("actions with a schema", () => {
     withApp(game, ({ app, target }) =>
       Effect.gen(function* () {
         received.length = 0;
-        const exit = app.dispatchByName("Damage", {
-          target,
-          amount: 3,
-          seed: "77",
-          note: "from the network",
-        });
+        const exit = yield* Effect.exit(
+          app.dispatchByName("Damage", {
+            target,
+            amount: 3,
+            seed: "77",
+            note: "from the network",
+          })
+        );
         expect(exit).toEqual(Exit.succeed(47));
         // Decoded for the handler: the seed is a bigint again.
         expect(received).toEqual([
@@ -198,26 +204,30 @@ describe("actions with a schema", () => {
           ["undefined", undefined],
         ];
         for (const [label, payload] of bad) {
-          const error = failure(app.dispatchByName("Damage", payload));
+          const error = failure(
+            yield* Effect.exit(app.dispatchByName("Damage", payload))
+          );
           assert(Schema.is(Action.InvalidPayload)(error), label);
           expect(error.message.length, label).toBeGreaterThan(0);
         }
-        expect(failure(app.dispatchByName("Nope", {}))).toEqual(
-          Action.UnknownAction.make({ action: "Nope" })
-        );
-        expect(failure(app.dispatchByName("constructor", {}))).toBeInstanceOf(
-          Action.UnknownAction
-        );
+        expect(
+          failure(yield* Effect.exit(app.dispatchByName("Nope", {})))
+        ).toEqual(Action.UnknownAction.make({ action: "Nope" }));
+        expect(
+          failure(yield* Effect.exit(app.dispatchByName("constructor", {})))
+        ).toBeInstanceOf(Action.UnknownAction);
 
         // A well-formed payload can still be refused by the rules.
         const dead = entityOf(4000);
         expect(
           failure(
-            app.dispatchByName("Damage", {
-              target: dead,
-              amount: 3,
-              seed: "1",
-            })
+            yield* Effect.exit(
+              app.dispatchByName("Damage", {
+                target: dead,
+                amount: 3,
+                seed: "1",
+              })
+            )
           )
         ).toEqual(NoSuchTarget.make({ target: dead }));
 
@@ -251,18 +261,34 @@ describe("actions with a schema", () => {
         );
         yield* withApp(make, ({ app, world, target }) =>
           Effect.gen(function* () {
-            app.enqueueByName("Damage", { target, amount: 5, seed: "9" });
-            app.enqueueByName("Damage", { target, amount: 500, seed: "9" });
-            app.enqueueByName("Teleport", { x: 1 });
+            yield* app.enqueueByName("Damage", {
+              target,
+              amount: 5,
+              seed: "9",
+            });
+            yield* app.enqueueByName("Damage", {
+              target,
+              amount: 500,
+              seed: "9",
+            });
+            yield* app.enqueueByName("Teleport", { x: 1 });
             expect(
-              app.enqueue(Damage, { target, amount: 2, seed: 9n })
+              yield* Effect.exit(
+                app.enqueue(Damage, { target, amount: 2, seed: 9n })
+              )
             ).toEqual(Exit.void);
             // Refused by its handler: no such target.
-            app.enqueue(Damage, { target: entityOf(999), amount: 3, seed: 7n });
+            yield* app.enqueue(Damage, {
+              target: entityOf(999),
+              amount: 3,
+              seed: 7n,
+            });
             // A payload its schema refuses has no JSON form to log or send: it is
             // refused where it is enqueued, and nothing is queued.
             expect(
-              app.enqueue(Damage, { target, amount: -2, seed: 9n })
+              yield* Effect.exit(
+                app.enqueue(Damage, { target, amount: -2, seed: 9n })
+              )
             ).toEqual(
               Exit.fail(
                 Action.InvalidPayload.make({
@@ -271,7 +297,7 @@ describe("actions with a schema", () => {
                 })
               )
             );
-            app.tick(1);
+            yield* app.tick(1);
             expect(world.get(target, Health)).toEqual({ hp: 43 });
             expect(rejected).toEqual([
               "Damage: InvalidPayload",
@@ -313,7 +339,9 @@ describe("actions with a schema", () => {
             // The mark is the error's own message where it has one, and its name
             // where it has none.
             const invalid = Exit.findErrorOption(
-              app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
+              yield* Effect.exit(
+                app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
+              )
             );
             expect(moves(app.actionLog)[1]!.refused).toBe(
               Option.getOrThrow(invalid as Option.Option<Error>).message
@@ -338,24 +366,28 @@ describe("actions with a schema", () => {
         void (() => Action.define<{ readonly name: string }>()("Typed"));
         yield* withApp(game, ({ app }) =>
           Effect.gen(function* () {
-            const exit: Exit.Exit<string, Action.InvalidPayload> = app.dispatch(
-              Rename,
-              { name: "bob" }
-            );
+            const exit: Exit.Exit<string, Action.InvalidPayload> =
+              yield* Effect.exit(app.dispatch(Rename, { name: "bob" }));
             expect(exit).toEqual(Exit.succeed("BOB"));
             // By name, a wrong shape is refused before the handler sees it.
-            const wrong = failure(app.dispatchByName("Rename", { name: 42 }));
+            const wrong = failure(
+              yield* Effect.exit(app.dispatchByName("Rename", { name: 42 }))
+            );
             expect(wrong).toBeInstanceOf(Action.InvalidPayload);
 
             // An action with no payload is issued with nothing, logged as null, and
             // taken by name as null.
             resets.length = 0;
-            expect(Exit.isSuccess(app.dispatch(Reset, undefined))).toBe(true);
-            expect(Exit.isSuccess(app.dispatchByName("Reset", null))).toBe(
-              true
-            );
             expect(
-              failure(app.dispatchByName("Reset", { x: 1 }))
+              Exit.isSuccess(yield* Effect.exit(app.dispatch(Reset, undefined)))
+            ).toBe(true);
+            expect(
+              Exit.isSuccess(
+                yield* Effect.exit(app.dispatchByName("Reset", null))
+              )
+            ).toBe(true);
+            expect(
+              failure(yield* Effect.exit(app.dispatchByName("Reset", { x: 1 })))
             ).toBeInstanceOf(Action.InvalidPayload);
             expect(resets).toEqual([undefined, undefined]);
             expect(
@@ -433,9 +465,9 @@ describe("events with a schema", () => {
         });
         yield* withApp(App.make(App.define({ systems: [Emit, Read] })), (app) =>
           Effect.gen(function* () {
-            app.tick(1);
+            yield* app.tick(1);
             expect(seen).toEqual([3, "three", 500]);
-            expect(app.inspect().events["sc/Hit"]).toHaveLength(3);
+            expect((yield* app.inspect()).events["sc/Hit"]).toHaveLength(3);
           })
         );
         expect(Hit.name).toBe("sc/Hit");
@@ -512,7 +544,7 @@ describe("events with a schema", () => {
         });
         yield* withApp(App.make(App.define({ systems: [Both] })), (app) =>
           Effect.gen(function* () {
-            expect(() => app.tick(1)).toThrow(
+            expect(yield* thrown(app.tick(1))).toThrow(
               /Two different events are both named "sc\/Hit"/
             );
           })
@@ -529,7 +561,7 @@ describe("events with a schema", () => {
           App.make(App.define({ systems: [Alone, Hear] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               expect(heard).toEqual([2]);
             })
         );
@@ -546,7 +578,7 @@ describe("events with a schema", () => {
           App.make(App.define({ systems: [Shout, Hear] })),
           (app) =>
             Effect.gen(function* () {
-              expect(() => app.tick(1)).toThrow(/both named/);
+              expect(yield* thrown(app.tick(1))).toThrow(/both named/);
             })
         );
       })
@@ -564,16 +596,21 @@ describe("saving and replaying", () => {
   const record = Effect.fnUntraced(function* () {
     return yield* withApp(game, ({ app, world, target }) =>
       Effect.gen(function* () {
-        app.dispatch(Damage, { target, amount: 4, seed: 1n });
-        app.tick(1);
-        app.enqueue(Damage, { target, amount: 10, seed: 2n, note: "big hit" });
-        app.tick(1);
-        app.tick(1);
-        app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
-        app.dispatch(Rename, { name: "x" });
-        app.tick(1);
+        yield* app.dispatch(Damage, { target, amount: 4, seed: 1n });
+        yield* app.tick(1);
+        yield* app.enqueue(Damage, {
+          target,
+          amount: 10,
+          seed: 2n,
+          note: "big hit",
+        });
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
+        yield* app.dispatch(Rename, { name: "x" });
+        yield* app.tick(1);
         return {
-          bytes: Journal.encode(app.record()),
+          bytes: Journal.encode(yield* app.record()),
           hp: world.get(target, Health)!.hp,
         };
       })
@@ -653,11 +690,11 @@ describe("saving and replaying", () => {
         return yield* withApp(game, ({ app }) =>
           Effect.gen(function* () {
             for (let tick = 0; tick < ticks; tick++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
-            const save = app.save();
+            const save = yield* Effect.exit(app.save());
             assert(Exit.isSuccess(save));
-            return Journal.encode(app.record(save.value));
+            return Journal.encode(yield* app.record(save.value));
           })
         );
       });

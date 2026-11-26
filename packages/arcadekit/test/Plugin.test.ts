@@ -157,21 +157,25 @@ describe("plugins", () => {
         const world = yield* app.read(World);
         expect(world.entityCount).toBe(1);
         const [ball] = (yield* app.read(Query.all(Position))).entities();
-        expect(app.dispatch(Wound, { hp: 3 })).toEqual(Exit.void);
+        expect(yield* Effect.exit(app.dispatch(Wound, { hp: 3 }))).toEqual(
+          Exit.void
+        );
 
-        app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
+        yield* app.tick(1); // 9 -> 11, bounces off the wall at 10, loses 1 hp
         expect(world.get(ball!, Position)!.x).toBe(10);
         expect(world.get(ball!, Health)).toEqual({ hp: 2 });
 
         // The handler came with the plugin, and dispatch is typed from it.
         const healed: Exit.Exit<number, NothingToHeal | Action.InvalidPayload> =
-          app.dispatch(Heal, {
-            amount: 5,
-          });
+          yield* Effect.exit(
+            app.dispatch(Heal, {
+              amount: 5,
+            })
+          );
         expect(healed).toEqual(Exit.succeed(7));
 
         // So is the tick's failure type.
-        const exit: Exit.Exit<void, Fragile> = app.tickExit(1);
+        const exit: Exit.Exit<void, Fragile> = yield* Effect.exit(app.tick(1));
         expect(Exit.isSuccess(exit)).toBe(true);
       })
   );
@@ -198,11 +202,13 @@ describe("plugins", () => {
           ),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               expect(seen).toEqual([1]);
-              expect(app.dispatch(Ping, {})).toEqual(Exit.succeed("pong"));
+              expect(yield* Effect.exit(app.dispatch(Ping, {}))).toEqual(
+                Exit.succeed("pong")
+              );
               // @ts-expect-error Heal belongs to Combat, which this app did not install
-              expect(() => app.dispatch(Heal, { amount: 1 })).toThrow(
+              expect(yield* thrown(app.dispatch(Heal, { amount: 1 }))).toThrow(
                 /No handler/
               );
             })
@@ -264,8 +270,8 @@ describe("plugins", () => {
               "setup:Top",
             ]);
             order.length = 0;
-            app.tick(1);
-            app.frame();
+            yield* app.tick(1);
+            yield* app.frame();
             expect(order).toEqual([
               "frame:Core",
               "frame:Left:1",
@@ -321,8 +327,8 @@ describe("plugins", () => {
           App.make(App.define({ plugins: [ArenaPlugin], systems: [Look] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
-              app.frame();
+              yield* app.tick(1);
+              yield* app.frame();
               expect(seen).toEqual(["wall 10 of 10, 0 built"]);
             })
         );
@@ -375,9 +381,9 @@ describe("plugins", () => {
         );
         const save = yield* withApp(App.make(game), (app) =>
           Effect.gen(function* () {
-            app.tick(1);
+            yield* app.tick(1);
             expect(yield* app.read(entities)).toBe(1);
-            return app.save();
+            return yield* Effect.exit(app.save());
           })
         );
         assert(Exit.isSuccess(save));
@@ -414,8 +420,8 @@ describe("plugins", () => {
       );
       yield* withApp(provided, (app) =>
         Effect.gen(function* () {
-          app.tick(1);
-          app.frame();
+          yield* app.tick(1);
+          yield* app.frame();
         })
       );
       expect(played).toEqual(["boing"]);
@@ -427,8 +433,8 @@ describe("plugins", () => {
             App.make(App.define({ plugins: [Sfx] })),
             (app) =>
               Effect.gen(function* () {
-                app.tick(1);
-                app.frame();
+                yield* app.tick(1);
+                yield* app.frame();
               })
           )
         )
@@ -462,7 +468,7 @@ describe("plugins", () => {
         systems: [ReadSpeed],
       });
       yield* withApp(App.make(App.define({ plugins: [Declared] })), (app) =>
-        Effect.sync(() => app.frame())
+        app.frame()
       );
       expect(limits).toEqual([20]);
 
@@ -478,7 +484,7 @@ describe("plugins", () => {
           withApp(
             // @ts-expect-error Units is needed by Undeclared's layer and not declared
             App.make(App.define({ plugins: [Undeclared, Metric] })),
-            (app) => Effect.sync(() => app.frame())
+            (app) => app.frame()
           )
         )
       ).toThrow(/Service not found: .*Units/);
@@ -486,7 +492,7 @@ describe("plugins", () => {
         App.make(App.define({ plugins: [Undeclared] })).pipe(
           Effect.provideService(Units, { scale: 3 })
         ),
-        (app) => Effect.sync(() => app.frame())
+        (app) => app.frame()
       );
       expect(limits).toEqual([20, 6]);
     })
@@ -534,7 +540,7 @@ describe("plugins", () => {
               play: (sound) => void played.push(sound),
             })
           ),
-          (app) => Effect.sync(() => app.frame())
+          (app) => app.frame()
         );
         expect(played).toEqual(["boing"]);
       })

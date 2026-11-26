@@ -4,7 +4,7 @@
  * continues from, and makes the app's services, runner, inbox and loop.
  * `App.make` makes its app here.
  */
-import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Metric, Scope } from "effect";
 import * as Scheduler from "effect/Scheduler";
 
 import * as Action from "../Action.ts";
@@ -53,15 +53,15 @@ export interface Reins<E = never> {
    */
   readonly deliver: (name: string, payload: unknown, from?: string) => void;
   /**
-   * Runs one tick, as `app.tickExit` does on an app nobody has taken over.
+   * Runs one tick, as `app.tick` does on an app nobody has taken over.
    * `observe` is called with undefined before the tick's systems run, and
    * with each system's name once that system has run and its commands are
    * applied.
    */
-  readonly tickExit: (
+  readonly tick: (
     delta: number,
     observe?: (system: string | undefined) => void
-  ) => Exit.Exit<void, E>;
+  ) => Effect.Effect<void, E>;
 }
 
 /**
@@ -85,9 +85,9 @@ export interface Built<E = never, HU = never> {
    * issues itself isn't passed on, since every peer's simulation issues it.
    *
    * The reins are the only remaining way to queue an action and to run a
-   * tick. The app's `tick`, `tickExit`, `dispatch` and `dispatchByName` throw
-   * from then on, since each would advance this machine's game and no one
-   * else's. Taking an app over a second time throws.
+   * tick. The app's `tick`, `dispatch` and `dispatchByName` die from then
+   * on, since each would advance this machine's game and no one else's.
+   * Taking an app over a second time throws.
    */
   readonly take: (issued: (name: string, payload: unknown) => void) => Reins<E>;
 }
@@ -287,24 +287,25 @@ const assemble = <
       verifyFrames: start.verifyFrames === true,
     });
     // What a run ends with is what the game's systems fail with: the loop
-    // runs them as systems of any game, and their types are claimed back.
+    // runs them as systems of any game, and their types are claimed back. A
+    // call where it may not be throws, and the Effect dies with it.
     type Ran = Exit.Exit<void, TickError<S, P>>;
-    const orThrow = (exit: Ran): void => {
-      if (Exit.isFailure(exit)) {
-        throw Cause.squash(exit.cause);
-      }
-    };
-    const frameExit = (alpha = 1, delta?: number): Ran =>
-      loop.frame(alpha, delta) as Ran;
-    const inputExit = (): Ran => loop.input() as Ran;
-    const tickExit = (delta: number): Ran => {
-      if (inbox.diverted !== undefined) {
-        throw new Error(
-          "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
-        );
-      }
-      return loop.tick(delta) as Ran;
-    };
+    const frame = (
+      alpha = 1,
+      delta?: number
+    ): Effect.Effect<void, TickError<S, P>> =>
+      Effect.suspend(() => loop.frame(alpha, delta) as Ran);
+    const input = (): Effect.Effect<void, TickError<S, P>> =>
+      Effect.suspend(() => loop.input() as Ran);
+    const tick = (delta: number): Effect.Effect<void, TickError<S, P>> =>
+      Effect.suspend(() => {
+        if (inbox.diverted !== undefined) {
+          throw new Error(
+            "App.tick was called on an app that a session has taken over. It would move this machine's game a tick ahead of the other peers'. The session steps the app: call the session's tick, or give the session to the driver."
+          );
+        }
+        return loop.tick(delta) as Ran;
+      });
 
     yield* Scope.addFinalizer(
       scope,
@@ -340,69 +341,75 @@ const assemble = <
       frameOrder: schedule.frame.map((turn) => turn.system.name),
       inputOrder: schedule.input.map((turn) => turn.system.name),
       actionLog: log.entries,
-      record(since) {
-        runner.whileIdle(
-          (busy) =>
-            `record() was called during a ${busy}. A game is recorded between ticks.`
-        );
-        return log.record(since);
-      },
-      save() {
-        runner.whileIdle(
-          (busy) =>
-            `save() was called during a ${busy}. A game is saved between ticks.`
-        );
-        return Save.take(world, commands, version, log.entries.length);
-      },
+      record: (since) =>
+        Effect.sync(() => {
+          runner.whileIdle(
+            (busy) =>
+              `record() was called during a ${busy}. A game is recorded between ticks.`
+          );
+          return log.record(since);
+        }),
+      save: () =>
+        Effect.suspend(() => {
+          runner.whileIdle(
+            (busy) =>
+              `save() was called during a ${busy}. A game is saved between ticks.`
+          );
+          return Save.take(world, commands, version, log.entries.length);
+        }),
       get settled() {
         return loop.settled();
       },
-      inspect() {
-        runner.whileIdle(
-          (busy) =>
-            `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
-        );
-        return {
-          tick: time.tick,
-          ...world.contents(),
-          systems: schedule.all.map(({ ms, ran, system }) => ({
-            name: system.name,
-            stage: system.stage,
-            ran,
-            ms,
-          })),
-          events: events.lastTick(),
-        };
-      },
-      checkpoint() {
-        runner.whileIdle(
-          (busy) =>
-            `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
-        );
-        return log.checkpoint();
-      },
+      inspect: () =>
+        Effect.sync(() => {
+          runner.whileIdle(
+            (busy) =>
+              `inspect() was called from inside a ${busy}. A game is inspected between ticks.`
+          );
+          return {
+            tick: time.tick,
+            ...world.contents(),
+            systems: schedule.all.map(({ ms, ran, system }) => ({
+              name: system.name,
+              stage: system.stage,
+              ran,
+              ms,
+            })),
+            events: events.lastTick(),
+          };
+        }),
+      checkpoint: () =>
+        Effect.sync(() => {
+          runner.whileIdle(
+            (busy) =>
+              `checkpoint() was called during a ${busy}. A checkpoint is taken between ticks, where a replay can compare it.`
+          );
+          return log.checkpoint();
+        }),
       close: Scope.close(scope, Exit.void),
-      tickExit,
-      tick: (delta) => {
-        orThrow(tickExit(delta));
-      },
-      frameExit,
-      frame: (alpha, delta) => {
-        orThrow(frameExit(alpha, delta));
-      },
-      inputExit,
-      input: () => {
-        orThrow(inputExit());
-      },
+      tick,
+      frame,
+      input,
       dispatch: (action, payload) =>
         // What the action's handler returns or fails with.
-        inbox.dispatch(action, payload) as Exit.Exit<never, never>,
-      enqueue: (action, payload) => inbox.enqueue(action, payload),
+        Effect.suspend(
+          () => inbox.dispatch(action, payload) as Exit.Exit<never, never>
+        ),
+      enqueue: (action, payload) =>
+        Effect.suspend(() => inbox.enqueue(action, payload)),
       dispatchByName: (name, payload, from) =>
-        inbox.dispatchByName(name, payload, from),
-      enqueueByName: (name, payload, from) => {
-        inbox.enqueueByName(name, payload, from);
-      },
+        // What the action's handler fails with, or why it was not applied.
+        Effect.suspend(
+          () =>
+            inbox.dispatchByName(name, payload, from) as Exit.Exit<
+              unknown,
+              never
+            >
+        ),
+      enqueueByName: (name, payload, from) =>
+        Effect.sync(() => {
+          inbox.enqueueByName(name, payload, from);
+        }),
     };
     hold(app, { world, commands, events, dispatcher });
     const take: Built<TickError<S, P>>["take"] = (issued) => {
@@ -416,7 +423,8 @@ const assemble = <
         deliver: (name, payload, from) => {
           inbox.deliver(name, payload, from);
         },
-        tickExit: (delta, observe) => loop.tick(delta, observe) as Ran,
+        tick: (delta, observe) =>
+          Effect.suspend(() => loop.tick(delta, observe) as Ran),
       };
     };
 

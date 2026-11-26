@@ -3,8 +3,8 @@
  * message or a bot's decision.
  *
  * An action's handler checks it against the current state, then applies it
- * or refuses it with a typed error. A dispatched action returns the refusal
- * to its caller as a typed failure, and a queued one becomes an event that
+ * or refuses it with a typed error. A dispatched action fails with the refusal,
+ * a typed error of its Effect, and a queued one becomes an event that
  * `Action.rejected` reads. An action declares the schema of the error it may
  * be refused with, as `Rpc.make` does, and each error has a `_tag`.
  *
@@ -20,7 +20,7 @@
  *     played.emit({ card, target })
  *   })
  *
- *   app.dispatch(PlayCard, { card, target })  // Exit<void, NotYourTurn | Action.InvalidPayload>
+ *   yield* app.dispatch(PlayCard, { card, target })  // fails with NotYourTurn | Action.InvalidPayload
  *
  * A refused action changes nothing. Its handler runs in a world transaction,
  * so a refusal at any point rolls back the component writes, the random
@@ -284,7 +284,7 @@ export interface AnyHandler {
  *
  * **Gotchas**
  *
- * - A handler can't dispatch another action, since `dispatch` throws there.
+ * - A handler can't dispatch another action, since `dispatch` dies there.
  *   It issues one with `Actions.enqueue` instead, and a refusal rolls that
  *   back too.
  * - A refusal rolls back what the handler did to the world, and nothing

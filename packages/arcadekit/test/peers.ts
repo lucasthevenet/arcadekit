@@ -303,23 +303,13 @@ export const steered = <E, HU>({ app, take }: Build.Built<E, HU>) => {
   });
   return {
     app,
-    tick: (delta: number): void => {
-      app.input();
-      const exit = reins.tickExit(delta);
-      if (Exit.isFailure(exit)) {
-        throw Cause.squash(exit.cause);
-      }
-    },
-    capture: (): Timeline.Moment => {
-      const moment = Timeline.capture(app, { stages: true });
-      if (Exit.isFailure(moment)) {
-        throw new Error("the game could not be captured");
-      }
-      return moment.value;
-    },
-    rewind: (moment: Timeline.Moment): void => {
-      Timeline.rewind(app, moment, { again: true });
-    },
+    tick: Effect.fnUntraced(function* (delta: number) {
+      yield* app.input();
+      yield* reins.tick(delta);
+    }),
+    capture: () => Timeline.capture(app, { stages: true }),
+    rewind: (moment: Timeline.Moment) =>
+      Timeline.rewind(app, moment, { again: true }),
   };
 };
 
@@ -381,17 +371,17 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
 export type Network = ReturnType<typeof network>;
 
 /** One round: every peer is handed what arrived, tries its tick, and sends. */
-export const round = (
+export const round = Effect.fnUntraced(function* (
   peers: readonly Peer[],
   net: Network,
   only: readonly Peer[] = peers
-): void => {
+) {
   net.round();
   for (const peer of only) {
     for (const message of net.arrivals(peer.name)) {
       peer.session.receive(message);
     }
-    if (peer.session.tick()) {
+    if (yield* peer.session.tick()) {
       peer.hashes.push(peer.world.hash());
     }
     net.send(
@@ -399,20 +389,23 @@ export const round = (
       peer.session.outgoing()
     );
   }
-};
+});
 
 /** Brings every peer to the tick the furthest has reached. */
-export const catchUp = (peers: readonly Peer[], net: Network): number => {
+export const catchUp = Effect.fnUntraced(function* (
+  peers: readonly Peer[],
+  net: Network
+) {
   const furthest = Math.max(...peers.map((peer) => peer.app.time.tick));
   for (let i = 0; i < 1000; i++) {
     const behind = peers.filter((peer) => peer.app.time.tick < furthest);
     if (behind.length === 0) {
       return furthest;
     }
-    round(peers, net, behind);
+    yield* round(peers, net, behind);
   }
   throw new Error("the peers never caught up with each other");
-};
+});
 
 /** A peer's coins, read again each time: a rollback ends a view. */
 export const coinsOf = (peer: Peer) =>
@@ -425,15 +418,15 @@ export const players = (seed: number) => {
     const by = peer.name as "ada" | "grace";
     const roll = dice.int(1, 6);
     if (roll <= 2) {
-      peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
+      yield* peer.app.enqueue(Drop, { by, value: dice.int(1, 9) });
     } else if (roll === 4) {
       // Whose it is, the payload does not say.
-      peer.app.enqueue(Tip, { amount: 1 });
+      yield* peer.app.enqueue(Tip, { amount: 1 });
     } else if (roll === 3) {
       const coins = yield* coinsOf(peer);
       if (coins.length > 0) {
         // Both players go for the oldest coin: one of them is refused.
-        peer.app.enqueue(Take, { by, coin: coins[0]! });
+        yield* peer.app.enqueue(Take, { by, coin: coins[0]! });
       }
     }
   });
@@ -447,11 +440,11 @@ export const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
  * arrived and tries its tick, until every one of them has failed. Returns
  * what each failed with, by name.
  */
-export const untilStopped = (
+export const untilStopped = Effect.fnUntraced(function* (
   peers: readonly Peer[],
   net: Network,
   rounds: number
-): Map<string, unknown> => {
+) {
   const stopped = new Map<string, unknown>();
   for (let i = 0; i < rounds && stopped.size < peers.length; i++) {
     net.round();
@@ -459,7 +452,7 @@ export const untilStopped = (
       for (const message of net.arrivals(peer.name)) {
         peer.session.receive(message);
       }
-      const exit = peer.session.tickExit();
+      const exit = yield* Effect.exit(peer.session.tick());
       if (Exit.isFailure(exit)) {
         stopped.set(peer.name, Cause.squash(exit.cause));
       }
@@ -470,4 +463,4 @@ export const untilStopped = (
     }
   }
   return stopped;
-};
+});

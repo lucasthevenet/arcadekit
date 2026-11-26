@@ -29,7 +29,9 @@ const messagesIn = (
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
-  readonly connected: Transport.Connected;
+  readonly connected: Transport.Connected<
+    Effect.Error<ReturnType<Peer["session"]["tick"]>>
+  >;
 }
 
 /** Peers of the game, each joined to a layer of its own. */
@@ -200,18 +202,18 @@ describe("a session joined to a transport", () => {
             (name) => hub.layer(name),
             undefined
           );
-          ada!.app.enqueue(Drop, { by: "ada", value: 4 });
+          yield* ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
-          expect(ada!.connected.tick()).toBe(false);
+          expect(yield* ada!.connected.tick()).toBe(false);
           expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
             0, 1, 2,
           ]);
           for (let tick = 0; tick <= 2; tick++) {
             grace.send(message("grace", tick));
           }
-          expect(ada!.connected.tick()).toBe(true);
-          expect(ada!.connected.tick()).toBe(true);
-          expect(ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
           expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
@@ -245,7 +247,7 @@ describe("a session joined to a transport", () => {
                   if (acting) {
                     yield* act(seat);
                   }
-                  steps[index]!(DELTA);
+                  yield* steps[index]!(DELTA);
                 }
               });
               for (let i = 0; i < 200; i++) {
@@ -262,9 +264,8 @@ describe("a session joined to a transport", () => {
                 i++
               ) {
                 hub.step();
-                (ada.app.time.tick < grace.app.time.tick
-                  ? ada
-                  : grace
+                yield* (
+                  ada.app.time.tick < grace.app.time.tick ? ada : grace
                 ).connected.tick();
               }
               expect(ada.app.time.tick).toBe(grace.app.time.tick);
@@ -277,7 +278,7 @@ describe("a session joined to a transport", () => {
               expect(ada.session.drifted).toBeUndefined();
               // Only a game played with rollback goes back.
               expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
-              const whole = ada.app.record();
+              const whole = yield* ada.app.record();
               const alone = yield* Journal.replay(whole, CoinGame, {
                 checkpointEvery: 1,
               });
@@ -309,7 +310,7 @@ describe("a session joined to a transport", () => {
                   if (acting) {
                     yield* act(seat);
                   }
-                  seat.connected.tick();
+                  yield* seat.connected.tick();
                 }
               });
               for (let i = 0; i < 60; i++) {
@@ -345,7 +346,7 @@ describe("a session joined to a transport", () => {
                 );
                 for (const seat of seats) {
                   if (seat.app.time.tick < furthest) {
-                    seat.connected.tick();
+                    yield* seat.connected.tick();
                   }
                 }
               }
@@ -391,22 +392,22 @@ describe("a session joined to a transport", () => {
               undefined,
               { awayFor: 1000 }
             )) as [Seat, Seat];
-            const frame = (): void => {
+            const frame = Effect.fnUntraced(function* () {
               hub.step();
-              ada.connected.tick();
-              grace.connected.tick();
-            };
+              yield* ada.connected.tick();
+              yield* grace.connected.tick();
+            });
             for (let i = 0; i < 10; i++) {
-              frame();
+              yield* frame();
             }
             // Back before a second has passed: the wait starts over.
             hub.disconnect("grace");
             for (let i = 0; i < 20; i++) {
-              frame();
+              yield* frame();
             }
             hub.reconnect("grace");
             for (let i = 0; i < 40; i++) {
-              frame();
+              yield* frame();
             }
             expect(ada.connected.away).toEqual([]);
             hub.disconnect("grace");
@@ -414,10 +415,10 @@ describe("a session joined to a transport", () => {
             // and 29 more.
             for (let i = 0; i < 30; i++) {
               hub.step();
-              ada.connected.tick();
+              yield* ada.connected.tick();
             }
             expect(ada.connected.away).toEqual(["grace"]);
-            const ticked = Result.try(() => ada.connected.tick());
+            const ticked = yield* Effect.result(ada.connected.tick());
             const thrown = Result.isFailure(ticked)
               ? ticked.failure
               : "it did not throw";
@@ -450,12 +451,12 @@ describe("a session joined to a transport", () => {
                 undefined
               );
               setGlitch({ tick: 9, apps: "all" });
-              seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
+              yield* seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
               const stopped = new Map<string, unknown>();
               for (let i = 0; i < 200 && stopped.size < 2; i++) {
                 hub.step();
                 for (const seat of seats) {
-                  const ticked = Result.try(() => seat.connected.tick());
+                  const ticked = yield* Effect.result(seat.connected.tick());
                   if (Result.isFailure(ticked)) {
                     stopped.set(seat.name, ticked.failure);
                   }
@@ -488,11 +489,12 @@ describe("a session joined to a transport", () => {
       let drawn = 0;
       const connected = yield* Transport.connect({
         ...session,
-        frame: () => {
-          drawn++;
-        },
+        frame: () =>
+          Effect.sync(() => {
+            drawn++;
+          }),
       }).pipe(Effect.provide(hub.layer("ada")));
-      Driver.fixedStep(connected)(DELTA);
+      yield* Driver.fixedStep(connected)(DELTA);
       expect(drawn).toBe(1);
       expect(session.app.time.tick).toBe(1);
     })
@@ -522,7 +524,7 @@ describe("a session joined to a transport", () => {
       const made = yield* Transport.connect(session).pipe(
         Effect.provide(Transport.layer(hub.port("ada")))
       );
-      expect(made.tick()).toBe(true);
+      expect(yield* made.tick()).toBe(true);
     })
   );
 });
@@ -592,6 +594,33 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
   }
   throw new Error(`timed out waiting until ${what}`);
 };
+
+/** Waits, a few milliseconds at a time, until what `holds` runs says it does. */
+const waitUntil = <E>(
+  holds: Effect.Effect<boolean, E>,
+  what: string
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 400; i++) {
+      if (yield* Effect.orDie(holds)) {
+        return;
+      }
+      yield* Effect.promise(() => later(5));
+    }
+    return yield* Effect.die(new Error(`timed out waiting until ${what}`));
+  });
+
+/** A session connected to a transport, whose tick fails with `Drift.Drifted`, as a type. */
+declare const drifting: Transport.Connected<Drift.Drifted>;
+
+describe("a session connected to a transport", () => {
+  it("is run by Driver.run, which fails with what its tick fails with, each by its tag", () => {
+    const run = () => Driver.run(Effect.succeed(drifting));
+    expectTypeOf<Effect.Error<ReturnType<typeof run>>>().toEqualTypeOf<
+      Drift.Drifted | Transport.Left
+    >();
+  });
+});
 
 describe("the transport between tabs, a BroadcastChannel", () => {
   const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
@@ -748,7 +777,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               )
           )
         );
-        expect(connected.tick()).toBe(true);
+        expect(yield* connected.tick()).toBe(true);
         yield* Effect.promise(() =>
           until(
             () => heard.length > 1,
@@ -764,7 +793,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         outside.postMessage(Message.encode(message("grace", 0)));
         yield* Effect.promise(() => later(20));
         // It says so, in place of a game that waits for ever.
-        expect(() => connected.tick()).toThrow(
+        expect(yield* thrown(connected.tick())).toThrow(
           /The transport "arcadekit-test\/.*" was used after it was let go, and its channel closed: the connection Transport\.connect made was closed/u
         );
         // As one listened on in a scope does once the scope has closed.
@@ -792,24 +821,26 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               (peer) => Transport.layerBroadcastChannel(name, peer),
               8
             )) as [Seat, Seat];
-            ada.connected.tick();
-            grace.connected.tick();
+            yield* ada.connected.tick();
+            yield* grace.connected.tick();
             yield* grace.connected.close;
-            yield* Effect.promise(() =>
-              until(() => {
-                ada.connected.tick();
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* ada.connected.tick();
                 return ada.connected.away.length > 0;
-              }, "ada heard that grace left")
+              }),
+              "ada heard that grace left"
             );
             expect(ada.connected.away).toEqual(["grace"]);
             yield* Transport.listen.pipe(
               Effect.provide(Transport.layerBroadcastChannel(name, "grace"))
             );
-            yield* Effect.promise(() =>
-              until(() => {
-                ada.connected.tick();
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* ada.connected.tick();
                 return ada.connected.away.length === 0;
-              }, "ada heard that grace joined again")
+              }),
+              "ada heard that grace joined again"
             );
           })
         );
@@ -829,15 +860,16 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               8,
               { awayFor: 0 }
             )) as [Seat, Seat];
-            ada.connected.tick();
+            yield* ada.connected.tick();
             yield* grace.connected.close;
             let thrown: unknown;
-            yield* Effect.promise(() =>
-              until(() => {
-                const ticked = Result.try(() => ada.connected.tick());
+            yield* waitUntil(
+              Effect.gen(function* () {
+                const ticked = yield* Effect.result(ada.connected.tick());
                 thrown = Result.isFailure(ticked) ? ticked.failure : undefined;
                 return thrown !== undefined;
-              }, "ada's tick failed")
+              }),
+              "ada's tick failed"
             );
             expect(thrown).toEqual(
               new Transport.Left({ peers: ["grace"], awayFor: 0 })
@@ -864,7 +896,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
               if (i < 40) {
                 yield* act(seat);
               }
-              seat.connected.tick();
+              yield* seat.connected.tick();
               // The other end hears in its own time, not in this loop's.
               yield* Effect.promise(() => later(1));
             }
@@ -877,9 +909,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             i++
           ) {
             yield* Effect.promise(() => later(2));
-            (ada.app.time.tick <= grace.app.time.tick
-              ? ada
-              : grace
+            yield* (
+              ada.app.time.tick <= grace.app.time.tick ? ada : grace
             ).connected.tick();
           }
           expect(ada.app.time.tick).toBe(grace.app.time.tick);

@@ -37,11 +37,11 @@ describe("a session", () => {
         (yield* single.read(World)).hash()
       );
       // What is enqueued on its app is the session's to apply.
-      app.enqueue(Drop, { by: "ada", value: 3 });
-      expect(session.tick()).toBe(true);
+      yield* app.enqueue(Drop, { by: "ada", value: 3 });
+      expect(yield* session.tick()).toBe(true);
       expect(app.time.tick).toBe(1);
       // A recording of it says how it began, as an app's does.
-      expect(app.record().seed).toBe(5);
+      expect((yield* app.record()).seed).toBe(5);
     })
   );
 
@@ -90,11 +90,11 @@ describe("a session", () => {
     () =>
       Effect.gen(function* () {
         const played = yield* game(5, 1);
-        played.enqueue(Drop, { by: "ada", value: 2 });
+        yield* played.enqueue(Drop, { by: "ada", value: 2 });
         for (let i = 0; i < 4; i++) {
-          played.tick(DELTA);
+          yield* played.tick(DELTA);
         }
-        const saved = played.save();
+        const saved = yield* Effect.exit(played.save());
         assert(Exit.isSuccess(saved));
         const save = {
           save: saved.value,
@@ -106,7 +106,7 @@ describe("a session", () => {
         });
         expect(session.app.time.tick).toBe(4);
         expect((yield* session.app.read(World)).hash()).toBe(save.hash);
-        expect(session.tick()).toBe(true);
+        expect(yield* session.tick()).toBe(true);
         expect(session.app.time.tick).toBe(5);
         // A save that doesn't load is the session's failure, typed.
         const damaged: Save.Save = {
@@ -184,7 +184,7 @@ describe("a session", () => {
         // A sync test's too.
         held.length = 0;
         const test = yield* Session.syncTest(Holding);
-        test.tick(DELTA);
+        yield* test.tick(DELTA);
         yield* test.close;
         expect(held).toEqual(["acquired", "released"]);
       })
@@ -204,7 +204,7 @@ describe("taking an app over", () => {
 
         const built = yield* Build.build(CoinGame, { seed: 5 });
         const reins = built.take(() => {});
-        expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+        expect(yield* Effect.exit(reins.tick(DELTA))).toEqual(Exit.void);
         expect(built.app.time.tick).toBe(1);
         expect(() => built.take(() => {})).toThrow(
           /taken over already\. An app is in one session at a time/
@@ -215,19 +215,23 @@ describe("taking an app over", () => {
   it.effect("is what a sync test does to the app it makes", () =>
     Effect.gen(function* () {
       const test = yield* Session.syncTest(CoinGame, { seed: 5 });
-      test.app.enqueue(Drop, { by: "ada", value: 1 });
+      yield* test.app.enqueue(Drop, { by: "ada", value: 1 });
       for (let i = 0; i < 5; i++) {
-        test.tick(DELTA);
+        yield* test.tick(DELTA);
       }
       expect(test.checked).toBe(5);
       expect(test.app.time.tick).toBe(5);
       // Each tick is in the log and the recording once.
-      expect(test.app.record()).toMatchObject({ seed: 5, start: 0, end: 5 });
+      expect(yield* test.app.record()).toMatchObject({
+        seed: 5,
+        start: 0,
+        end: 5,
+      });
       // The same game stepped once a tick ends in the same world.
       const single = yield* game(5, 60);
-      single.enqueue(Drop, { by: "ada", value: 1 });
+      yield* single.enqueue(Drop, { by: "ada", value: 1 });
       for (let i = 0; i < 5; i++) {
-        single.tick(DELTA);
+        yield* single.tick(DELTA);
       }
       expect((yield* test.app.read(World)).hash()).toBe(
         (yield* single.read(World)).hash()

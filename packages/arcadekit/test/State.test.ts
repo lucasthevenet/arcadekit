@@ -114,7 +114,7 @@ describe("a state", () => {
         App.define({ systems: [Watch], handlers: [go] })
       );
       for (let tick = 0; tick < 5; tick++) {
-        app.tick(1);
+        yield* app.tick(1);
       }
       expect(asked).toEqual([
         // Asked for, and not entered yet.
@@ -128,10 +128,10 @@ describe("a state", () => {
       ]);
       expect(seen).toEqual(["menu", "menu", "playing", "playing", "playing"]);
       // From outside, an action asks; the next tick enters.
-      expect(app.dispatch(Go, { to: "paused", refuse: false })).toEqual(
-        Exit.succeed("playing")
-      );
-      app.tick(1);
+      expect(
+        yield* Effect.exit(app.dispatch(Go, { to: "paused", refuse: false }))
+      ).toEqual(Exit.succeed("playing"));
+      yield* app.tick(1);
       expect(seen.at(-1)).toBe("paused");
     })
   );
@@ -152,21 +152,23 @@ describe("a state", () => {
       const world = yield* app.read(World);
       // Asking for the state a game is in already changes nothing at all.
       const untouched = world.hash();
-      app.dispatch(Go, { to: "menu", refuse: false });
+      yield* app.dispatch(Go, { to: "menu", refuse: false });
       expect(world.hash()).toBe(untouched);
-      app.tick(1);
+      yield* app.tick(1);
       const before = world.hash();
       expect(
-        Exit.isFailure(app.dispatch(Go, { to: "playing", refuse: true }))
+        Exit.isFailure(
+          yield* Effect.exit(app.dispatch(Go, { to: "playing", refuse: true }))
+        )
       ).toBe(true);
       expect(world.hash()).toBe(before);
-      app.dispatch(Go, { to: "menu", refuse: false });
+      yield* app.dispatch(Go, { to: "menu", refuse: false });
       expect(world.hash()).toBe(before);
-      app.tick(1);
+      yield* app.tick(1);
       expect(ran).toEqual([]);
-      app.dispatch(Go, { to: "playing", refuse: false });
+      yield* app.dispatch(Go, { to: "playing", refuse: false });
       expect(world.hash()).not.toBe(before);
-      app.tick(1);
+      yield* app.tick(1);
       expect(ran).toEqual(["Entered"]);
     })
   );
@@ -190,19 +192,19 @@ describe("a run condition", () => {
           handlers: [go],
         })
       );
-      const tick = (): string[] => {
+      const tick = Effect.fnUntraced(function* () {
         ran.length = 0;
-        app.tick(1);
+        yield* app.tick(1);
         return [...ran];
-      };
-      expect(tick()).toEqual(["Always"]);
-      app.dispatch(Go, { to: "playing", refuse: false });
-      expect(tick()).toEqual(["Always", "Playing", "NotMenu"]);
-      expect(tick()).toEqual(["Always", "Playing", "NotMenu"]);
-      app.dispatch(Go, { to: "paused", refuse: false });
-      expect(tick()).toEqual(["Always", "NotMenu"]);
-      app.dispatch(Go, { to: "menu", refuse: false });
-      expect(tick()).toEqual(["Always"]);
+      });
+      expect(yield* tick()).toEqual(["Always"]);
+      yield* app.dispatch(Go, { to: "playing", refuse: false });
+      expect(yield* tick()).toEqual(["Always", "Playing", "NotMenu"]);
+      expect(yield* tick()).toEqual(["Always", "Playing", "NotMenu"]);
+      yield* app.dispatch(Go, { to: "paused", refuse: false });
+      expect(yield* tick()).toEqual(["Always", "NotMenu"]);
+      yield* app.dispatch(Go, { to: "menu", refuse: false });
+      expect(yield* tick()).toEqual(["Always"]);
       // The order systems run in is not the conditions' business.
       expect(app.systemOrder).toEqual(["Always", "Playing", "NotMenu"]);
     })
@@ -244,19 +246,19 @@ describe("a run condition", () => {
           App.define({ systems: [Both, Either], handlers: [flip] })
         );
         for (let tick = 0; tick < 6; tick++) {
-          app.tick(1);
+          yield* app.tick(1);
         }
         expect(ran).toEqual([2, 4, 6]);
         // The second condition is asked only when the first held; the
         // other system asks every tick.
         expect(asked).toBe(3 + 6);
-        app.dispatch(Flip, {});
-        app.tick(1);
-        app.tick(1);
+        yield* app.dispatch(Flip, {});
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual([2, 4, 6]);
         // What a condition can fail with is what the tick can fail with.
         asked = 100;
-        const exit = app.tickExit(1);
+        const exit = yield* Effect.exit(app.tick(1));
         expect(
           Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
         ).toBeInstanceOf(Broken);
@@ -337,13 +339,13 @@ describe("a run condition", () => {
               handlers: [go],
             })
           );
-          const tick = (): string[] => {
+          const tick = Effect.fnUntraced(function* () {
             ran.length = 0;
-            app.tick(1);
-            app.frame();
+            yield* app.tick(1);
+            yield* app.frame();
             return [...ran];
-          };
-          expect(tick()).toEqual([
+          });
+          expect(yield* tick()).toEqual([
             "Hud hidden",
             "Music off",
             "Music gone",
@@ -351,8 +353,8 @@ describe("a run condition", () => {
             "Always",
             "Draw nothing",
           ]);
-          app.dispatch(Go, { to: "playing", refuse: false });
-          expect(tick()).toEqual([
+          yield* app.dispatch(Go, { to: "playing", refuse: false });
+          expect(yield* tick()).toEqual([
             "Hud",
             "Music",
             "Spawner",
@@ -360,8 +362,8 @@ describe("a run condition", () => {
             "Always",
             "Draw",
           ]);
-          app.dispatch(Go, { to: "paused", refuse: false });
-          expect(tick()).toEqual([
+          yield* app.dispatch(Go, { to: "paused", refuse: false });
+          expect(yield* tick()).toEqual([
             "Hud hidden",
             "Music",
             "2 balls",
@@ -369,7 +371,7 @@ describe("a run condition", () => {
             "Draw nothing",
           ]);
           // It is asked for every time, not once.
-          expect(tick()).toEqual([
+          expect(yield* tick()).toEqual([
             "Hud hidden",
             "Music",
             "3 balls",
@@ -445,11 +447,11 @@ describe("a run condition", () => {
             handlers: [go],
           })
         );
-        app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual([]);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        yield* app.tick(1);
         // Once, when it was set off, and not every tick after.
         expect(ran).toEqual(["Too wet for a fanfare"]);
       })
@@ -507,19 +509,19 @@ describe("a run condition", () => {
             }
           )
         );
-        const tick = () => {
-          app.tick(1);
-          app.frame();
-        };
-        app.dispatch(Go, { to: "playing", refuse: false });
-        tick();
-        tick();
-        app.dispatch(Go, { to: "paused", refuse: false });
+        const tick = Effect.fnUntraced(function* () {
+          yield* app.tick(1);
+          yield* app.frame();
+        });
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* tick();
+        yield* tick();
+        yield* app.dispatch(Go, { to: "paused", refuse: false });
         for (let n = 0; n < 6; n++) {
-          tick();
+          yield* tick();
         }
-        app.dispatch(Go, { to: "playing", refuse: false });
-        tick();
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* tick();
         // It hears the event of the tick before it came back, which came
         // after its turn, and none of the six it sat out before that.
         expect(heard).toEqual([1, 8]);
@@ -565,20 +567,20 @@ describe("hooks", () => {
       Effect.gen(function* () {
         const ran: string[] = [];
         const app = yield* game(ran);
-        const tick = (): string[] => {
+        const tick = Effect.fnUntraced(function* () {
           ran.length = 0;
-          app.tick(1);
+          yield* app.tick(1);
           return [...ran];
-        };
+        });
         // The state a game starts in is entered on its first tick.
         expect(ran).toEqual([]);
-        expect(tick()).toEqual(["EnterMenu", "Tick"]);
+        expect(yield* tick()).toEqual(["EnterMenu", "Tick"]);
         // A move asked for before the first tick follows it at once.
         const eager = yield* game([]);
         const early: string[] = [];
         const hasty = yield* game(early);
-        hasty.dispatch(Go, { to: "playing", refuse: false });
-        hasty.tick(1);
+        yield* hasty.dispatch(Go, { to: "playing", refuse: false });
+        yield* hasty.tick(1);
         expect(early).toEqual([
           "EnterMenu",
           "ExitMenu",
@@ -586,21 +588,21 @@ describe("hooks", () => {
           "Tick",
         ]);
         void eager;
-        expect(tick()).toEqual(["Tick"]);
-        app.dispatch(Go, { to: "playing", refuse: false });
+        expect(yield* tick()).toEqual(["Tick"]);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
         // Nothing runs until the tick.
         expect(ran).toEqual(["Tick"]);
-        expect(tick()).toEqual(["ExitMenu", "EnterPlaying", "Tick"]);
-        expect(tick()).toEqual(["Tick"]);
+        expect(yield* tick()).toEqual(["ExitMenu", "EnterPlaying", "Tick"]);
+        expect(yield* tick()).toEqual(["Tick"]);
         // Asking for the state the game is in is not a move.
-        app.dispatch(Go, { to: "playing", refuse: false });
-        expect(tick()).toEqual(["Tick"]);
-        app.dispatch(Go, { to: "paused", refuse: false });
-        expect(tick()).toEqual(["ExitPlaying", "EnterPaused", "Tick"]);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        expect(yield* tick()).toEqual(["Tick"]);
+        yield* app.dispatch(Go, { to: "paused", refuse: false });
+        expect(yield* tick()).toEqual(["ExitPlaying", "EnterPaused", "Tick"]);
         // Only the last ask before a tick counts.
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.dispatch(Go, { to: "menu", refuse: false });
-        expect(tick()).toEqual(["EnterMenu", "Tick"]);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.dispatch(Go, { to: "menu", refuse: false });
+        expect(yield* tick()).toEqual(["EnterMenu", "Tick"]);
         // Hooks are not among the systems that run every tick.
         expect(app.systemOrder).toEqual(["Tick"]);
       })
@@ -633,9 +635,9 @@ describe("hooks", () => {
         const app = yield* App.make(
           App.define({ systems: [Count, Entering, Leaving], handlers: [go] })
         );
-        app.tick(1);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
         expect(seen).toEqual([
           "tick with 0",
           "leaving menu",
@@ -677,9 +679,9 @@ describe("hooks", () => {
             handlers: [go],
           })
         );
-        app.tick(1);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
         expect(ran).toEqual(["Zeroth", "First", "Last", "Third"]);
       })
   );
@@ -708,15 +710,15 @@ describe("hooks", () => {
             handlers: [go],
           })
         );
-        app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual(["EnterMenu", "SkipIntro", "Tick"]);
         ran.length = 0;
-        app.tick(1);
+        yield* app.tick(1);
         // The move that was under way is made; what the leaving hook asked
         // for waits its turn.
         expect(ran).toEqual(["ExitMenu", "Bail", "EnterPlaying", "Tick"]);
         ran.length = 0;
-        app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual(["ExitPlaying", "EnterPaused", "Tick"]);
       })
   );
@@ -733,12 +735,12 @@ describe("hooks", () => {
         const app = yield* start(
           App.define({ systems: [...hooks(ran), Overrule], handlers: [go] })
         );
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
         // The hook asked last, and what a hook asks for waits a tick.
         expect(ran).toEqual(["EnterMenu", "Overrule", "Tick"]);
         ran.length = 0;
-        app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual(["ExitMenu", "EnterPaused", "Tick"]);
       })
   );
@@ -765,10 +767,10 @@ describe("hooks", () => {
           yield* unseen.read(World),
         ];
         for (let tick = 1; tick <= 5; tick++) {
-          looked.tick(1);
-          drawn.tick(1);
-          drawn.frame();
-          unseen.tick(1);
+          yield* looked.tick(1);
+          yield* drawn.tick(1);
+          yield* drawn.frame();
+          yield* unseen.tick(1);
           // A look changes nothing from the frame, which a replay doesn't
           // run.
           expect(drawnWorld.hash()).toBe(unseenWorld.hash());
@@ -814,13 +816,13 @@ describe("hooks", () => {
               (yield* Weather.sets).set("dry");
             }
           });
-          const app: App.Any = yield* weatherFirst
+          const app: App.App = yield* weatherFirst
             ? App.make(App.define({ systems: [Rain, Sun, Menu, Play, Change] }))
             : App.make(
                 App.define({ systems: [Play, Menu, Sun, Rain, Change] })
               );
-          app.tick(1);
-          app.tick(1);
+          yield* app.tick(1);
+          yield* app.tick(1);
           // "st/Phase" before "st/Weather".
           expect(ran).toEqual(["Menu", "Rain", "Play", "Sun"]);
         }
@@ -904,12 +906,12 @@ describe("a state in a save", () => {
         });
         const world = yield* app.read(World);
         expect((yield* fresh.read(World)).hash()).toBe(world.hash());
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* built(app)).toEqual(["one"]);
         expect(world.hash()).not.toBe((yield* fresh.read(World)).hash());
         // Saved with a move asked for and not made yet.
-        app.dispatch(Next, {});
-        const save = app.save();
+        yield* app.dispatch(Next, {});
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -924,10 +926,10 @@ describe("a state in a save", () => {
         const loadedWorld = yield* loaded.read(World);
         expect(loadedWorld.hash()).toBe(world.hash());
         for (const each of [app, loaded]) {
-          each.tick(1);
-          each.tick(1);
-          each.dispatch(Next, {});
-          each.tick(1);
+          yield* each.tick(1);
+          yield* each.tick(1);
+          yield* each.dispatch(Next, {});
+          yield* each.tick(1);
         }
         // Level one was not built again; two and three were built once.
         expect(yield* built(loaded)).toEqual(["one", "two", "three"]);
@@ -939,7 +941,7 @@ describe("a state in a save", () => {
         expect(x).toBe(3);
 
         // And the whole game replays, hooks and conditions with it.
-        const played = app.record();
+        const played = yield* app.record();
         const again = yield* Journal.replay(
           played,
           App.define({ plugins: [Rules] }),
@@ -960,9 +962,9 @@ describe("a state in a save", () => {
           (yield* Before.sets).set("ajar");
         });
         const app = yield* App.make(App.define({ handlers: [prop] }));
-        expect(app.dispatch(Prop, {})).toEqual(Exit.void);
-        app.tick(1);
-        const save = app.save();
+        expect(yield* Effect.exit(app.dispatch(Prop, {}))).toEqual(Exit.void);
+        yield* app.tick(1);
+        const save = yield* Effect.exit(app.save());
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({}), { save: save.value });
         const exit = yield* Effect.exit(
@@ -980,9 +982,11 @@ describe("a state in a save", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }));
-        app.tick(1);
-        expect(Exit.isSuccess(app.dispatch(Next, {}))).toBe(true);
-        const save = app.save();
+        yield* app.tick(1);
+        expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Next, {})))).toBe(
+          true
+        );
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -990,7 +994,7 @@ describe("a state in a save", () => {
         const loaded = yield* App.make(App.define({ handlers: [] }), {
           save: save.value,
         });
-        loaded.tick(1);
+        yield* loaded.tick(1);
         expect({ ...(yield* loaded.read(World)).singleton(Level) }).toEqual({
           value: "two",
           next: null,
@@ -1060,12 +1064,12 @@ describe("an entity scoped to a state", () => {
             handlers: [go],
           })
         );
-        app.tick(1);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
-        app.dispatch(Go, { to: "menu", refuse: false });
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "menu", refuse: false });
+        yield* app.tick(1);
         expect(log).toEqual([
           "enter sees 0",
           "exit sees 4",
@@ -1087,8 +1091,8 @@ describe("an entity scoped to a state", () => {
         const app = yield* App.make(
           App.define({ systems: [Title, Build], handlers: [go] })
         );
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
       })
   );
@@ -1098,17 +1102,17 @@ describe("an entity scoped to a state", () => {
       const app = yield* App.make(
         App.define({ systems: [Build], handlers: [go] })
       );
-      app.dispatch(Go, { to: "playing", refuse: false });
-      app.tick(1);
-      app.dispatch(Go, { to: "paused", refuse: false });
-      app.tick(1);
+      yield* app.dispatch(Go, { to: "playing", refuse: false });
+      yield* app.tick(1);
+      yield* app.dispatch(Go, { to: "paused", refuse: false });
+      yield* app.tick(1);
       expect(yield* walls(app)).toEqual([4]);
-      app.dispatch(Go, { to: "playing", refuse: false });
-      app.tick(1);
+      yield* app.dispatch(Go, { to: "playing", refuse: false });
+      yield* app.tick(1);
       // Build skips: a wall stands.
       expect(yield* walls(app)).toEqual([4]);
-      app.dispatch(Go, { to: "menu", refuse: false });
-      app.tick(1);
+      yield* app.dispatch(Go, { to: "menu", refuse: false });
+      yield* app.tick(1);
       expect(yield* walls(app)).toEqual([]);
     })
   );
@@ -1136,10 +1140,10 @@ describe("an entity scoped to a state", () => {
         const app = yield* App.make(
           App.define({ systems: [Build, Meddle], handlers: [go] })
         );
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.dispatch(Go, { to: "menu", refuse: false });
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        yield* app.dispatch(Go, { to: "menu", refuse: false });
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([2, 3, 6]);
       })
   );
@@ -1157,10 +1161,10 @@ describe("an entity scoped to a state", () => {
         const app = yield* App.make(
           App.define({ systems: [Hang], handlers: [go] })
         );
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.dispatch(Go, { to: "menu", refuse: false });
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        yield* app.dispatch(Go, { to: "menu", refuse: false });
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([3]);
         expect((yield* app.read(Query.all(Aims))).count()).toBe(0);
       })
@@ -1204,15 +1208,15 @@ describe("an entity scoped to a state", () => {
           })
         );
         for (const app of [auto, hand]) {
-          app.dispatch(Go, { to: "playing", refuse: false });
-          app.tick(1);
+          yield* app.dispatch(Go, { to: "playing", refuse: false });
+          yield* app.tick(1);
         }
         const autoWorld = yield* auto.read(World);
         const handWorld = yield* hand.read(World);
         expect(autoWorld.hash()).toBe(handWorld.hash());
         for (const app of [auto, hand]) {
-          app.dispatch(Go, { to: "menu", refuse: false });
-          app.tick(1);
+          yield* app.dispatch(Go, { to: "menu", refuse: false });
+          yield* app.tick(1);
         }
         expect(yield* walls(auto)).toEqual([]);
         expect(autoWorld.hash()).toBe(handWorld.hash());
@@ -1225,9 +1229,9 @@ describe("an entity scoped to a state", () => {
       Effect.gen(function* () {
         const game = App.define({ systems: [Build], handlers: [go] });
         const app = yield* App.make(game);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        const save = app.save();
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1240,8 +1244,8 @@ describe("an entity scoped to a state", () => {
         const loadedWorld = yield* loaded.read(World);
         expect(loadedWorld.hash()).toBe(world.hash());
         for (const each of [app, loaded]) {
-          each.dispatch(Go, { to: "menu", refuse: false });
-          each.tick(1);
+          yield* each.dispatch(Go, { to: "menu", refuse: false });
+          yield* each.tick(1);
         }
         expect(yield* walls(loaded)).toEqual([]);
         expect(loadedWorld.hash()).toBe(world.hash());
@@ -1256,21 +1260,21 @@ describe("an entity scoped to a state", () => {
           App.define({ systems: [Build], handlers: [go] })
         );
         const world = yield* app.read(World);
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.enqueue(Go, { to: "menu", refuse: false });
-        const moment = Timeline.capture(app);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        yield* app.enqueue(Go, { to: "menu", refuse: false });
+        const moment = yield* Effect.exit(Timeline.capture(app));
         if (Exit.isFailure(moment)) {
           throw new Error("the game could not be captured");
         }
         const before = world.hash();
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([]);
         const after = world.hash();
-        Timeline.rewind(app, moment.value);
+        yield* Timeline.rewind(app, moment.value);
         expect(world.hash()).toBe(before);
         expect(yield* walls(app)).toEqual([1, 2, 3, 4]);
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([]);
         expect(world.hash()).toBe(after);
       })
@@ -1287,8 +1291,8 @@ describe("an entity scoped to a state", () => {
           (yield* Commands.spawns(gone)).spawn(gone);
         });
         const app = yield* App.make(App.define({ handlers: [pull] }));
-        expect(app.dispatch(Pull, {})).toEqual(Exit.void);
-        const save = app.save();
+        expect(yield* Effect.exit(app.dispatch(Pull, {}))).toEqual(Exit.void);
+        const save = yield* Effect.exit(app.save());
         assert(Exit.isSuccess(save));
         const After = State.define("st/Lever", ["up", "down"]);
         const loaded = yield* Effect.exit(
@@ -1318,10 +1322,10 @@ describe("an entity scoped to a state", () => {
         const app = yield* App.make(
           App.define({ systems: [Both], handlers: [go, dry] })
         );
-        app.dispatch(Go, { to: "playing", refuse: false });
-        app.tick(1);
-        app.dispatch(Dry, {});
-        app.tick(1);
+        yield* app.dispatch(Go, { to: "playing", refuse: false });
+        yield* app.tick(1);
+        yield* app.dispatch(Dry, {});
+        yield* app.tick(1);
         expect(yield* walls(app)).toEqual([2]);
       })
   );

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 
-import { Action, App, System, Timeline } from "../src/index.ts";
+import { Action, App, Save, System, Timeline } from "../src/index.ts";
 import { withApp } from "./peers.ts";
 
 describe("what an app is running", () => {
   it.effect("is told by its phase, in each stage and handler", () =>
     Effect.gen(function* () {
       const seen: [string, App.Phase][] = [];
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const note = (where: string) =>
         Effect.sync(() => {
           seen.push([where, app!.phase]);
@@ -37,11 +37,11 @@ describe("what an app is running", () => {
           Effect.gen(function* () {
             app = made;
             expect(made.phase).toBe("idle");
-            made.dispatch(Note, { by: "dispatch" });
-            made.enqueue(Note, { by: "a tick" });
-            made.input();
-            made.tick(1);
-            made.frame();
+            yield* made.dispatch(Note, { by: "dispatch" });
+            yield* made.enqueue(Note, { by: "a tick" });
+            yield* made.input();
+            yield* made.tick(1);
+            yield* made.frame();
             expect(made.phase).toBe("idle");
           })
       );
@@ -62,7 +62,11 @@ describe("what an app is running", () => {
         // Each would act on a game halfway through an action, which the action
         // may yet take back.
         const named = 'a handler of "ph/Call"';
-        const calls: [string, (app: App.Any) => unknown, string][] = [
+        const calls: [
+          string,
+          (app: App.App) => Effect.Effect<unknown, Save.SaveRefused>,
+          string,
+        ][] = [
           ["App.tick", (app) => app.tick(1), named],
           ["App.frame", (app) => app.frame(), named],
           ["App.input", (app) => app.input(), named],
@@ -78,19 +82,19 @@ describe("what an app is running", () => {
           ["inspect()", (app) => app.inspect(), named],
         ];
         for (const [name, call, busy] of calls) {
-          let app: App.Any | undefined;
+          let app: App.App | undefined;
           const Call = Action.define("ph/Call", Schema.Struct({}));
           const calling = Action.handler(Call, function* () {
-            yield* Effect.sync(() => call(app!));
+            yield* Effect.orDie(call(app!));
           });
           yield* withApp(
             App.make(App.define({ handlers: [calling] })),
             (made) =>
               Effect.gen(function* () {
                 app = made;
-                made.tick(1);
+                yield* made.tick(1);
                 const log = made.actionLog.length;
-                const exit = made.dispatch(Call, {});
+                const exit = yield* Effect.exit(made.dispatch(Call, {}));
                 expect(Exit.isFailure(exit), name).toBe(true);
                 expect(
                   String(Exit.isFailure(exit) ? exit.cause : ""),

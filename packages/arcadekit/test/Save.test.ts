@@ -194,23 +194,23 @@ type GameApp = Effect.Success<
 >;
 
 /** Moves from outside, decided by the tick alone. */
-const move = (app: GameApp, tick: number): void => {
+const move = Effect.fnUntraced(function* (app: GameApp, tick: number) {
   const dice = new EcsWorld({ seed: tick + 1 }).random;
   for (let n = dice.int(0, 2); n > 0; n--) {
     const choice = dice.int(1, 5);
     if (choice === 1) {
-      app.enqueue(Add, { by: dice.int(1, 5) });
+      yield* app.enqueue(Add, { by: dice.int(1, 5) });
     } else if (choice === 2) {
-      app.dispatch(Scatter, { count: dice.int(1, 3) });
+      yield* app.dispatch(Scatter, { count: dice.int(1, 3) });
     } else if (choice === 3) {
-      app.enqueueByName("sv/Double", {});
+      yield* app.enqueueByName("sv/Double", {});
     } else if (choice === 4) {
-      app.dispatch(Add, { by: dice.int(1, 5) });
+      yield* app.dispatch(Add, { by: dice.int(1, 5) });
     } else {
-      app.enqueueByName("sv/Add", { by: "not a number" });
+      yield* app.enqueueByName("sv/Add", { by: "not a number" });
     }
   }
-};
+});
 
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
   if (Exit.isFailure(exit)) {
@@ -235,20 +235,20 @@ const record = Effect.fnUntraced(function* (ticks: number, saveAt: number) {
       for (let tick = 0; tick < ticks; tick++) {
         if (tick === saveAt) {
           // After this tick's moves have arrived, so that some are waiting.
-          move(app, tick);
-          save = unwrap(app.save());
+          yield* move(app, tick);
+          save = unwrap(yield* Effect.exit(app.save()));
           saved = { ...app.time };
         } else {
-          move(app, tick);
+          yield* move(app, tick);
         }
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         hashes.push(world.hash());
       }
       return {
         save: save!,
         saved: saved!,
         hashes,
-        tail: app.record(save!),
+        tail: yield* app.record(save!),
         tally: yield* talliesOf(app),
         time: { ...app.time },
       };
@@ -326,26 +326,26 @@ describe("a saved game", () => {
         (app, world) =>
           Effect.gen(function* () {
             for (let i = 0; i < 12; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
             // Tick 12 divides by 3 and by 4: the bot has enqueued an Add and a
             // Double. Then two more arrive from outside.
-            app.enqueue(Add, { by: 100 });
-            app.enqueueByName("sv/Double", {});
-            const save = unwrap(app.save());
+            yield* app.enqueue(Add, { by: 100 });
+            yield* app.enqueueByName("sv/Double", {});
+            const save = unwrap(yield* Effect.exit(app.save()));
             expect(queuedIn(save)).toEqual([
               { name: "sv/Add", payload: { by: 7 } },
               { name: "sv/Double", payload: {} },
               { name: "sv/Add", payload: { by: 100 } },
               { name: "sv/Double", payload: {} },
             ]);
-            app.tick(1);
+            yield* app.tick(1);
             const expected = world.hash();
             const loaded = yield* withApp(
               App.make(Played, { save, checkpointEvery: 1 }),
               (other, itsWorld) =>
                 Effect.gen(function* () {
-                  other.tick(1);
+                  yield* other.tick(1);
                   return itsWorld.hash();
                 })
             );
@@ -375,8 +375,8 @@ describe("a saved game", () => {
         const Stamped = App.define({ systems: [Issue], handlers: [stamp] });
         const save = yield* withApp(App.make(Stamped), (app) =>
           Effect.gen(function* () {
-            app.tick(1);
-            const taken = unwrap(app.save());
+            yield* app.tick(1);
+            const taken = unwrap(yield* Effect.exit(app.save()));
             expect(queuedIn(taken)).toEqual([
               {
                 name: "sv/Stamp",
@@ -387,11 +387,7 @@ describe("a saved game", () => {
           })
         );
         stamps.length = 0;
-        yield* withApp(App.make(Stamped, { save }), (app) =>
-          Effect.gen(function* () {
-            app.tick(1);
-          })
-        );
+        yield* withApp(App.make(Stamped, { save }), (app) => app.tick(1));
         expect(stamps).toEqual([[86_400_000, "bigint", 5n]]);
       })
   );
@@ -404,9 +400,9 @@ describe("a saved game", () => {
         (app, world) =>
           Effect.gen(function* () {
             for (let i = 0; i < 4; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
-            const save = unwrap(app.save());
+            const save = unwrap(yield* Effect.exit(app.save()));
             // The event of tick 4 is waiting, in the world: Echo has read it,
             // Listen has not.
             expect(stored(save, Event.STORE)).toEqual([
@@ -420,8 +416,8 @@ describe("a saved game", () => {
               return (yield* talliesOf(of)).map((tally) => tally?.heard);
             });
             expect(yield* heard(app)).toEqual([1 + 2 + 3]);
-            app.tick(1);
-            app.tick(1);
+            yield* app.tick(1);
+            yield* app.tick(1);
             const expected = yield* heard(app);
             expect(expected).toEqual([1 + 2 + 3 + 4 + 5]);
             // Loaded, Listen hears tick 4 once, on the next tick, and no more.
@@ -429,12 +425,12 @@ describe("a saved game", () => {
               App.make(Played, { save, checkpointEvery: 1 }),
               (other, itsWorld) =>
                 Effect.gen(function* () {
-                  expect(other.inspect().stores[Event.STORE]).toEqual({
+                  expect((yield* other.inspect()).stores[Event.STORE]).toEqual({
                     "sv/Sounded": [{ tick: 4, at: "1970-01-01T00:00:04.000Z" }],
                   });
-                  other.tick(1);
+                  yield* other.tick(1);
                   expect(yield* heard(other)).toEqual([1 + 2 + 3 + 4]);
-                  other.tick(1);
+                  yield* other.tick(1);
                   expect(yield* heard(other)).toEqual(expected);
                   expect(itsWorld.hash()).toBe(world.hash());
                 })
@@ -449,8 +445,8 @@ describe("a saved game", () => {
       const save = yield* withApp(App.make(Played, start), (app) =>
         Effect.gen(function* () {
           expect(setups).toBe(1);
-          app.tick(1);
-          return unwrap(app.save());
+          yield* app.tick(1);
+          return unwrap(yield* Effect.exit(app.save()));
         })
       );
       yield* withApp(App.make(Played, { save, checkpointEvery: 1 }), (app) =>
@@ -460,7 +456,7 @@ describe("a saved game", () => {
           expect(yield* talliesOf(app)).toHaveLength(1);
           // It goes on: on the fifth tick it fires a pulse.
           for (let i = 0; i < 6; i++) {
-            app.tick(1);
+            yield* app.tick(1);
           }
           expect((yield* talliesOf(app)).map((tally) => tally?.pulses)).toEqual(
             [1]
@@ -549,8 +545,8 @@ describe("a game that cannot be saved as it stands", () => {
           App.make(App.define({ systems: [Issue], handlers: [small] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
-              expect(refusal(app.save()).message).toMatch(
+              yield* app.tick(1);
+              expect(refusal(yield* Effect.exit(app.save())).message).toMatch(
                 /^Can't save the actions queued for the next tick: the action "sv\/Small" has a payload its schema does not take/
               );
             })
@@ -579,9 +575,11 @@ describe("a game that cannot be saved as it stands", () => {
         App.make(App.define({ plugins: [Spill], handlers: [mend] })),
         (app) =>
           Effect.gen(function* () {
-            expect(refusal(app.save()).message).toContain('"sv/Blob.v"');
-            app.dispatch(Mend, {});
-            expect(Exit.isSuccess(app.save())).toBe(true);
+            expect(refusal(yield* Effect.exit(app.save())).message).toContain(
+              '"sv/Blob.v"'
+            );
+            yield* app.dispatch(Mend, {});
+            expect(Exit.isSuccess(yield* Effect.exit(app.save()))).toBe(true);
           })
       );
     })
@@ -592,16 +590,13 @@ describe("a game that cannot be saved as it stands", () => {
       let app: App.Any | undefined;
       let thrown: unknown;
       const Greedy = System.tick("Greedy", function* () {
-        try {
-          app!.save();
-        } catch (error) {
-          thrown = error;
-        }
+        const saved = yield* Effect.exit(app!.save());
+        thrown = Exit.isFailure(saved) ? Cause.squash(saved.cause) : undefined;
       });
       yield* withApp(App.make(App.define({ systems: [Greedy] })), (made) =>
         Effect.gen(function* () {
           app = made;
-          made.tick(1);
+          yield* made.tick(1);
         })
       );
       expect(String(thrown)).toMatch(/save\(\) was called during a tick/);
@@ -624,7 +619,10 @@ describe("a save that cannot be loaded", () => {
       });
       const save = yield* withApp(
         App.make(App.define({ plugins: [Then] })),
-        (app) => Effect.sync(() => unwrap(app.save()))
+        (app) =>
+          Effect.gen(function* () {
+            return unwrap(yield* Effect.exit(app.save()));
+          })
       );
       Component.define("sv/Shifting", { x: Field.f64 });
       const error = refusal(yield* load(save, App.define({})));

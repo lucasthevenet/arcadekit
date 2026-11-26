@@ -89,8 +89,8 @@ describe("systems", () => {
         Effect.gen(function* () {
           const [a, b] = spawned.map((id) => placedIn(world, id));
           assert(a !== undefined && b !== undefined);
-          app.tick(0.5);
-          app.tick(0.5);
+          yield* app.tick(0.5);
+          yield* app.tick(0.5);
           expect(world.get(a, Position)).toEqual({ x: 2, y: 4 });
           expect(world.get(b, Position)).toEqual({ x: 0, y: 0 });
           expect(app.time).toEqual({ delta: 0.5, elapsed: 1, tick: 2 });
@@ -116,7 +116,7 @@ describe("systems", () => {
       yield* withApp(App.make(App.define({ systems })), (app) =>
         Effect.gen(function* () {
           expect(app.systemOrder).toEqual(["input", "b", "a", "c", "render"]);
-          app.tick(1);
+          yield* app.tick(1);
           expect(log).toEqual(["input", "b", "a", "c", "render"]);
         })
       );
@@ -161,11 +161,11 @@ describe("systems", () => {
           App.make(App.define({ systems: [Spawner, Reaper] })),
           (app, world) =>
             Effect.gen(function* () {
-              app.tick(0.5);
+              yield* app.tick(0.5);
               expect(world.entityCount).toBe(1);
-              app.tick(0.5);
+              yield* app.tick(0.5);
               expect(world.entityCount).toBe(0);
-              app.tick(0.5);
+              yield* app.tick(0.5);
               expect(counts).toEqual([1, 1, 0]);
             })
         );
@@ -232,7 +232,7 @@ describe("systems", () => {
             const [torch, rock] = spawned.map((id) => placedIn(world, id));
             assert(torch !== undefined && rock !== undefined);
             for (let i = 0; i < 4; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
             expect(world.get(torch, Health)).toEqual({ hp: 80 });
             expect(world.get(rock, Health)).toEqual({ hp: 100 });
@@ -250,13 +250,13 @@ describe("systems", () => {
         seen.push(yield* Gravity);
       });
       yield* withApp(App.make(App.define({ systems: [ReadGravity] })), (app) =>
-        Effect.sync(() => app.tick(1))
+        app.tick(1)
       );
       yield* withApp(
         App.make(App.define({ systems: [ReadGravity] })).pipe(
           Effect.provide(Resource.layer(Gravity, 1.62))
         ),
-        (app) => Effect.sync(() => app.tick(1))
+        (app) => app.tick(1)
       );
       expect(seen).toEqual([9.81, 1.62]);
     })
@@ -282,7 +282,7 @@ describe("systems", () => {
         for (const system of [Harden, Rename]) {
           yield* withApp(App.make(App.define({ systems: [system] })), (app) =>
             Effect.gen(function* () {
-              expect(() => app.tick(1)).toThrow(TypeError);
+              expect(yield* thrown(app.tick(1))).toThrow(TypeError);
             })
           );
         }
@@ -291,7 +291,7 @@ describe("systems", () => {
           seen.push(yield* Config);
         });
         yield* withApp(App.make(App.define({ systems: [Read] })), (app) =>
-          Effect.sync(() => app.tick(1))
+          app.tick(1)
         );
         expect(seen).toEqual([{ difficulty: 1, levels: [{ name: "start" }] }]);
         // A layer's value is frozen too.
@@ -302,7 +302,7 @@ describe("systems", () => {
           ),
           (app) =>
             Effect.gen(function* () {
-              expect(() => app.tick(1)).toThrow(TypeError);
+              expect(yield* thrown(app.tick(1))).toThrow(TypeError);
             })
         );
         expect(given.difficulty).toBe(3);
@@ -344,11 +344,7 @@ describe("systems", () => {
             play: (sound) => void played.push(sound),
           })
         );
-        yield* withApp(make, (app) =>
-          Effect.gen(function* () {
-            app.frame();
-          })
-        );
+        yield* withApp(make, (app) => app.frame());
         expect(played).toEqual(["beep x1"]);
 
         // Forgetting the layer leaves `Audio` as an unmet requirement.
@@ -357,7 +353,7 @@ describe("systems", () => {
             withApp(
               // @ts-expect-error Audio is not provided
               App.make(App.define({ systems: [Beep] })),
-              (app) => Effect.sync(() => app.frame())
+              (app) => app.frame()
             )
           )
         ).toThrow(/Service not found: .*Audio/);
@@ -391,12 +387,12 @@ describe("systems", () => {
         const game = App.define({ systems: [Bounds], handlers: [place] });
         yield* withApp(App.make(game), (app) =>
           Effect.gen(function* () {
-            app.dispatch(Place, { x: 5 });
-            expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
-            app.dispatch(Place, { x: 500 });
-            const exit = app.tickExit(1);
+            yield* app.dispatch(Place, { x: 5 });
+            expect(Exit.isSuccess(yield* Effect.exit(app.tick(1)))).toBe(true);
+            yield* app.dispatch(Place, { x: 500 });
+            const exit = yield* Effect.exit(app.tick(1));
             expect(Exit.isFailure(exit)).toBe(true);
-            expect(() => app.tick(1)).toThrow(OutOfBounds);
+            expect(yield* thrown(app.tick(1))).toThrow(OutOfBounds);
           })
         );
       })
@@ -410,11 +406,11 @@ describe("systems", () => {
       yield* withApp(App.make(App.define({ systems: [Lazy] })), (app) =>
         Effect.gen(function* () {
           // The message says where work that takes longer goes instead.
-          expect(() => app.tick(1)).toThrow(
+          expect(yield* thrown(app.tick(1))).toThrow(
             /"Lazy" did not finish within the tick\. Systems must be synchronous: what takes longer than a tick keeps its place in the world/
           );
           // The app is still usable afterwards.
-          expect(() => app.tick(1)).toThrow(/did not finish/);
+          expect(yield* thrown(app.tick(1))).toThrow(/did not finish/);
         })
       );
     })
@@ -458,7 +454,7 @@ describe("the built-in services", () => {
         ),
         (app, world) =>
           Effect.gen(function* () {
-            app.tick(1);
+            yield* app.tick(1);
             expect(world.entityCount).toBe(1);
             expect(sizes).toEqual([7]);
           })
@@ -484,8 +480,8 @@ describe("a fiber the game starts", () => {
         });
         yield* withApp(App.make(App.define({ systems: [Busy] })), (app) =>
           Effect.gen(function* () {
-            app.tick(1);
-            app.tick(1);
+            yield* app.tick(1);
+            yield* app.tick(1);
             expect(ran).toBe(2);
           })
         );
@@ -501,7 +497,7 @@ describe("a fiber the game starts", () => {
         });
         yield* withApp(App.make(App.define({ systems: [Leaky] })), (app) =>
           Effect.gen(function* () {
-            expect(() => app.tick(1)).toThrow(
+            expect(yield* thrown(app.tick(1))).toThrow(
               /Tick 1 left a fiber running \(started while "Leaky" ran\), with Effect\.forkDetach.*keep work that takes longer than a tick in the world/
             );
           })
@@ -515,7 +511,7 @@ describe("a fiber the game starts", () => {
           App.make(App.define({ handlers: [ping] })),
           (app, world) =>
             Effect.gen(function* () {
-              expect(() => app.dispatch(Ping, {})).toThrow(
+              expect(yield* thrown(app.dispatch(Ping, {}))).toThrow(
                 /The handler for "rt\/Ping" left a fiber running/
               );
               // Its writes are undone, as a refusal's are.
@@ -528,7 +524,7 @@ describe("a fiber the game starts", () => {
         });
         yield* withApp(App.make(App.define({ systems: [Look] })), (app) =>
           Effect.gen(function* () {
-            expect(() => app.frame()).toThrow(
+            expect(yield* thrown(app.frame())).toThrow(
               /The frame left a fiber running \(started while "Look" ran\)/
             );
           })
@@ -562,7 +558,7 @@ describe("a fiber the game starts", () => {
         (app) =>
           Effect.gen(function* () {
             started = 0;
-            app.tick(1);
+            yield* app.tick(1);
             // The tick's own fiber and the two the system forked.
             expect(started).toBe(3);
           })
@@ -604,7 +600,7 @@ describe("the tick scheduler", () => {
       });
       yield* withApp(App.make(App.define({ systems: [Heavy] })), (app) =>
         Effect.gen(function* () {
-          app.tick(1);
+          yield* app.tick(1);
           expect(total).toBe(10_000);
         })
       );
@@ -690,7 +686,7 @@ describe("determinism", () => {
                 hz: 60,
                 maxStepsPerCall: 10_000,
               });
-              step(5);
+              yield* step(5);
               (yield* app.read(Movers)).each((pos, vel, entity) => {
                 trace.push(`${idOf(entity)}:${pos.x},${pos.y},${vel.x}`);
               });
@@ -718,14 +714,14 @@ describe("the fixed-step driver", () => {
             hz: 60,
             maxStepsPerCall: 1000,
           });
-          expect(step(1)).toBe(60);
-          expect(step(1)).toBe(60);
+          expect(yield* step(1)).toBe(60);
+          expect(yield* step(1)).toBe(60);
           for (let i = 0; i < 1000; i++) {
-            step(0.001);
+            yield* step(0.001);
           }
           expect(app.time.tick).toBe(180);
-          expect(step(0.01)).toBe(0);
-          expect(step(0.01)).toBe(1);
+          expect(yield* step(0.01)).toBe(0);
+          expect(yield* step(0.01)).toBe(1);
         })
       )
   );
@@ -734,8 +730,8 @@ describe("the fixed-step driver", () => {
     withApp(App.make(App.define({ systems: [] })), (app) =>
       Effect.gen(function* () {
         const step = Driver.fixedStep(app, { hz: 60 });
-        expect(step(10)).toBe(5);
-        expect(step(1 / 60)).toBe(1);
+        expect(yield* step(10)).toBe(5);
+        expect(yield* step(1 / 60)).toBe(1);
       })
     )
   );

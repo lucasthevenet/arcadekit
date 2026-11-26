@@ -33,6 +33,7 @@ import {
   readSnapshot,
 } from "../src/index.ts";
 import type { Rng } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
 const Ship = Component.define("in/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -176,28 +177,28 @@ describe("the input stage", () => {
         expect(app.systemOrder).toEqual(["Tick"]);
         expect(app.frameOrder).toEqual(["Draw"]);
         // A tick reads no device, and a frame doesn't either.
-        app.tick(1);
-        expect(Exit.isSuccess(app.tickExit(1))).toBe(true);
-        app.frame();
+        yield* app.tick(1);
+        expect(Exit.isSuccess(yield* Effect.exit(app.tick(1)))).toBe(true);
+        yield* app.frame();
         expect(ran).toEqual(["Tick", "Tick", "Draw"]);
         // Whoever steps the app runs it before a tick, as a driver does.
         ran.length = 0;
-        app.input();
-        app.tick(1);
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual(["First", "Second", "Tick", "Tick"]);
         // A condition is asked there as anywhere.
-        app.dispatch(Pause, {});
-        app.tick(1);
+        yield* app.dispatch(Pause, {});
+        yield* app.tick(1);
         ran.length = 0;
-        expect(Exit.isSuccess(app.inputExit())).toBe(true);
+        expect(Exit.isSuccess(yield* Effect.exit(app.input()))).toBe(true);
         expect(ran).toEqual(["First", "Second", "Sometimes"]);
         // An app with no input stage is driven as before.
         const plain = yield* App.make(
           App.define({ systems: [note("Other", "update")] })
         );
         expect(plain.inputOrder).toEqual([]);
-        plain.input();
+        yield* plain.input();
       })
   );
 
@@ -220,7 +221,7 @@ describe("the input stage", () => {
           source.press("KeyA");
           source.tap("Space");
           source.move(Input.pointerX, 12.5);
-          app.input();
+          yield* app.input();
           const first = {
             down: ["KeyA"],
             pressed: ["KeyA", "Space"],
@@ -230,7 +231,7 @@ describe("the input stage", () => {
           };
           expect(seen).toEqual([first, first]);
           source.release("KeyA");
-          app.input();
+          yield* app.input();
           const second = {
             down: ["KeyZ"],
             pressed: ["KeyZ"],
@@ -250,7 +251,7 @@ describe("the input stage", () => {
         seen.push(told(yield* Input.Devices));
       });
       const app = yield* App.make(App.define({ systems: [A] }));
-      app.input();
+      yield* app.input();
       expect(seen).toEqual([
         { down: [], pressed: [], released: [], axes: {}, moved: [] },
       ]);
@@ -270,15 +271,15 @@ describe("the input stage", () => {
       yield* Effect.gen(function* () {
         const Tick = System.tick("Tick", function* () {});
         const app = yield* App.make(App.define({ systems: [Tick] }));
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(samples).toBe(0);
         const Listen = System.input("Listen", function* () {
           yield* Input.Devices;
         });
         const listening = yield* App.make(App.define({ systems: [Listen] }));
-        listening.input();
-        listening.input();
+        yield* listening.input();
+        yield* listening.input();
         expect(samples).toBe(2);
       }).pipe(withSource(source));
     })
@@ -334,59 +335,72 @@ describe("the input stage", () => {
             }),
             { checkpointEvery: 1, seed: 3 }
           );
-          app.tick(1);
+          yield* app.tick(1);
           const before = yield* hashOf(app);
-          expect(() => app.input(), what).toThrow(what);
+          expect(yield* thrown(app.input()), what).toThrow(what);
           expect(yield* hashOf(app), what).toBe(before);
           // No event waits to be read, and no command to be applied: a save
           // would be refused for one.
-          expect(app.inspect().stores, what).not.toHaveProperty([Event.STORE]);
-          expect(Exit.isSuccess(app.save()), what).toBe(true);
+          expect((yield* app.inspect()).stores, what).not.toHaveProperty([
+            Event.STORE,
+          ]);
+          expect(Exit.isSuccess(yield* Effect.exit(app.save())), what).toBe(
+            true
+          );
           // And the app is not left frozen, or in the middle of the stage.
-          expect(Exit.isSuccess(app.dispatch(Bump, {})), what).toBe(true);
+          expect(
+            Exit.isSuccess(yield* Effect.exit(app.dispatch(Bump, {}))),
+            what
+          ).toBe(true);
           expect(yield* pointsOf(app), what).toBe(1);
-          app.tick(1);
-          expect(Exit.isFailure(app.inputExit()), what).toBe(true);
+          yield* app.tick(1);
+          expect(Exit.isFailure(yield* Effect.exit(app.input())), what).toBe(
+            true
+          );
         }
         // Nor can it be reached around: the app says where it is.
         {
           let app: App.App<never, typeof bump> | undefined;
-          let reach: () => unknown = () => undefined;
+          let reach: Effect.Effect<unknown> = Effect.void;
           const Reach = System.input("Reach", function* () {
-            reach();
+            yield* reach;
           });
           app = yield* App.make(
             App.define({ handlers: [bump], systems: [Reach] })
           );
           const made = app;
-          reach = () => made.dispatch(Bump, {});
-          expect(() => made.input()).toThrow(
+          reach = Effect.orDie(made.dispatch(Bump, {}));
+          expect(yield* thrown(made.input())).toThrow(
             /dispatch\("in\/Bump"\) was called during the input stage/
           );
-          reach = () => made.tick(1);
-          expect(() => made.input()).toThrow(
+          reach = made.tick(1);
+          expect(yield* thrown(made.input())).toThrow(
             /App\.tick was called from inside a run of the input stage/
           );
-          reach = () => made.input();
-          expect(() => made.input()).toThrow(
+          reach = made.input();
+          expect(yield* thrown(made.input())).toThrow(
             /App\.input was called from inside a run of the input stage/
           );
-          reach = () => made.frame();
-          expect(() => made.input()).toThrow(
+          reach = made.frame();
+          expect(yield* thrown(made.input())).toThrow(
             /App\.frame was called from inside a run of the input stage/
           );
-          reach = () => made.save();
-          expect(() => made.input()).toThrow(/save\(\) was called during/);
-          reach = () => undefined;
-          made.input();
+          reach = Effect.orDie(made.save());
+          expect(yield* thrown(made.input())).toThrow(
+            /save\(\) was called during/
+          );
+          reach = Effect.void;
+          yield* made.input();
           expect(yield* pointsOf(made)).toBe(0);
           // And the input stage is not run from inside a tick.
-          let nested: App.Any | undefined;
+          let nested: App.App | undefined;
           const Nested = System.tick("Nested", function* () {
-            nested?.input();
+            if (nested !== undefined) {
+              yield* nested.input();
+            }
           });
           nested = yield* App.make(App.define({ systems: [Nested, Reach] }));
-          expect(() => nested!.tick(1)).toThrow(
+          expect(yield* thrown(nested!.tick(1))).toThrow(
             /App\.input was called from inside a tick/
           );
         }
@@ -404,7 +418,7 @@ describe("the input stage", () => {
           App.define({ plugins: [Docked, Kept], systems: [Scribble] }),
           { verifyFrames: true }
         );
-        const exit = app.inputExit();
+        const exit = yield* Effect.exit(app.input());
         expect(Exit.isFailure(exit)).toBe(true);
         const error = Result.getOrThrow(Exit.findDefect(exit));
         assert.instanceOf(error, App.FrameChangedWorld);
@@ -420,7 +434,9 @@ describe("the input stage", () => {
           App.define({ plugins: [Docked, Kept], systems: [Smudge] }),
           { verifyFrames: true }
         );
-        const smudged = Result.getOrThrow(Exit.findDefect(drawn.frameExit(0)));
+        const smudged = Result.getOrThrow(
+          Exit.findDefect(yield* Effect.exit(drawn.frame(0)))
+        );
         assert.instanceOf(smudged, App.FrameChangedWorld);
         expect(smudged.stage).toBe("frame");
         expect(smudged.message).toMatch(
@@ -446,7 +462,7 @@ describe("the input stage", () => {
           { verifyFrames: true }
         );
         const before = yield* hashOf(app);
-        const exit = app.inputExit();
+        const exit = yield* Effect.exit(app.input());
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
           new Error(
             'eachChunk() wrote "in/Ship.x", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "in/Ship" in Query.writes to write it, or write it with each().'
@@ -478,10 +494,10 @@ describe("the input stage", () => {
           { verifyFrames: true }
         );
         const before = yield* hashOf(app);
-        expect(Exit.isSuccess(app.inputExit())).toBe(true);
-        expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
+        expect(Exit.isSuccess(yield* Effect.exit(app.input()))).toBe(true);
+        expect(Exit.isSuccess(yield* Effect.exit(app.frame(0)))).toBe(true);
         expect(yield* hashOf(app)).not.toBe(before);
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* pointsOf(app)).toBe(5);
       })
   );
@@ -514,16 +530,16 @@ describe("the input stage", () => {
             { checkpointEvery: 0 }
           );
           source.press("Enter");
-          app.input();
+          yield* app.input();
           expect(yield* pointsOf(app)).toBe(0);
           expect(app.actionLog).toEqual([
             { tick: 0, name: "in/Bump", payload: { by: 5 }, queued: true },
           ]);
-          app.tick(1);
+          yield* app.tick(1);
           expect(seen).toEqual([5]);
           // Held is not pressed again.
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           expect(seen).toEqual([5, 5]);
           expect(app.actionLog.length).toBe(1);
         }).pipe(withSource(source));
@@ -552,12 +568,12 @@ describe("the input stage", () => {
           const step = Driver.fixedStep(app, { hz: 10 });
           // Frames of 40 ms against ticks of 100 ms.
           source.press("KeyA");
-          step(0.04);
+          yield* step(0.04);
           source.tap("KeyB");
-          step(0.04);
+          yield* step(0.04);
           expect(order).toEqual(["frame", "frame"]);
           // The tick that comes due hears what was pressed in every frame since.
-          step(0.04);
+          yield* step(0.04);
           expect(order.slice(2)).toEqual([
             "input KeyA+KeyB",
             "tick 1",
@@ -566,7 +582,7 @@ describe("the input stage", () => {
           // A long frame reads the devices before each of its ticks.
           order.length = 0;
           source.press("KeyC");
-          step(0.2);
+          yield* step(0.2);
           expect(order).toEqual([
             "input KeyC",
             "tick 2",
@@ -617,9 +633,9 @@ describe("the input stage", () => {
         );
         const plain = yield* App.make(App.define({ systems: [Land] }));
         for (let i = 0; i < 3; i++) {
-          app.input();
-          app.tick(1);
-          plain.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
+          yield* plain.tick(1);
         }
         // Each system of the stage hears each event, once.
         expect(heard).toEqual([1, 2]);
@@ -636,13 +652,13 @@ describe("the input stage", () => {
           })
         );
         const step = Driver.fixedStep(both, { hz: 10 });
-        step(0.1);
-        step(0.3);
+        yield* step(0.1);
+        yield* step(0.3);
         expect(drawn).toEqual([1, 2, 3, 4]);
         // The game cannot tell that its devices are read.
         expect(yield* hashOf(app)).toBe(yield* hashOf(plain));
-        const save = app.save();
-        const bare = plain.save();
+        const save = yield* Effect.exit(app.save());
+        const bare = yield* Effect.exit(plain.save());
         assert(Exit.isSuccess(save) && Exit.isSuccess(bare));
         expect(waitingIn(save.value)).toEqual(waitingIn(bare.value));
       })
@@ -717,14 +733,14 @@ describe("the input stage", () => {
             for (const app of [alone, together, bare, shown]) {
               // What the action emits, it emits before the tick's systems
               // run: the oldest events of the tick.
-              app.input();
-              app.enqueue(Try, { by });
-              app.tick(1);
-              app.frame();
+              yield* app.input();
+              yield* app.enqueue(Try, { by });
+              yield* app.tick(1);
+              yield* app.frame();
             }
           }
-          alone.input();
-          together.input();
+          yield* alone.input();
+          yield* together.input();
           // Each event once, the first tick's among them, and the refusal.
           expect(heard).toEqual([1, 3]);
           expect(refused).toEqual(["in/Try TooMuch"]);
@@ -734,7 +750,9 @@ describe("the input stage", () => {
           expect(onlyDrawn).toEqual([1, 3]);
           // And the game cannot tell that anyone was listening.
           expect(yield* hashOf(alone)).toBe(yield* hashOf(bare));
-          const saves = [alone, together, bare].map((app) => app.save());
+          const saves = yield* Effect.forEach([alone, together, bare], (app) =>
+            Effect.exit(app.save())
+          );
           const events = saves.map((save) => {
             assert(Exit.isSuccess(save));
             return waitingIn(save.value);
@@ -743,10 +761,10 @@ describe("the input stage", () => {
           expect(events[1]).toEqual(events[2]);
           // Heard, they are kept no longer.
           for (let i = 0; i < 3; i++) {
-            alone.input();
-            alone.tick(1);
+            yield* alone.input();
+            yield* alone.tick(1);
           }
-          expect(alone.inspect().stores).not.toHaveProperty([
+          expect((yield* alone.inspect()).stores).not.toHaveProperty([
             Event.STORE,
             Done.name,
           ]);
@@ -793,12 +811,12 @@ describe("the input stage", () => {
           );
           for (let tick = 1; tick <= 6; tick++) {
             listening = tick === 6;
-            app.input();
-            app.enqueue(Emit, {});
-            app.tick(1);
-            app.frame();
+            yield* app.input();
+            yield* app.enqueue(Emit, {});
+            yield* app.tick(1);
+            yield* app.frame();
           }
-          app.input();
+          yield* app.input();
           // The input stage runs before a tick, so what it has not had
           // its chance at is the tick before; the frame stage runs after.
           expect(heard, stage).toEqual(stage === "input" ? [5, 6] : [6]);
@@ -824,26 +842,26 @@ describe("the input stage", () => {
             App.define({ handlers: [emit], systems: [Hear] })
           );
           for (let i = 0; i < ticks; i++) {
-            app.enqueue(Emit, {});
-            app.tick(1);
+            yield* app.enqueue(Emit, {});
+            yield* app.tick(1);
           }
           return app;
         };
         // Late by a hundred ticks: every one of their events is there.
         const late = yield* ticked(100);
-        late.input();
+        yield* late.input();
         expect(heard).toBe(100);
         // Never run in seven hundred, as in a replay: the app has taken
         // the stage to be gone, and keeps nothing for it.
         heard = 0;
         const gone = yield* ticked(700);
-        gone.input();
+        yield* gone.input();
         expect(heard).toBe(0);
         // Run again, it hears again from then on.
         for (let i = 0; i < 3; i++) {
-          gone.enqueue(Emit, {});
-          gone.tick(1);
-          gone.input();
+          yield* gone.enqueue(Emit, {});
+          yield* gone.tick(1);
+          yield* gone.input();
         }
         expect(heard).toBe(3);
       })
@@ -860,17 +878,17 @@ describe("the input stage", () => {
           });
           // With no `app.input()`, the key is not heard.
           source.press("ArrowRight");
-          app.tick(1);
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(0);
           expect(reports(app)).toEqual([]);
-          app.input();
-          app.tick(1);
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(20);
           source.release("ArrowRight");
           source.tap("Space");
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           expect(yield* ship(app)).toEqual({ x: 20, shots: 1 });
           // Each run of the stage read the devices once, and reported what
           // had changed.
@@ -882,7 +900,7 @@ describe("the input stage", () => {
           // change.
           const step = Driver.fixedStep(app, { hz: 10 });
           source.press("ArrowLeft");
-          step(0.3);
+          yield* step(0.3);
           expect(app.time.tick).toBe(7);
           expect(reports(app).slice(2)).toEqual([{ down: ["ArrowLeft"] }]);
           expect((yield* ship(app)).x).toBeCloseTo(17, 5);
@@ -908,17 +926,17 @@ describe("the input stage", () => {
           ticked++;
         });
         const app = yield* App.make(App.define({ systems: [Read, Tick] }));
-        const exit = app.inputExit();
+        const exit = yield* Effect.exit(app.input());
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(
           NoKeyboard
         );
-        expect(() => app.input()).toThrow(NoKeyboard);
+        expect(yield* thrown(app.input())).toThrow(NoKeyboard);
         expect([ran, ticked, app.time.tick]).toEqual([2, 0, 0]);
-        app.tick(1);
+        yield* app.tick(1);
         expect([ran, ticked, app.time.tick]).toEqual([2, 1, 1]);
         broken = false;
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect([ran, ticked, app.time.tick]).toEqual([3, 2, 2]);
       })
   );
@@ -935,10 +953,10 @@ describe("the input stage", () => {
             checkpointEvery: 1,
           });
           source.press("ArrowRight");
-          app.input();
-          app.tick(1);
-          app.tick(1);
-          recording = app.record();
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.tick(1);
+          recording = yield* app.record();
           hash = yield* hashOf(app);
           expect((yield* ship(app)).x).toBe(20);
         }).pipe(withSource(source));
@@ -956,8 +974,8 @@ describe("the input stage", () => {
           expect(yield* ship(again)).toEqual({ x: 20, shots: 0 });
           expect(reports(again)).toEqual([{ down: ["ArrowRight"] }]);
           // Played on from there, by hand, it hears the machine it is on.
-          again.input();
-          again.tick(1);
+          yield* again.input();
+          yield* again.tick(1);
           expect((yield* ship(again)).shots).toBe(1);
         }).pipe(withSource(here));
       })
@@ -974,14 +992,16 @@ describe("the input stage", () => {
         const app = yield* App.make(
           App.define({ systems: [Fail], handlers: [award] })
         );
-        const exit = app.inputExit();
+        const exit = yield* Effect.exit(app.input());
         expect(Exit.isFailure(exit)).toBe(true);
         expect(
           Cause.squash((exit as Exit.Failure<void, NoKeyboard>).cause)
         ).toEqual(new NoKeyboard());
-        expect(() => app.input()).toThrow(NoKeyboard);
+        expect(yield* thrown(app.input())).toThrow(NoKeyboard);
         // The world is not left frozen: a point can still be given.
-        expect(Exit.isSuccess(app.dispatch(Award, {}))).toBe(true);
+        expect(
+          Exit.isSuccess(yield* Effect.exit(app.dispatch(Award, {})))
+        ).toBe(true);
         expect(yield* pointsOf(app)).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.input("Wait", function* () {
@@ -990,10 +1010,12 @@ describe("the input stage", () => {
         const waiting = yield* App.make(
           App.define({ systems: [Wait], handlers: [award] })
         );
-        expect(() => waiting.input()).toThrow(
+        expect(yield* thrown(waiting.input())).toThrow(
           /System "Wait" did not finish within the input stage/
         );
-        expect(Exit.isSuccess(waiting.dispatch(Award, {}))).toBe(true);
+        expect(
+          Exit.isSuccess(yield* Effect.exit(waiting.dispatch(Award, {})))
+        ).toBe(true);
         expect(yield* pointsOf(waiting)).toBe(1);
       })
   );
@@ -1016,8 +1038,8 @@ describe("the input stage", () => {
           seed: 5,
         });
         const before = yield* hashOf(app);
-        app.input();
-        app.input();
+        yield* app.input();
+        yield* app.input();
         expect(new Set(drawn).size).toBe(2);
         // The hash holds the state of the world's generator.
         expect(yield* hashOf(app)).toBe(before);
@@ -1078,17 +1100,17 @@ describe("the picture of the devices in the world", () => {
               systems: [look("First"), look("Second")],
             })
           );
-          const step = (): void => {
-            app.input();
-            app.tick(1);
-          };
-          step();
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          yield* step();
           source.press("KeyA");
-          step();
-          step();
+          yield* step();
+          yield* step();
           source.release("KeyA");
-          step();
-          step();
+          yield* step();
+          yield* step();
           expect(seen).toEqual([
             "First 1:",
             "Second 1:",
@@ -1105,8 +1127,8 @@ describe("the picture of the devices in the world", () => {
           // let go, and is not held.
           seen.length = 0;
           source.tap("KeyA");
-          step();
-          step();
+          yield* step();
+          yield* step();
           expect(seen).toEqual([
             "First 6: pressed released",
             "Second 6: pressed released",
@@ -1117,11 +1139,11 @@ describe("the picture of the devices in the world", () => {
           // no tick between.
           seen.length = 0;
           source.press("KeyA");
-          app.input();
+          yield* app.input();
           source.release("KeyA");
-          app.input();
-          app.tick(1);
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.tick(1);
           expect(seen).toEqual([
             "First 8: pressed released",
             "Second 8: pressed released",
@@ -1130,13 +1152,13 @@ describe("the picture of the devices in the world", () => {
           ]);
           // A key let go and pressed again at once: held, and pressed anew.
           source.press("KeyA");
-          step();
+          yield* step();
           source.release("KeyA");
-          app.input();
+          yield* app.input();
           source.press("KeyA");
-          app.input();
+          yield* app.input();
           seen.length = 0;
-          app.tick(1);
+          yield* app.tick(1);
           expect(seen[0]).toBe("First 11: down pressed released");
           // A held key let go and pressed again between two readings of the
           // devices, with no tick between: the same. It went up, it went
@@ -1144,8 +1166,8 @@ describe("the picture of the devices in the world", () => {
           source.release("KeyA");
           source.press("KeyA");
           seen.length = 0;
-          step();
-          step();
+          yield* step();
+          yield* step();
           expect(seen).toEqual([
             "First 12: down pressed released",
             "Second 12: down pressed released",
@@ -1158,8 +1180,8 @@ describe("the picture of the devices in the world", () => {
           source.release("KeyA");
           source.tap("KeyA");
           seen.length = 0;
-          step();
-          step();
+          yield* step();
+          yield* step();
           expect(seen).toEqual([
             "First 14: pressed released",
             "Second 14: pressed released",
@@ -1174,9 +1196,9 @@ describe("the picture of the devices in the world", () => {
           const said = reports(app).length;
           source.move(Input.pointerX, 5);
           source.press("KeyB");
-          app.input();
-          app.input();
-          app.input();
+          yield* app.input();
+          yield* app.input();
+          yield* app.input();
           expect(reports(app).slice(said)).toEqual([
             { down: ["KeyB"], axes: { PointerX: 5 } },
           ]);
@@ -1207,8 +1229,8 @@ describe("the picture of the devices in the world", () => {
         const app = yield* App.make(
           App.define({ plugins: [Input.plugin], systems: [Look] })
         );
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(seen).toEqual({
           at: [0, 0],
           main: [false, false, false],
@@ -1225,8 +1247,8 @@ describe("the picture of the devices in the world", () => {
         source.press(Input.padButton(0, 0));
         source.move(Input.padAxis(1, 0), 0.5);
         source.press(Input.padButton(1, 3));
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(seen).toEqual({
           at: [120, 45.5],
           main: [false, false, false],
@@ -1240,8 +1262,8 @@ describe("the picture of the devices in the world", () => {
         source.press(Input.pointerButton());
         source.move(Input.padAxis(0, 1), 0);
         source.release(Input.padButton(0, 0));
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(seen).toEqual({
           at: [120, 45.5],
           main: [true, true, false],
@@ -1284,7 +1306,7 @@ describe("the picture of the devices in the world", () => {
           const step = Driver.fixedStep(app, { hz: 10 });
           const tickHashes: number[] = [];
           const frame = Effect.fnUntraced(function* () {
-            step(0.1);
+            yield* step(0.1);
             tickHashes.push(yield* hashOf(app));
           });
           yield* frame();
@@ -1313,7 +1335,7 @@ describe("the picture of the devices in the world", () => {
           ]);
           return {
             hashes: tickHashes,
-            text: Journal.encode(app.record()),
+            text: Journal.encode(yield* app.record()),
             played: yield* ship(app),
             ticks: app.time.tick,
           };
@@ -1374,19 +1396,19 @@ describe("the picture of the devices in the world", () => {
             checkpointEvery: 0,
           });
           for (let i = 0; i < 3; i++) {
-            app.input();
-            app.tick(1);
-            bare.tick(1);
+            yield* app.input();
+            yield* app.tick(1);
+            yield* bare.tick(1);
           }
           expect(app.actionLog).toEqual([]);
           expect(yield* hashOf(app)).toBe(yield* hashOf(bare));
           source.press("KeyQ");
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           // Held still: one report, however long it is held.
           for (let i = 0; i < 5; i++) {
-            app.input();
-            app.tick(1);
+            yield* app.input();
+            yield* app.tick(1);
           }
           expect(reports(app)).toEqual([{ down: ["KeyQ"] }]);
           expect(yield* hashOf(app)).not.toBe(yield* hashOf(bare));
@@ -1400,31 +1422,36 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const one = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const two = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        one.dispatch(Input.Report, {
+        yield* one.dispatch(Input.Report, {
           down: ["KeyB", "KeyA"],
           axes: { PointerY: 2, PointerX: 1 },
         });
-        two.dispatch(Input.Report, {
+        yield* two.dispatch(Input.Report, {
           down: ["KeyA", "KeyB"],
           axes: { PointerX: 1, PointerY: 2 },
         });
         expect(yield* hashOf(one)).toBe(yield* hashOf(two));
         // An axis back at 0 is one nobody moved.
         const still = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        still.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
-        one.dispatch(Input.Report, { axes: { PointerX: 0, PointerY: 0 } });
+        yield* still.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
+        yield* one.dispatch(Input.Report, {
+          axes: { PointerX: 0, PointerY: 0 },
+        });
         expect(yield* hashOf(one)).toBe(yield* hashOf(still));
         // What went up is applied before what went down: a key in both
         // was let go and pressed again, and is held.
         const repressed = yield* App.make(
           App.define({ plugins: [Input.plugin] })
         );
-        repressed.dispatch(Input.Report, { down: ["KeyA"] });
-        repressed.tick(1);
-        repressed.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        yield* repressed.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* repressed.tick(1);
+        yield* repressed.dispatch(Input.Report, {
+          down: ["KeyA"],
+          up: ["KeyA"],
+        });
         const held = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        held.dispatch(Input.Report, { down: ["KeyA"] });
-        held.tick(1);
+        yield* held.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* held.tick(1);
         expect(yield* hashOf(repressed)).not.toBe(yield* hashOf(held));
         let seen = "";
         const Look = System.tick("Look", function* () {
@@ -1434,33 +1461,39 @@ describe("the picture of the devices in the world", () => {
         const looking = yield* App.make(
           App.define({ plugins: [Input.plugin], systems: [Look] })
         );
-        looking.dispatch(Input.Report, { down: ["KeyA"] });
-        looking.tick(1);
-        looking.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
-        looking.tick(1);
+        yield* looking.dispatch(Input.Report, { down: ["KeyA"] });
+        yield* looking.tick(1);
+        yield* looking.dispatch(Input.Report, { down: ["KeyA"], up: ["KeyA"] });
+        yield* looking.tick(1);
         expect(seen).toBe("true true true");
         // A report that says what is so already is accepted, and writes
         // nothing: a key that is down did not go down again.
-        one.tick(1);
+        yield* one.tick(1);
         const before = yield* hashOf(one);
-        const again = one.dispatch(Input.Report, {
-          down: ["KeyA"],
-          up: ["KeyZ"],
-          axes: { PointerX: 0 },
-        });
+        const again = yield* Effect.exit(
+          one.dispatch(Input.Report, {
+            down: ["KeyA"],
+            up: ["KeyZ"],
+            axes: { PointerX: 0 },
+          })
+        );
         expect(Exit.isSuccess(again)).toBe(true);
         expect(yield* hashOf(one)).toBe(before);
         const fresh = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const empty = yield* hashOf(fresh);
         expect(
           Exit.isSuccess(
-            fresh.dispatch(Input.Report, {
-              up: ["KeyZ"],
-              axes: { PointerX: 0 },
-            })
+            yield* Effect.exit(
+              fresh.dispatch(Input.Report, {
+                up: ["KeyZ"],
+                axes: { PointerX: 0 },
+              })
+            )
           )
         ).toBe(true);
-        expect(Exit.isSuccess(fresh.dispatch(Input.Report, {}))).toBe(true);
+        expect(
+          Exit.isSuccess(yield* Effect.exit(fresh.dispatch(Input.Report, {})))
+        ).toBe(true);
         expect(yield* hashOf(fresh)).toBe(empty);
       })
   );
@@ -1471,23 +1504,25 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Input.plugin] }));
         const never = yield* App.make(App.define({ plugins: [Input.plugin] }));
-        app.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
-        never.dispatch(Input.Report, { down: ["KeyB"] });
-        app.tick(1);
-        never.tick(1);
-        app.dispatch(Input.Report, { up: ["KeyA"] });
-        app.tick(1);
-        never.tick(1);
+        yield* app.dispatch(Input.Report, { down: ["KeyA", "KeyB"] });
+        yield* never.dispatch(Input.Report, { down: ["KeyB"] });
+        yield* app.tick(1);
+        yield* never.tick(1);
+        yield* app.dispatch(Input.Report, { up: ["KeyA"] });
+        yield* app.tick(1);
+        yield* never.tick(1);
         // Still remembered: it went up in the tick that just ran.
         expect(yield* hashOf(app)).not.toBe(yield* hashOf(never));
         // The next report, of anything, drops it: even one that says it
         // went up, which it did long ago.
-        const late = app.dispatch(Input.Report, {
-          up: ["KeyA"],
-          axes: { PointerX: 4 },
-        });
+        const late = yield* Effect.exit(
+          app.dispatch(Input.Report, {
+            up: ["KeyA"],
+            axes: { PointerX: 4 },
+          })
+        );
         expect(Exit.isSuccess(late)).toBe(true);
-        never.dispatch(Input.Report, { axes: { PointerX: 4 } });
+        yield* never.dispatch(Input.Report, { axes: { PointerX: 4 } });
         expect(yield* hashOf(app)).toBe(yield* hashOf(never));
       })
   );
@@ -1513,7 +1548,7 @@ describe("the picture of the devices in the world", () => {
           ];
           for (const move of moves) {
             move();
-            step(0.1);
+            yield* step(0.1);
             seen.push(yield* hashOf(app));
           }
           return { hashes: seen, log: app.actionLog as Action.Logged[] };
@@ -1528,20 +1563,20 @@ describe("the picture of the devices in the world", () => {
           const step = Driver.fixedStep(app, { hz: 10 });
           for (let tick = 0; tick < hashes.length; tick++) {
             for (const entry of log.filter((one) => one.tick === tick)) {
-              app.enqueueByName(entry.name, entry.payload);
+              yield* app.enqueueByName(entry.name, entry.payload);
             }
-            step(0.1);
+            yield* step(0.1);
             expect(yield* hashOf(app), `tick ${tick + 1}`).toBe(hashes[tick]);
           }
           // Nothing was reported of devices that are not there.
           expect(reports(app)).toEqual(log.map((entry) => entry.payload));
           // And a key said to be held stays held, however often it is read.
-          app.dispatch(Input.Report, { down: ["ArrowLeft"] });
+          yield* app.dispatch(Input.Report, { down: ["ArrowLeft"] });
           const before = (yield* ship(app)).x;
-          step(0.1);
-          app.input();
-          app.input();
-          step(0.1);
+          yield* step(0.1);
+          yield* app.input();
+          yield* app.input();
+          yield* step(0.1);
           expect((yield* ship(app)).x).toBeCloseTo(before - 2, 5);
           expect(reports(app).length).toBe(log.length + 1);
         }
@@ -1557,31 +1592,31 @@ describe("the picture of the devices in the world", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
             checkpointEvery: 0,
           });
-          const step = (): void => {
-            app.input();
-            app.tick(1);
-          };
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
           // The key has a history: down, and up again.
           source.press("ArrowRight");
-          step();
+          yield* step();
           source.release("ArrowRight");
-          step();
+          yield* step();
           expect((yield* ship(app)).x).toBe(10);
           // A tool says it is down. No device does. A tick with no input
           // stage before it takes the tool's word.
-          app.dispatch(Input.Report, { down: ["ArrowRight"] });
-          app.tick(1);
+          yield* app.dispatch(Input.Report, { down: ["ArrowRight"] });
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(20);
           // One with the stage before it is told the key is up before it
           // runs.
-          app.dispatch(Input.Report, { down: ["ArrowRight"] });
-          step();
+          yield* app.dispatch(Input.Report, { down: ["ArrowRight"] });
+          yield* step();
           expect((yield* ship(app)).x).toBe(20);
           expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
-          app.dispatch(Input.Report, { down: ["ArrowRight"] });
-          app.tick(1);
+          yield* app.dispatch(Input.Report, { down: ["ArrowRight"] });
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(30);
-          step();
+          yield* step();
           expect(reports(app).at(-1)).toEqual({ up: ["ArrowRight"] });
           expect((yield* ship(app)).x).toBe(30);
         }).pipe(withSource(source));
@@ -1600,15 +1635,19 @@ describe("the picture of the devices in the world", () => {
           { axes: { PointerX: null } },
           { up: [1] },
         ]) {
-          const exit = app.dispatchByName("arcadekit/Input.Report", payload);
+          const exit = yield* Effect.exit(
+            app.dispatchByName("arcadekit/Input.Report", payload)
+          );
           expect(Exit.isFailure(exit), JSON.stringify(payload)).toBe(true);
           expect(
             Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)
           ).toBeInstanceOf(Action.InvalidPayload);
         }
-        const exit = app.dispatch(Input.Report, {
-          axes: { PointerX: Number.POSITIVE_INFINITY },
-        });
+        const exit = yield* Effect.exit(
+          app.dispatch(Input.Report, {
+            axes: { PointerX: Number.POSITIVE_INFINITY },
+          })
+        );
         expect(Exit.isFailure(exit)).toBe(true);
         expect(yield* hashOf(app)).toBe(before);
       })
@@ -1623,10 +1662,10 @@ describe("the picture of the devices in the world", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }));
           source.press("ArrowRight");
           source.move(Input.pointerX, 50);
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(10);
-          const taken = app.save();
+          const taken = yield* Effect.exit(app.save());
           assert(Exit.isSuccess(taken));
           return taken.value;
         }).pipe(withSource(source));
@@ -1635,8 +1674,8 @@ describe("the picture of the devices in the world", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
             save,
           });
-          app.tick(1);
-          app.tick(1);
+          yield* app.tick(1);
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(30);
         }
         // Loaded where the key is no longer down: the first read lets it go.
@@ -1646,12 +1685,12 @@ describe("the picture of the devices in the world", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
             save,
           });
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           expect((yield* ship(app)).x).toBe(10);
           expect(reports(app)).toEqual([{ up: ["ArrowRight"] }]);
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           expect(reports(app).length).toBe(1);
         }).pipe(withSource(later));
         // Loaded where there is no pointer either: its place goes back to 0.
@@ -1659,7 +1698,7 @@ describe("the picture of the devices in the world", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }), {
             save,
           });
-          app.input();
+          yield* app.input();
           expect(reports(app)).toEqual([
             { up: ["ArrowRight"], axes: { PointerX: 0 } },
           ]);
@@ -1701,17 +1740,17 @@ describe("the picture of the devices in the world", () => {
               systems: [Controls, Look],
             })
           );
-          const step = (): void => {
-            app.input();
-            app.tick(1);
-          };
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
           source.press("Space");
-          step();
+          yield* step();
           // Held, and an action that comes a tick later: the press is past.
-          app.enqueue(Probe, {});
-          step();
+          yield* app.enqueue(Probe, {});
+          yield* step();
           source.release("Space");
-          step();
+          yield* step();
           expect(seen).toEqual([
             "handler 1: down pressed",
             "system 1: down pressed",
@@ -1723,10 +1762,10 @@ describe("the picture of the devices in the world", () => {
           // Dispatched between two ticks, an action belongs to the one to
           // come as well.
           seen.length = 0;
-          app.dispatch(Input.Report, { down: ["Space"] });
-          app.dispatch(Probe, {});
-          app.tick(1);
-          app.dispatch(Probe, {});
+          yield* app.dispatch(Input.Report, { down: ["Space"] });
+          yield* app.dispatch(Probe, {});
+          yield* app.tick(1);
+          yield* app.dispatch(Probe, {});
           expect(seen).toEqual([
             "handler 4: down pressed",
             "system 4: down pressed",
@@ -1749,9 +1788,9 @@ describe("the picture of the devices in the world", () => {
       left.press("ArrowLeft");
       right.press("ArrowRight");
       for (const app of [one, two]) {
-        app.input();
-        app.tick(1);
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
+        yield* app.tick(1);
       }
       expect((yield* ship(one)).x).toBe(-20);
       expect((yield* ship(two)).x).toBe(20);
@@ -1786,24 +1825,30 @@ describe("the picture of the devices in the world", () => {
               systems: [Draw],
             })
           );
-          expect(Exit.isFailure(app.dispatch(Shoot, {}))).toBe(true);
+          expect(
+            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
+          ).toBe(true);
           source.press("Space");
           source.move(Input.pointerX, 3);
           source.press(Input.pointerButton());
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           const before = yield* hashOf(app);
-          app.frame();
+          yield* app.frame();
           expect(drawn).toEqual(["3,0 true"]);
           expect(yield* hashOf(app)).toBe(before);
-          expect(Exit.isSuccess(app.dispatch(Shoot, {}))).toBe(true);
+          expect(
+            Exit.isSuccess(yield* Effect.exit(app.dispatch(Shoot, {})))
+          ).toBe(true);
           expect(yield* pointsOf(app)).toBe(1);
           // A refused action leaves the picture as it was.
           source.release("Space");
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           const held = yield* hashOf(app);
-          expect(Exit.isFailure(app.dispatch(Shoot, {}))).toBe(true);
+          expect(
+            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
+          ).toBe(true);
           expect(yield* hashOf(app)).toBe(held);
         }).pipe(withSource(source));
       })
@@ -1870,9 +1915,9 @@ describe("bindings", () => {
             })
           );
           source.move(Input.pointerX, 2);
-          app.input();
+          yield* app.input();
           source.move(Input.pointerX, 2.5);
-          expect(() => app.input()).toThrow(
+          expect(yield* thrown(app.input())).toThrow(
             'A system of the frame or input stage issued the action "in/Step" with a payload its schema does not take: Expected an integer'
           );
         }).pipe(withSource(source));
@@ -1890,36 +1935,36 @@ describe("bindings", () => {
             checkpointEvery: 0,
           });
           expect(app.inputOrder).toEqual(["in/Controls"]);
-          const step = (): void => {
-            app.input();
-            app.tick(1);
-          };
-          step();
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          yield* step();
           expect(done).toEqual([]);
           // Two of its codes at once is one press.
           source.press("Space");
           source.press(Input.padButton(0, 0));
-          step();
+          yield* step();
           expect(done).toEqual(["jump at 1"]);
           // Held: nothing more.
-          step();
+          yield* step();
           expect(done.length).toBe(1);
           source.release("Space");
           source.move(Input.pointerX, 40);
           source.move(Input.pointerY, 30);
           source.press(Input.pointerButton());
-          step();
+          yield* step();
           expect(done.slice(1)).toEqual(["land", "fire 40,30", "aim 40"]);
           // An axis nobody is bound to moves nothing, and a button of the
           // pointer that is not the main one fires nothing.
           source.move(Input.pointerY, 31);
           source.press(Input.pointerButton(1));
           source.release(Input.padButton(0, 0));
-          step();
+          yield* step();
           expect(done.length).toBe(4);
           // A tap is a press and a release.
           source.tap("Space");
-          step();
+          yield* step();
           expect(done.slice(4)).toEqual(["jump at 5", "land"]);
           expect(
             app.actionLog.map((entry) =>
@@ -1949,12 +1994,12 @@ describe("bindings", () => {
           });
           source.press("Space");
           source.move(Input.pointerX, 7);
-          app.input();
-          app.tick(1);
+          yield* app.input();
+          yield* app.tick(1);
           source.tap(Input.pointerButton());
-          app.input();
-          app.tick(1);
-          return app.record();
+          yield* app.input();
+          yield* app.tick(1);
+          return yield* app.record();
         }).pipe(withSource(source));
         const { log } = recording;
         const played = [...done];
@@ -1981,9 +2026,11 @@ describe("bindings", () => {
       const source = Input.makeManualSource();
       yield* Effect.gen(function* () {
         const app = yield* App.make(App.define({ systems: [Controls] }));
-        app.input();
+        yield* app.input();
         source.press("Space");
-        expect(() => app.input()).toThrow(/No handler for action "in\/Jump"/);
+        expect(yield* thrown(app.input())).toThrow(
+          /No handler for action "in\/Jump"/
+        );
       }).pipe(withSource(source));
     })
   );

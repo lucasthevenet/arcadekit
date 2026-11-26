@@ -58,8 +58,8 @@ describe("a system's stage", () => {
       const app = yield* App.make(
         App.define({ plugins: [Start], systems: [Move, Read] })
       );
-      app.tick(1);
-      app.frame();
+      yield* app.tick(1);
+      yield* app.frame();
       expect(seen).toEqual([1]);
       const world = yield* app.read(World);
       const positions = (yield* app.read(Placed))
@@ -248,9 +248,9 @@ describe("a system's stage", () => {
             ],
           })
         );
-        app.input();
-        app.tick(1);
-        app.frame();
+        yield* app.input();
+        yield* app.tick(1);
+        yield* app.frame();
         yield* app.read(look("read"));
         const nothing = { set: false, commands: false, emit: false };
         expect(Object.fromEntries(handed)).toEqual({

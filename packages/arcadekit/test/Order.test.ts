@@ -74,10 +74,10 @@ describe("the order of systems", () => {
             (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
           }),
         });
-        const play = (app: App.Any) =>
-          Effect.sync(() => {
+        const play = (app: App.App) =>
+          Effect.gen(function* () {
             for (let n = 0; n < 3; n++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
           });
         // Listed after what it watches: all of it on its first visit, then the
@@ -303,10 +303,10 @@ describe("what a system spawns and sets", () => {
       seen.push((yield* NewDots).entities().length);
     });
   const Count = count([]);
-  const tick3 = (app: App.Any) =>
-    Effect.sync(() => {
+  const tick3 = (app: App.App) =>
+    Effect.gen(function* () {
       for (let n = 0; n < 3; n++) {
-        app.tick(1);
+        yield* app.tick(1);
       }
     });
 
@@ -343,7 +343,7 @@ describe("what a system spawns and sets", () => {
           App.make(App.define({ systems: [Shoot, Reap] })),
           (app, world) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               assert(spawned !== undefined);
               const shot = placedIn(world, spawned);
               expect(world.get(shot, Position)).toEqual({ x: 4 });
@@ -438,7 +438,7 @@ describe("what a system spawns and sets", () => {
           App.make(App.define({ plugins: [Patient], systems: [Heal] })),
           (app, world) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               assert(target !== undefined);
               expect(world.get(placedIn(world, target), Health)).toEqual({
                 hp: 2,
@@ -492,7 +492,7 @@ describe("what a spawn fills in", () => {
         const seen: number[] = [];
         yield* withApp(
           App.make(App.define({ systems: [Quarry, watches(seen)] })),
-          (app) => Effect.sync(() => app.tick(1))
+          (app) => app.tick(1)
         );
         expect(seen).toEqual([1]);
         App.define(
@@ -526,7 +526,7 @@ describe("what a spawn fills in", () => {
         const seen: number[] = [];
         yield* withApp(
           App.make(App.define({ systems: [Scoped, watches(seen), WatchPlay] })),
-          (app) => Effect.sync(() => app.tick(1))
+          (app) => app.tick(1)
         );
         expect([seen, inPlay]).toEqual([[1], [1]]);
         App.define(

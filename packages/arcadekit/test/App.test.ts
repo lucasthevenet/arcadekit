@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Data, Effect, Exit, Fiber, Layer, Scope } from "effect";
 
-import { App, Plugin, System } from "../src/index.ts";
+import { App, Plugin, System, Timeline } from "../src/index.ts";
 
 /** A plugin whose layer notes when it is acquired and released. */
 const makeHeld = () => {
@@ -17,7 +17,40 @@ const makeHeld = () => {
   return { Held, log };
 };
 
+/** The names of what `T` holds that is a function and returns no Effect. */
+type NotEffects<T> = {
+  [K in keyof T]-?: T[K] extends (...args: never) => infer R
+    ? R extends Effect.Effect<unknown, unknown, unknown>
+      ? never
+      : K
+    : never;
+}[keyof T];
+
+/** Of those, the functions that take an app, as `Timeline`'s do. */
+type TakingAnApp<T> = {
+  [K in NotEffects<T>]: T[K] extends (app: infer G, ...rest: never) => unknown
+    ? App.Any extends G
+      ? K
+      : never
+    : never;
+}[NotEffects<T>];
+
 describe("an app", () => {
+  it("has a method only where it returns an Effect, and each of Timeline's that takes it too", () => {
+    // A method that returned anything else would be named here.
+    expectTypeOf<NotEffects<App.Any>>().toEqualTypeOf<never>();
+    expectTypeOf<
+      NotEffects<App.App<Error, Plugin.AnyHandler>>
+    >().toEqualTypeOf<never>();
+    expectTypeOf<
+      NotEffects<App.Steered<Error, Plugin.AnyHandler>>
+    >().toEqualTypeOf<never>();
+    expectTypeOf<TakingAnApp<typeof Timeline>>().toEqualTypeOf<never>();
+    // The values an app holds stay values to read.
+    expectTypeOf<App.Any["phase"]>().toEqualTypeOf<App.Phase>();
+    expectTypeOf<App.Any["settled"]>().toEqualTypeOf<boolean>();
+  });
+
   it("requires no scope to be made: it has one of its own", () => {
     const { Held } = makeHeld();
     expectTypeOf(App.make(App.define({ plugins: [Held] }))).toEqualTypeOf<
@@ -51,7 +84,7 @@ describe("an app", () => {
           App.make(App.define({ plugins: [Held] }))
         );
         expect(log).toEqual(["acquired"]);
-        app.tick(0.1);
+        yield* app.tick(0.1);
         yield* app.close;
         expect(log).toEqual(["acquired", "released"]);
         // Closing it again does nothing.

@@ -105,8 +105,8 @@ A replay therefore reads no device, because the log already holds what the devic
 ## A driver runs the stages
 
 - **`Driver.run`** makes an app of a game and runs it until it is interrupted. On each repaint it runs the ticks that are due at a fixed `hz`, then the frame. In a page it follows `requestAnimationFrame`, and under Node it uses a timer.
-- **`app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. A tick reads no device. `app.input()` runs the input stage, and `app.frame(alpha, delta)` runs the frame stage. Without an `alpha`, `app.frame()` draws the game where its last tick left it, at an `alpha` of 1.
-- **`Driver.fixedStep`** runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
+- **`yield* app.tick(delta)`** runs one tick by hand, for a test or a game that steps itself. A tick reads no device. `app.input()` runs the input stage, and `app.frame(alpha, delta)` runs the frame stage. Without an `alpha`, `app.frame()` draws the game where its last tick left it, at an `alpha` of 1. Each returns an Effect, one for the whole stage, which fails with what a system fails with.
+- **`Driver.fixedStep`** returns a step that runs the ticks that are due for a given amount of real time, each after the input stage, then the frame.
 - **`Driver.frames`** is the loop that `Driver.run` uses, for a program that creates its app itself. **`Driver.interval`** does the same on a timer.
 
 A turn-based game, a puzzle or a menu has nothing to do between moves. With `ticks: "whenNeeded"`, `Driver.run` still draws every frame, but ticks only while something is pending: an action, a state change, a system that asked for another tick, or an unread event. See [running a game](../guides/running-a-game.md).

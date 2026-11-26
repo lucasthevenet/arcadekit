@@ -316,9 +316,9 @@ const play = Effect.fnUntraced(function* (
       Effect.gen(function* () {
         for (let i = 0; i < ticks; i++) {
           if (i % 7 === 3) {
-            app.dispatch(Roll, { sides: 6 });
+            yield* app.dispatch(Roll, { sides: 6 });
           }
-          app.tick(1);
+          yield* app.tick(1);
         }
         return yield* snapshot(app);
       })
@@ -344,7 +344,7 @@ const snapshot = Effect.fnUntraced(function* (app: App.Any) {
     sparks,
     dice,
     log: app.actionLog,
-    recording: app.record(),
+    recording: yield* app.record(),
     hash,
   };
 });
@@ -367,7 +367,7 @@ describe("the Random service", () => {
           App.make(App.define({ systems: [Probe] }), { seed: 5 }),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               return (yield* app.read(World)).hash();
             })
         );
@@ -419,9 +419,9 @@ describe("the Random service", () => {
             const other = new Rng(seed + 1000);
             for (let i = 0; i < 150; i++) {
               if (other.int(1, 4) === 1) {
-                app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
+                yield* app.dispatch(Roll, { sides: other.pick([4, 6, 8, 12]) });
               }
-              app.tick(1 / 60);
+              yield* app.tick(1 / 60);
             }
             return yield* snapshot(app);
           })
@@ -487,7 +487,7 @@ describe("the Random service", () => {
           (app) =>
             Effect.gen(function* () {
               const before = Array.from(new Rng(seed).state);
-              app.tick(1);
+              yield* app.tick(1);
               // Effect's draws were from the world's generator, not from one of
               // their own: it had moved before anything drew from it by name.
               expect(drew).not.toEqual(before);
@@ -515,7 +515,7 @@ describe("the Random service", () => {
         App.make(App.define({ systems: [Many] }), { seed: 3 }),
         (app) =>
           Effect.gen(function* () {
-            app.tick(1);
+            yield* app.tick(1);
             expect(floats.every((value) => value >= 0 && value < 1)).toBe(true);
             expect(floats.some((value) => (value * 2 ** 32) % 1 !== 0)).toBe(
               true

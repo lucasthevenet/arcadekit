@@ -18,6 +18,7 @@ import {
   View,
   World,
 } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
 // --- a game with a heads-up display and a menu -------------------------------------
 const Coin = Component.define("vw/Coin", { value: Field.i32 });
@@ -173,14 +174,14 @@ describe("a view", () => {
         expect(ui.get(Hud)).toEqual({ gold: 0, coins: 0 });
         expect(ui.get(Hud)).toBe(Hud.initial);
         expect(ui.get(Menu)).toEqual({ phase: "title" });
-        app.frame();
+        yield* app.frame();
         expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
         expect(ui.get(Menu)).toEqual({ phase: "title" });
-        app.dispatch(Start, {});
-        app.tick(1);
+        yield* app.dispatch(Start, {});
+        yield* app.tick(1);
         // A tick publishes nothing either.
         expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
-        app.frame();
+        yield* app.frame();
         expect(ui.get(Hud)).toEqual({ gold: 5, coins: 1 });
         expect(ui.get(Menu)).toEqual({ phase: "playing" });
       })
@@ -193,7 +194,7 @@ describe("a view", () => {
         const { app, ui } = yield* playWithUi({ coins: [2] });
         const hud = listen(ui, Hud);
         const menu = listen(ui, Menu);
-        app.frame();
+        yield* app.frame();
         // The menu is as it was at first: nobody is told. The display is not.
         expect(menu.heard).toEqual([]);
         expect(hud.heard).toEqual([{ gold: 0, coins: 1 }]);
@@ -201,9 +202,9 @@ describe("a view", () => {
         const first = ui.get(Menu);
         // Frames, and ticks of a game that is not played yet: nothing changes.
         for (let i = 0; i < 20; i++) {
-          app.tick(1);
-          app.frame();
-          app.frame(0.5);
+          yield* app.tick(1);
+          yield* app.frame();
+          yield* app.frame(0.5);
         }
         expect(hud.heard.length).toBe(1);
         expect(menu.heard.length).toBe(0);
@@ -213,12 +214,12 @@ describe("a view", () => {
         expect(first).toBe(Menu.initial);
         // The game worked each out every frame; that is all it cost.
         expect(worked).toEqual({ hud: 41, menu: 41 });
-        app.dispatch(Start, {});
+        yield* app.dispatch(Start, {});
         // Several ticks, then one frame: told once, of the latest.
-        app.tick(1);
-        app.tick(1);
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame();
         expect(hud.heard).toEqual([
           { gold: 0, coins: 1 },
           { gold: 6, coins: 1 },
@@ -226,8 +227,8 @@ describe("a view", () => {
         expect(menu.heard).toEqual([{ phase: "playing" }]);
         expect(ui.get(Hud)).not.toBe(shown);
         // And once more, nothing.
-        app.frame(0.3);
-        app.frame(0.6);
+        yield* app.frame(0.3);
+        yield* app.frame(0.6);
         expect(hud.heard.length).toBe(2);
         expect(menu.heard.length).toBe(1);
       })
@@ -263,7 +264,7 @@ describe("a view", () => {
         const ui = kept.ui();
         const { heard } = listen(ui, Board);
         for (frame = 0; frame < values.length; frame++) {
-          app.frame();
+          yield* app.frame();
         }
         expect(heard).toEqual([values[2], values[4], values[5], values[6]]);
         expect(heard[0]).toBe(values[2]);
@@ -302,15 +303,15 @@ describe("a view", () => {
         const ui = kept.ui();
         const a = listen(ui, Hud);
         const b = listen(ui, Hud);
-        app.dispatch(Find, { value: 1 });
-        app.frame();
+        yield* app.dispatch(Find, { value: 1 });
+        yield* app.frame();
         expect(a.heard).toEqual([{ gold: 0, coins: 1 }]);
         expect(b.heard).toEqual(a.heard);
         a.stop();
         // Stopping twice is stopping once.
         a.stop();
-        app.dispatch(Lose, {});
-        app.frame();
+        yield* app.dispatch(Lose, {});
+        yield* app.frame();
         expect(a.heard.length).toBe(1);
         expect(b.heard).toEqual([
           { gold: 0, coins: 1 },
@@ -326,10 +327,10 @@ describe("a view", () => {
         const stopLater = ui.subscribe(Hud, () => {
           order.push("later");
         });
-        app.dispatch(Find, { value: 1 });
-        app.frame();
-        app.dispatch(Find, { value: 1 });
-        app.frame();
+        yield* app.dispatch(Find, { value: 1 });
+        yield* app.frame();
+        yield* app.dispatch(Find, { value: 1 });
+        yield* app.frame();
         expect(order).toEqual(["once"]);
         expect(b.heard.length).toBe(4);
       })
@@ -348,11 +349,11 @@ describe("a view", () => {
         ui.subscribe(Hud, () => {
           throw new Error("and so is the button");
         });
-        expect(() => app.frame()).toThrow("the label is gone");
+        expect(yield* thrown(app.frame())).toThrow("the label is gone");
         expect(after.heard).toEqual([{ gold: 0, coins: 1 }]);
         // The value was published: the next frame has nothing new to say.
         expect(ui.get(Hud)).toEqual({ gold: 0, coins: 1 });
-        app.frame();
+        yield* app.frame();
         expect(after.heard.length).toBe(1);
       })
   );
@@ -361,16 +362,16 @@ describe("a view", () => {
     Effect.gen(function* () {
       const app = yield* play(undefined, { coins: [1] });
       for (let i = 0; i < 5; i++) {
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
       }
       expect(worked).toEqual({ hud: 0, menu: 0 });
       // With one that watches both, once per frame.
       const { app: withUi, ui } = yield* playWithUi();
       listen(ui, Hud);
       listen(ui, Menu);
-      withUi.frame();
-      withUi.frame();
+      yield* withUi.frame();
+      yield* withUi.frame();
       expect(worked).toEqual({ hud: 2, menu: 2 });
     })
   );
@@ -380,30 +381,30 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         const { app, ui } = yield* playWithUi({ coins: [1] });
-        app.dispatch(Start, {});
-        app.tick(1);
-        app.frame();
-        app.frame();
+        yield* app.dispatch(Start, {});
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
         expect(worked).toEqual({ hud: 0, menu: 0 });
         // Read without listening: what it had, and worked out at the next frame.
         expect(ui.get(Hud)).toBe(Hud.initial);
-        app.frame();
-        app.frame();
+        yield* app.frame();
+        yield* app.frame();
         expect(worked).toEqual({ hud: 1, menu: 0 });
         expect(ui.get(Hud)).toEqual({ gold: 1, coins: 1 });
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         const hud = listen(ui, Hud);
         // The frame after the tick worked it out because it was read; now it
         // is listened to, it is worked out each frame.
-        app.tick(1);
-        app.frame();
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
         expect(worked).toEqual({ hud: 4, menu: 0 });
         expect(hud.heard).toEqual([{ gold: 3, coins: 1 }]);
         hud.stop();
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         expect(worked).toEqual({ hud: 4, menu: 0 });
         expect(ui.get(Hud)).toEqual({ gold: 3, coins: 1 });
       })
@@ -446,18 +447,18 @@ describe("a view", () => {
         );
         const { heard } = listen(kept.ui(), Menu);
         for (let i = 0; i < 5; i++) {
-          app.tick(1);
-          app.frame();
+          yield* app.tick(1);
+          yield* app.frame();
         }
         expect(bodies).toBe(1);
-        app.dispatch(Start, {});
-        app.tick(1);
-        app.frame();
-        app.frame();
+        yield* app.dispatch(Start, {});
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
         expect(bodies).toBe(2);
-        app.dispatch(Quit, {});
-        app.tick(1);
-        app.frame();
+        yield* app.dispatch(Quit, {});
+        yield* app.tick(1);
+        yield* app.frame();
         expect(bodies).toBe(3);
         expect(heard).toEqual([{ phase: "playing" }, { phase: "title" }]);
         expect(Shown.name).toBe("View.publish(vw/Menu)");
@@ -682,9 +683,9 @@ describe("a view", () => {
         );
         const { heard } = listen(kept.ui(), Hud);
         for (const action of [Start, Quit, Start]) {
-          app.dispatch(action, {});
-          app.tick(1);
-          app.frame();
+          yield* app.dispatch(action, {});
+          yield* app.tick(1);
+          yield* app.frame();
         }
         expect(bodies).toBe(1);
         expect(heard).toEqual([{ gold: 9, coins: 0 }, Hud.initial, heard[0]]);
@@ -714,12 +715,12 @@ describe("a view", () => {
         );
         const { heard } = listen(kept.ui(), Hud);
         const ui = kept.ui();
-        app.frame();
+        yield* app.frame();
         expect(heard).toEqual([]);
         expect(ui.get(Hud)).toBe(Hud.initial);
-        app.dispatch(Start, {});
-        app.tick(1);
-        app.frame();
+        yield* app.dispatch(Start, {});
+        yield* app.tick(1);
+        yield* app.frame();
         expect(heard).toEqual([{ gold: 9, coins: 0 }]);
         expect(Shown.name).toBe("View.publish(vw/Hud)");
         expect(Shown.stage).toBe("frame");
@@ -757,37 +758,39 @@ describe("a view", () => {
         );
         const ui = kept.ui();
         const { heard } = listen(ui, Hud);
-        const step = (action?: typeof Start | typeof Quit): void => {
+        const step = Effect.fnUntraced(function* (
+          action?: typeof Start | typeof Quit
+        ) {
           if (action !== undefined) {
-            app.dispatch(action, {});
+            yield* app.dispatch(action, {});
           }
-          app.tick(1);
-          app.frame();
-        };
+          yield* app.tick(1);
+          yield* app.frame();
+        });
         // At the title it is what it was defined as, and nobody is told so.
-        step();
-        step();
+        yield* step();
+        yield* step();
         expect(heard).toEqual([]);
-        step(Start);
+        yield* step(Start);
         expect(heard).toEqual([{ gold: 9, coins: 0 }]);
         // The game goes back to the title: the gold of the game that was left
         // is not left on the screen. Told once, however long it stays there.
-        step(Quit);
-        step();
-        step();
+        yield* step(Quit);
+        yield* step();
+        yield* step();
         expect(heard).toEqual([{ gold: 9, coins: 0 }, Hud.initial]);
         expect(ui.get(Hud)).toBe(Hud.initial);
-        step(Start);
+        yield* step(Start);
         expect(heard.at(-1)).toEqual({ gold: 9, coins: 0 });
         // Where no UI is there, it publishes to nobody and asks nothing more
         // than the port.
         const alone = yield* made;
-        alone.dispatch(Start, {});
-        alone.tick(1);
-        alone.frame();
-        alone.dispatch(Quit, {});
-        alone.tick(1);
-        alone.frame();
+        yield* alone.dispatch(Start, {});
+        yield* alone.tick(1);
+        yield* alone.frame();
+        yield* alone.dispatch(Quit, {});
+        yield* alone.tick(1);
+        yield* alone.frame();
         const needs: Effect.Effect<void, never, View.Port> = View.reset(Hud);
         expect(Effect.isEffect(needs)).toBe(true);
       })
@@ -809,10 +812,10 @@ describe("a view", () => {
           Effect.provide(View.layer(Owned, kept.mount))
         );
         const { heard } = listen(kept.ui(), Hud);
-        app.frame();
-        app.tick(1);
-        app.frame();
-        app.frame();
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
         // Whether each was news: the first is what the view was at first.
         expect(told).toEqual([false, true, false]);
         expect(heard).toEqual([{ gold: 1, coins: 0 }]);
@@ -860,13 +863,13 @@ describe("what the UI sends", () => {
         ui.send(Buy, { price: 3 });
         ui.send(Start, {});
         // A tick alone hears none of it.
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* goldOf(app)).toBe(5);
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(yield* coinsOf(app)).toBe(1);
         expect(yield* goldOf(app)).toBe(3);
-        const recording = app.record();
+        const recording = yield* app.record();
         expect(
           recording.log
             .filter((entry) => !Action.isCheckpoint(entry))
@@ -903,7 +906,7 @@ describe("what the UI sends", () => {
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
         ).toEqual([]);
         expect(yield* goldOf(app)).toBe(5);
-        app.input();
+        yield* app.input();
         expect(
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
         ).toEqual([
@@ -912,11 +915,11 @@ describe("what the UI sends", () => {
           { tick: 0, name: "vw/Buy", payload: { price: 4 }, queued: true },
         ]);
         // Applied by the tick: the second purchase is refused by the rules.
-        app.tick(1);
+        yield* app.tick(1);
         expect(yield* coinsOf(app)).toBe(1);
         // Three spent, and one earned by the coin it bought, once the game began.
         expect(yield* goldOf(app)).toBe(3);
-        app.frame();
+        yield* app.frame();
         expect(ui.get(Menu)).toEqual({ phase: "playing" });
         const logged = app.actionLog.filter(
           (entry): entry is Action.Logged => !Action.isCheckpoint(entry)
@@ -927,8 +930,8 @@ describe("what the UI sends", () => {
           "TooPoor",
         ]);
         // Taken once: the next run of the stage has nothing to issue.
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry)).length
         ).toBe(3);
@@ -941,8 +944,8 @@ describe("what the UI sends", () => {
       pings = 0;
       ui.send(Ping);
       ui.send(Ping, undefined);
-      app.input();
-      app.tick(1);
+      yield* app.input();
+      yield* app.tick(1);
       expect(pings).toBe(2);
       // @ts-expect-error Buy needs its price
       ui.send(Buy);
@@ -958,8 +961,8 @@ describe("what the UI sends", () => {
         const app = yield* play((ui) => {
           ui.send(Start, {});
         });
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
           "vw/Start",
         ]);
@@ -973,13 +976,13 @@ describe("what the UI sends", () => {
         const { app, ui } = yield* playWithUi();
         const advance = Driver.fixedStep(app, { hz: 10 });
         const menu = listen(ui, Menu);
-        advance(0.1);
+        yield* advance(0.1);
         expect(menu.heard).toEqual([]);
         ui.send(Start, {});
         // A frame in which no tick is due issues nothing, and loses nothing.
-        advance(0.01);
+        yield* advance(0.01);
         expect(menu.heard).toEqual([]);
-        advance(0.1);
+        yield* advance(0.1);
         expect(menu.heard).toEqual([{ phase: "playing" }]);
       })
   );
@@ -998,9 +1001,9 @@ describe("what the UI sends", () => {
         const ui = kept.ui();
         const hashes: number[] = [];
         const step = Effect.fnUntraced(function* () {
-          app.input();
-          app.tick(1);
-          app.frame();
+          yield* app.input();
+          yield* app.tick(1);
+          yield* app.frame();
           hashes.push(yield* hashOf(app));
         });
         yield* step();
@@ -1014,7 +1017,7 @@ describe("what the UI sends", () => {
         expect(yield* coinsOf(app)).toBe(2);
 
         // No bridge, no input stage and no frame: a server, or a replay.
-        const played = app.record();
+        const played = yield* app.record();
         const again = yield* Journal.replay(played, Kept, {
           checkpointEvery: 1,
         });
@@ -1023,9 +1026,9 @@ describe("what the UI sends", () => {
         // And the same game with no UI at all, given nothing, differs.
         const idle = yield* App.make(Kept, start);
         for (let i = 0; i < 5; i++) {
-          idle.input();
-          idle.tick(1);
-          idle.frame();
+          yield* idle.input();
+          yield* idle.tick(1);
+          yield* idle.frame();
         }
         expect(yield* hashOf(idle)).not.toBe(hashes.at(-1));
       })
@@ -1038,12 +1041,12 @@ describe("what the UI sends", () => {
         const { app, ui } = yield* playWithUi();
         listen(ui, Menu);
         ui.send(Start, {});
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(app.actionLog.filter(isAction).map((e) => e.name)).toEqual([
           "vw/Start",
         ]);
-        app.frame();
+        yield* app.frame();
         expect(ui.get(Menu)).toEqual({ phase: "playing" });
         // @ts-expect-error the game has no handler for vw/Unknown
         ui.send(Unknown, {});
@@ -1078,7 +1081,9 @@ describe("what the UI sends", () => {
             })
           )
         );
-        expect(() => app.input()).toThrow('No handler for action "vw/Unknown"');
+        expect(yield* thrown(app.input())).toThrow(
+          'No handler for action "vw/Unknown"'
+        );
       })
   );
 
@@ -1110,9 +1115,9 @@ describe("what the UI sends", () => {
             ],
           })
         );
-        app.input();
-        app.tick(1);
-        app.frame();
+        yield* app.input();
+        yield* app.tick(1);
+        yield* app.frame();
         expect(said).toEqual([true, false, true, false, true, false]);
       })
   );
@@ -1135,19 +1140,20 @@ describe("the bridge", () => {
         listen(ui, Hud);
         const alone = yield* play(undefined, { seed: 4, coins: [3] });
         for (const app of [watched, alone]) {
-          app.dispatch(Start, {});
+          yield* app.dispatch(Start, {});
         }
         for (let i = 0; i < 30; i++) {
-          watched.input();
-          watched.tick(1);
-          watched.frame(0.5);
-          alone.tick(1);
+          yield* watched.input();
+          yield* watched.tick(1);
+          yield* watched.frame(0.5);
+          yield* alone.tick(1);
           expect(yield* hashOf(watched)).toBe(yield* hashOf(alone));
         }
         expect(watched.actionLog).toEqual(alone.actionLog);
-        const saves = [watched.save(), alone.save()].map((save) =>
-          Exit.isSuccess(save) ? save.value : undefined
-        );
+        const saves = [
+          yield* Effect.exit(watched.save()),
+          yield* Effect.exit(alone.save()),
+        ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
         expect(ui.get(Hud)).toEqual({ gold: 90, coins: 1 });
@@ -1168,8 +1174,8 @@ describe("the bridge", () => {
         const app = yield* App.make(Played).pipe(
           Effect.provide(View.layer(Played, mountMenu))
         );
-        app.input();
-        app.tick(1);
+        yield* app.input();
+        yield* app.tick(1);
         expect(pings).toBe(1);
         const mountShop = (shop: View.Bridge<typeof Buy | typeof Unknown>) => {
           shop.get(Menu);

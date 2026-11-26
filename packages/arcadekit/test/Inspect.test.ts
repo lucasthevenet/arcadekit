@@ -17,6 +17,7 @@ import {
   Timeline,
   World,
 } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 import { placedIn } from "./placed.ts";
 
 const Position = Component.define("in/Position", {
@@ -124,7 +125,7 @@ describe("app.inspect", () => {
         const world = yield* worldOf(app);
         const [parent, child, bare] = ids.map((id) => placedIn(world, id));
 
-        const { entities } = app.inspect();
+        const { entities } = yield* app.inspect();
         expect(entities).toEqual([
           {
             id: parent,
@@ -150,9 +151,11 @@ describe("app.inspect", () => {
   it.effect("copies every singleton the world holds, by name", () =>
     Effect.gen(function* () {
       const app = yield* game;
-      app.enqueue(Strike, { by: 7 });
-      app.tick(1 / 60);
-      expect(app.inspect().singletons["in/Score"]).toEqual({ points: 7 });
+      yield* app.enqueue(Strike, { by: 7 });
+      yield* app.tick(1 / 60);
+      expect((yield* app.inspect()).singletons["in/Score"]).toEqual({
+        points: 7,
+      });
     })
   );
 
@@ -161,12 +164,12 @@ describe("app.inspect", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game;
-        expect(app.inspect().stores).toEqual({});
-        app.dispatch(Strike, { by: 5 });
-        app.enqueue(Strike, { by: 6 });
+        expect((yield* app.inspect()).stores).toEqual({});
+        yield* app.dispatch(Strike, { by: 5 });
+        yield* app.enqueue(Strike, { by: 6 });
         const world = yield* worldOf(app);
         const hash = world.hash();
-        const { stores } = app.inspect();
+        const { stores } = yield* app.inspect();
         expect(stores).toEqual({
           [Action.INTAKE]: {
             queued: [{ name: "in/Strike", payload: { by: 6 }, from: null }],
@@ -178,9 +181,9 @@ describe("app.inspect", () => {
           "in/Hit"
         ]![0]!.by = 100;
         expect(world.hash()).toBe(hash);
-        app.tick(1 / 60);
-        app.tick(1 / 60);
-        expect(app.inspect().stores).toEqual({});
+        yield* app.tick(1 / 60);
+        yield* app.tick(1 / 60);
+        expect((yield* app.inspect()).stores).toEqual({});
       })
   );
 
@@ -198,12 +201,12 @@ describe("app.inspect", () => {
         const app = yield* App.make(
           App.define({ plugins: [Seed], systems: [Scorer], handlers })
         );
-        app.enqueue(Strike, { by: 3 });
-        app.tick(1 / 60);
+        yield* app.enqueue(Strike, { by: 3 });
+        yield* app.tick(1 / 60);
         const world = yield* worldOf(app);
         expect(world.singleton(Score).points).toBe(3);
         const hash = world.hash();
-        const inspection = app.inspect();
+        const inspection = yield* app.inspect();
         expect(world.hash()).toBe(hash);
         const position = inspection.entities[0]!.components["in/Position"] as {
           x: number;
@@ -211,7 +214,9 @@ describe("app.inspect", () => {
         position.x = 100;
         (inspection.singletons["in/Score"] as { points: number }).points = 100;
         expect(world.hash()).toBe(hash);
-        expect(app.inspect().entities[0]!.components["in/Position"]).toEqual({
+        expect(
+          (yield* app.inspect()).entities[0]!.components["in/Position"]
+        ).toEqual({
           x: 1,
           y: 2,
         });
@@ -223,7 +228,7 @@ describe("app.inspect", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game;
-        const before = app.inspect().systems;
+        const before = (yield* app.inspect()).systems;
         expect(before.map(({ name, stage }) => [name, stage])).toEqual([
           ["in/Move", "update"],
           ["in/Scorer", "update"],
@@ -235,11 +240,11 @@ describe("app.inspect", () => {
         // No system has had a turn yet.
         expect(before.every(({ ms, ran }) => !ran && ms === 0)).toBe(true);
 
-        app.input();
-        app.tick(1 / 60);
-        app.frame(0.5);
+        yield* app.input();
+        yield* app.tick(1 / 60);
+        yield* app.frame(0.5);
         const after = Object.fromEntries(
-          app.inspect().systems.map((system) => [system.name, system])
+          (yield* app.inspect()).systems.map((system) => [system.name, system])
         );
         expect(after["in/Move"]!.ran).toBe(true);
         expect(after["in/Scorer"]!.ran).toBe(true);
@@ -252,11 +257,11 @@ describe("app.inspect", () => {
           expect(Number.isFinite(ms)).toBe(true);
         }
 
-        app.enqueue(Begin, {});
-        app.tick(1 / 60);
-        const opening = app
-          .inspect()
-          .systems.find((system) => system.name === "in/Opening")!;
+        yield* app.enqueue(Begin, {});
+        yield* app.tick(1 / 60);
+        const opening = (yield* app.inspect()).systems.find(
+          (system) => system.name === "in/Opening"
+        )!;
         expect(opening.ran).toBe(true);
       })
   );
@@ -274,15 +279,15 @@ describe("app.inspect", () => {
       const app = yield* App.make(
         App.define({ systems: [Move, Asleep, Look] })
       ).pipe(Effect.provideService(Tracer.Tracer, tracer));
-      app.tick(1 / 60);
+      yield* app.tick(1 / 60);
       expect(traced).toBe(true);
-      expect(app.inspect().systems.map(({ name, ran }) => [name, ran])).toEqual(
-        [
-          ["in/Move", true],
-          ["in/Asleep", false],
-          ["in/Look", true],
-        ]
-      );
+      expect(
+        (yield* app.inspect()).systems.map(({ name, ran }) => [name, ran])
+      ).toEqual([
+        ["in/Move", true],
+        ["in/Asleep", false],
+        ["in/Look", true],
+      ]);
     })
   );
 
@@ -295,8 +300,8 @@ describe("app.inspect", () => {
         }
       });
       const app = yield* App.make(App.define({ systems: [Slow] }));
-      app.tick(1 / 60);
-      const [slow] = app.inspect().systems;
+      yield* app.tick(1 / 60);
+      const [slow] = (yield* app.inspect()).systems;
       expect(slow!.ms).toBeGreaterThanOrEqual(5);
       expect(slow!.ms).toBeLessThan(1000);
     })
@@ -307,25 +312,25 @@ describe("app.inspect", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game;
-        app.enqueue(Strike, { by: 2 });
-        app.enqueue(Begin, {});
-        app.enqueue(Strike, { by: 3 });
-        app.tick(1 / 60);
-        expect(app.inspect().events).toEqual({
+        yield* app.enqueue(Strike, { by: 2 });
+        yield* app.enqueue(Begin, {});
+        yield* app.enqueue(Strike, { by: 3 });
+        yield* app.tick(1 / 60);
+        expect((yield* app.inspect()).events).toEqual({
           "in/Hit": [{ by: 2 }, { by: 3 }],
           "in/Spawned": [{}],
         });
-        app.tick(1 / 60);
-        expect(app.inspect().events).toEqual({});
+        yield* app.tick(1 / 60);
+        expect((yield* app.inspect()).events).toEqual({});
       })
   );
 
   it.effect("holds a refusal, and not what the refused handler emitted", () =>
     Effect.gen(function* () {
       const app = yield* game;
-      app.enqueue(Refuse, {});
-      app.tick(1 / 60);
-      const { events } = app.inspect();
+      yield* app.enqueue(Refuse, {});
+      yield* app.tick(1 / 60);
+      const { events } = yield* app.inspect();
       expect(Object.keys(events)).toEqual([
         Action.Rejected.name,
         Action.rejected(Refuse).name,
@@ -349,37 +354,39 @@ describe("app.inspect", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game;
-        app.tick(1 / 60);
-        app.dispatch(Strike, { by: 4 });
-        expect(app.inspect().events).toEqual({});
-        app.tick(1 / 60);
-        expect(app.inspect().events).toEqual({ "in/Hit": [{ by: 4 }] });
+        yield* app.tick(1 / 60);
+        yield* app.dispatch(Strike, { by: 4 });
+        expect((yield* app.inspect()).events).toEqual({});
+        yield* app.tick(1 / 60);
+        expect((yield* app.inspect()).events).toEqual({
+          "in/Hit": [{ by: 4 }],
+        });
       })
   );
 
   it.effect("forgets the last tick's events when the game is rewound", () =>
     Effect.gen(function* () {
       const app = yield* game;
-      const moment = Timeline.capture(app);
+      const moment = yield* Effect.exit(Timeline.capture(app));
       if (moment._tag !== "Success") {
         throw new Error("not captured");
       }
-      app.enqueue(Strike, { by: 1 });
-      app.tick(1 / 60);
-      Timeline.rewind(app, moment.value);
-      expect(app.inspect().events).toEqual({});
+      yield* app.enqueue(Strike, { by: 1 });
+      yield* app.tick(1 / 60);
+      yield* Timeline.rewind(app, moment.value);
+      expect((yield* app.inspect()).events).toEqual({});
     })
   );
 
   it.effect("is refused during a tick", () =>
     Effect.gen(function* () {
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const Peek = System.tick("in/Peek", function* () {
         yield* World;
-        app!.inspect();
+        yield* app!.inspect();
       });
       app = yield* App.make(App.define({ systems: [Peek] }));
-      expect(() => app.tick(1 / 60)).toThrow(/between ticks/);
+      expect(yield* thrown(app.tick(1 / 60))).toThrow(/between ticks/);
     })
   );
 
@@ -389,8 +396,8 @@ describe("app.inspect", () => {
         (yield* Commands.spawns(Position)).spawn(Position.of({ x: 5, y: 5 }));
       });
       const app = yield* App.make(App.define({ systems: [Spawner] }));
-      app.tick(1 / 60);
-      expect(app.inspect().entities.map((e) => e.components)).toEqual([
+      yield* app.tick(1 / 60);
+      expect((yield* app.inspect()).entities.map((e) => e.components)).toEqual([
         { "in/Position": { x: 5, y: 5 } },
       ]);
     })

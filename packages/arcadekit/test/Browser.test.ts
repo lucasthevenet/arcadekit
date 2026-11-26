@@ -30,6 +30,7 @@ import {
   Time,
 } from "../src/index.ts";
 import { Message, Session, Transport } from "../src/net/index.ts";
+import { thrown } from "./checks.ts";
 
 const Ship = Component.define("br/Ship", { x: Field.f32, shots: Field.i32 });
 const Ships = Query.all(Ship).pipe(Query.writes(Ship));
@@ -242,7 +243,7 @@ describe("a page's display", () => {
           callback(now);
         }
       };
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -661,13 +662,13 @@ describe("a page's devices", () => {
         expect(page.total).toBe(7);
         page.send("keydown", { code: "Space", repeat: false });
         page.send("keyup", { code: "Space" });
-        app.input();
-        app.tick(0.1);
+        yield* app.input();
+        yield* app.tick(0.1);
         expect((yield* ship(app)).shots).toBe(1);
         // Closed, nobody is listening, and a read says so.
         yield* app.close;
         expect(page.total).toBe(0);
-        expect(() => app.input()).toThrow(DEVICES_LET_GO);
+        expect(yield* thrown(app.input())).toThrow(DEVICES_LET_GO);
       })
   );
 
@@ -707,10 +708,10 @@ describe("a page's devices", () => {
           expect(page.total).toBe(14);
           page.send("keydown", { code: "Space", repeat: false });
           page.send("keyup", { code: "Space" });
-          one.input();
-          one.tick(0.1);
-          two.input();
-          two.tick(0.1);
+          yield* one.input();
+          yield* one.tick(0.1);
+          yield* two.input();
+          yield* two.tick(0.1);
           expect((yield* ship(one)).shots).toBe(1);
           expect((yield* ship(two)).shots).toBe(1);
           return [one, two] as const;
@@ -723,10 +724,10 @@ describe("a page's devices", () => {
         yield* one.close;
         expect(page.total).toBe(7);
         page.send("keydown", { code: "Space", repeat: false });
-        two.input();
-        two.tick(0.1);
+        yield* two.input();
+        yield* two.tick(0.1);
         expect((yield* ship(two)).shots).toBe(2);
-        expect(() => one.input()).toThrow(DEVICES_LET_GO);
+        expect(yield* thrown(one.input())).toThrow(DEVICES_LET_GO);
         yield* two.close;
         expect(page.total).toBe(0);
       })
@@ -740,12 +741,12 @@ describe("a page's devices", () => {
           const app = yield* App.make(App.define({ plugins: [Flying] }));
           const step = Driver.fixedStep(app, { hz: 10 });
           page.send("keydown", { code: "ArrowRight", repeat: false });
-          step(0.1);
-          step(0.1);
+          yield* step(0.1);
+          yield* step(0.1);
           page.send("keyup", { code: "ArrowRight" });
           page.send("keydown", { code: "Space", repeat: false });
           page.send("keyup", { code: "Space" });
-          step(0.1);
+          yield* step(0.1);
           expect((yield* ship(app)).x).toBeCloseTo(2, 5);
           expect((yield* ship(app)).shots).toBe(1);
         }).pipe(
@@ -2353,9 +2354,9 @@ describe("a page's sound", () => {
         );
         yield* Effect.promise(() => settle());
         page.window.send("keydown", { code: "Space", repeat: false });
-        app.input();
-        app.tick(1 / 60);
-        app.frame();
+        yield* app.input();
+        yield* app.tick(1 / 60);
+        yield* app.frame();
         expect(audio.started).toEqual([
           {
             buffer: { samples: 3 },
@@ -2368,8 +2369,8 @@ describe("a page's sound", () => {
         yield* app.close;
         expect(page.window.total).toBe(0);
         expect(audio.closed).toBe(1);
-        expect(() => app.input()).toThrow(DEVICES_LET_GO);
-        expect(() => app.frame(1)).toThrow(LET_GO);
+        expect(yield* thrown(app.input())).toThrow(DEVICES_LET_GO);
+        expect(yield* thrown(app.frame(1))).toThrow(LET_GO);
         expect(audio.started.length).toBe(1);
       })
   );
@@ -2396,7 +2397,7 @@ describe("a page's sound", () => {
         );
         yield* Effect.promise(() => settle());
         page.send("pointerdown");
-        app.frame();
+        yield* app.frame();
         expect(audio.started).toEqual([
           {
             buffer: { samples: 3 },
@@ -2411,7 +2412,7 @@ describe("a page's sound", () => {
         expect(page.total).toBe(0);
         // A frame that plays a cue after that says so, where it would be heard
         // by nobody.
-        expect(() => app.frame(1)).toThrow(LET_GO);
+        expect(yield* thrown(app.frame(1))).toThrow(LET_GO);
         expect(audio.started.length).toBe(1);
         // Closing it again does nothing.
         yield* app.close;
@@ -2462,16 +2463,16 @@ describe("a page's sound", () => {
         });
         page.send("pointerdown");
         expect(made).toBe(1);
-        one.app.frame();
-        two.app.frame();
+        yield* one.app.frame();
+        yield* two.app.frame();
         expect(audio.started.length).toBe(2);
         // The first app goes; the other still plays through the same audio, and
         // the one that went refuses to.
         yield* one.close;
         expect(audio.closed).toBe(0);
-        two.app.frame(1);
+        yield* two.app.frame(1);
         expect(audio.started.length).toBe(3);
-        expect(() => one.app.frame(1)).toThrow(LET_GO);
+        expect(yield* thrown(one.app.frame(1))).toThrow(LET_GO);
         expect(audio.started.length).toBe(3);
         yield* two.close;
         expect(audio.closed).toBe(1);
@@ -2484,7 +2485,7 @@ describe("a page's sound", () => {
         expect(decoded).toEqual([3, 3]);
         page.send("pointerdown");
         expect(made).toBe(2);
-        three.app.frame();
+        yield* three.app.frame();
         expect(audio.started.length).toBe(4);
         yield* three.close;
         expect(audio.closed).toBe(2);

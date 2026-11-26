@@ -692,13 +692,13 @@ const withApp = <T extends Pick<App.Any, "read">, A, E2 = never>(
     Effect.flatMap(app.read(World), (world) => use(app, world))
   );
 
-const capture = (app: Timeline.Game): Timeline.Moment => {
-  const moment = Timeline.capture(app);
+const capture = Effect.fnUntraced(function* (app: Timeline.Game) {
+  const moment = yield* Effect.exit(Timeline.capture(app));
   if (moment._tag !== "Success") {
     throw new Error("the game could not be captured");
   }
   return moment.value;
-};
+});
 
 describe("the hash of an app's world", () => {
   const Drift = System.tick("Drift", function* () {
@@ -714,13 +714,13 @@ describe("the hash of an app's world", () => {
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
   const hashes = Effect.fnUntraced(function* (
-    make: Effect.Effect<App.Any, never>
+    make: Effect.Effect<App.App, never>
   ) {
     return yield* withApp(make, (app, world) =>
       Effect.gen(function* () {
         const out: number[] = [];
         for (let i = 0; i < 100; i++) {
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
           out.push(world.hash());
         }
         return out;
@@ -786,7 +786,7 @@ describe("the hash of an app's world", () => {
           (app, world) =>
             Effect.gen(function* () {
               for (const delta of deltas) {
-                app.tick(delta);
+                yield* app.tick(delta);
               }
               return world.hash();
             })
@@ -822,13 +822,15 @@ describe("the hash of an app's world", () => {
       });
     const after = Effect.fnUntraced(function* (
       ring: number | undefined,
-      act: (app: Effect.Success<ReturnType<typeof make>>) => void = () => {}
+      act: (
+        app: Effect.Success<ReturnType<typeof make>>
+      ) => Effect.Effect<unknown, Action.InvalidPayload> = () => Effect.void
     ) {
       return yield* withApp(make(), (app, world) =>
         Effect.gen(function* () {
           ringing = ring;
-          app.tick(1 / 60);
-          act(app);
+          yield* app.tick(1 / 60);
+          yield* act(app);
           return world.hash();
         })
       );
@@ -908,16 +910,16 @@ describe("the hash of an app's world", () => {
           }),
           (app, world) =>
             Effect.gen(function* () {
-              app.tick(1 / 60);
+              yield* app.tick(1 / 60);
               ringing = false;
-              app.enqueue(Push, { by: 7 });
+              yield* app.enqueue(Push, { by: 7 });
               const hash = world.hash();
-              const moment = capture(app);
-              app.tick(1 / 60);
+              const moment = yield* capture(app);
+              yield* app.tick(1 / 60);
               expect([heard, pushed]).toEqual([[1], [7]]);
-              Timeline.rewind(app, moment);
+              yield* Timeline.rewind(app, moment);
               expect(world.hash()).toBe(hash);
-              app.tick(1 / 60);
+              yield* app.tick(1 / 60);
               expect([heard, pushed]).toEqual([
                 [1, 1],
                 [7, 7],
@@ -932,13 +934,13 @@ describe("the hash of an app's world", () => {
       App.make(App.define({ systems: [Drift] }), { seed: 5 }),
       (app, world) =>
         Effect.gen(function* () {
-          app.tick(1 / 60);
-          app.tick(1 / 30);
+          yield* app.tick(1 / 60);
+          yield* app.tick(1 / 30);
           const time = { ...app.time };
           const hash = world.hash();
-          const moment = capture(app);
-          app.tick(1 / 60);
-          Timeline.rewind(app, moment);
+          const moment = yield* capture(app);
+          yield* app.tick(1 / 60);
+          yield* Timeline.rewind(app, moment);
           expect(app.time).toEqual(time);
           expect(world.hash()).toBe(hash);
         })

@@ -890,8 +890,8 @@ describe("relations in an app", () => {
         {
           const app = yield* App.make(App.define({ systems: [Accrue] }));
           const world = yield* app.read(World);
-          app.tick(1);
-          app.tick(1);
+          yield* app.tick(1);
+          yield* app.tick(1);
           const lenders = (yield* app.read(
             Query.all(Body).pipe(Query.without(Owes))
           )).entities();
@@ -916,27 +916,27 @@ describe("relations in an app", () => {
           world,
           trees: [first, second],
         } = yield* orchard;
-        app.tick(1);
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(world.sources(first, ChildOf).length).toBe(3);
         const [branch] = world.sources(first, ChildOf);
         assert(branch !== undefined);
         // A handler changes who points at whom through Commands.
-        expect(app.dispatch(Graft, { branch, onto: second })).toEqual(
-          Exit.succeed(3)
-        );
+        expect(
+          yield* Effect.exit(app.dispatch(Graft, { branch, onto: second }))
+        ).toEqual(Exit.succeed(3));
         expect(world.sources(second, ChildOf).length).toBe(4);
-        app.dispatch(Fell, { tree: first });
+        yield* app.dispatch(Fell, { tree: first });
         expect(world.isAlive(first)).toBe(false);
         expect(world.isAlive(branch)).toBe(true);
         expect(world.sources(first, ChildOf)).toEqual([]);
-        app.enqueue(Fell, { tree: second });
-        app.tick(1);
+        yield* app.enqueue(Fell, { tree: second });
+        yield* app.tick(1);
         expect(world.isAlive(branch)).toBe(false);
         // One tree is left, with the branches of three ticks and its first.
         expect(world.entityCount).toBe(5);
 
-        const played = app.record();
+        const played = yield* app.record();
         const again = yield* Journal.replay(played, Orchard, {
           checkpointEvery: 1,
         });
@@ -951,8 +951,8 @@ describe("relations in an app", () => {
         world,
         trees: [first, , third],
       } = yield* orchard;
-      app.tick(1);
-      const save = app.save();
+      yield* app.tick(1);
+      const save = yield* Effect.exit(app.save());
       if (Exit.isFailure(save)) {
         throw new Error("the save was refused");
       }
@@ -965,9 +965,9 @@ describe("relations in an app", () => {
         { save: read.value, checkpointEvery: 1 }
       );
       for (const each of [app, loaded]) {
-        each.dispatch(Fell, { tree: third });
-        each.tick(1);
-        each.tick(1);
+        yield* each.dispatch(Fell, { tree: third });
+        yield* each.tick(1);
+        yield* each.tick(1);
       }
       const loadedWorld = yield* loaded.read(World);
       expect(loadedWorld.hash()).toBe(world.hash());

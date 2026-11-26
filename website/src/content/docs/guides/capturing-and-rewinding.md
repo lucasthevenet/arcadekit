@@ -9,7 +9,7 @@ A **moment** is an app's game captured in memory. `Timeline` puts the same app b
 
 ```ts
 import { App, Plugin, Timeline } from "arcadekit";
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 
 const Game = Plugin.make("game/Game", {});
 
@@ -18,11 +18,9 @@ const program = Effect.gen(function* () {
     App.make(App.define({ plugins: [Game] })),
     (made) => made.close
   );
-  const moment = Timeline.capture(app); // Exit<Timeline.Moment, Save.SaveRefused>
-  app.tick(1 / 60);
-  if (Exit.isSuccess(moment)) {
-    Timeline.rewind(app, moment.value); // the same app, as it was
-  }
+  const moment = yield* Timeline.capture(app); // fails with Save.SaveRefused
+  yield* app.tick(1 / 60);
+  yield* Timeline.rewind(app, moment); // the same app, as it was
 }).pipe(Effect.scoped);
 ```
 

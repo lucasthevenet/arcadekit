@@ -172,20 +172,22 @@ const record = Effect.fnUntraced(function* (
       for (let tick = 0; tick < options.ticks; tick++) {
         const roll = dice.int(1, 6);
         if (roll <= 2 || tick < 3) {
-          const exit = app.dispatch(Drop, { value: dice.int(1, 9) });
+          const exit = yield* Effect.exit(
+            app.dispatch(Drop, { value: dice.int(1, 9) })
+          );
           if (Exit.isSuccess(exit)) {
             coins.push(exit.value);
           }
         } else if (roll === 3 && coins.length > 1) {
           // Never the oldest coin: a later test takes that one itself.
           const [coin] = coins.splice(dice.int(1, coins.length - 1), 1);
-          app.enqueue(Take, { coin: coin! });
+          yield* app.enqueue(Take, { coin: coin! });
         }
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         hashes.push(world.hash());
       }
       return {
-        recording: app.record(),
+        recording: yield* app.record(),
         log: [...app.actionLog],
         hashes,
         starting,
@@ -302,7 +304,7 @@ describe("checkpoints", () => {
           (app, world) =>
             Effect.gen(function* () {
               for (let tick = 1; tick <= 5; tick++) {
-                app.tick(1 / 60);
+                yield* app.tick(1 / 60);
                 expect(world.entityCount).toBe(tick);
                 expect(app.actionLog.at(-1)).toEqual({
                   tick,
@@ -350,17 +352,22 @@ describe("checkpoints", () => {
         // Whichever comes first: a tick, a move, a queued move, a move by name,
         // or a move that is refused.
         type Game = Effect.Success<ReturnType<typeof game>>;
-        const firsts: ((app: Game, coin: Entity) => void)[] = [
-          (app) => app.tick(1),
-          (app) => app.dispatchByName("rp/Drop", { value: 1 }),
-          (app) => {
-            app.enqueueByName("rp/Drop", { value: 1 });
-            app.tick(1);
-          },
-          (app) => app.dispatchByName("rp/Take", { coin: 4000 }),
-          (app) => app.dispatchByName("rp/Drop", { value: "not a number" }),
-          (app, coin) => app.dispatch(Take, { coin }),
-        ];
+        const firsts: ((app: Game, coin: Entity) => Effect.Effect<unknown>)[] =
+          [
+            (app) => app.tick(1),
+            (app) => Effect.exit(app.dispatchByName("rp/Drop", { value: 1 })),
+            (app) =>
+              Effect.andThen(
+                app.enqueueByName("rp/Drop", { value: 1 }),
+                app.tick(1)
+              ),
+            (app) => Effect.exit(app.dispatchByName("rp/Take", { coin: 4000 })),
+            (app) =>
+              Effect.exit(
+                app.dispatchByName("rp/Drop", { value: "not a number" })
+              ),
+            (app, coin) => Effect.exit(app.dispatch(Take, { coin })),
+          ];
         for (const first of firsts) {
           yield* withApp(game({ coins: [5] }), (app, world) =>
             Effect.gen(function* () {
@@ -368,7 +375,7 @@ describe("checkpoints", () => {
               const [coin] = (yield* app.read(Lying)).entities();
               assert(coin !== undefined);
               const starting = world.hash();
-              first(app, coin);
+              yield* first(app, coin);
               expect(app.actionLog[0]).toEqual({ tick: 0, hash: starting });
               expect(checkpoints(app.actionLog).length).toBe(1);
             })
@@ -381,14 +388,14 @@ describe("checkpoints", () => {
     Effect.gen(function* () {
       yield* withApp(game({ checkpointEvery: 0, coins: [1] }), (app, world) =>
         Effect.gen(function* () {
-          app.tick(1);
-          app.tick(1);
+          yield* app.tick(1);
+          yield* app.tick(1);
           expect(app.actionLog).toEqual([]);
-          const hash = app.checkpoint();
+          const hash = yield* app.checkpoint();
           expect(hash).toBe(world.hash());
           expect(app.actionLog).toEqual([{ tick: 2, hash }]);
-          app.dispatch(Drop, { value: 2 });
-          app.checkpoint();
+          yield* app.dispatch(Drop, { value: 2 });
+          yield* app.checkpoint();
           expect(
             app.actionLog.map((entry) => Action.isCheckpoint(entry))
           ).toEqual([true, false, true]);
@@ -399,8 +406,8 @@ describe("checkpoints", () => {
       // One taken by hand before the game starts is the starting checkpoint.
       yield* withApp(game({ checkpointEvery: 5, coins: [1] }), (app) =>
         Effect.gen(function* () {
-          app.checkpoint();
-          app.tick(1);
+          yield* app.checkpoint();
+          yield* app.tick(1);
           expect(checkpoints(app.actionLog).map((entry) => entry.tick)).toEqual(
             [0]
           );
@@ -409,17 +416,14 @@ describe("checkpoints", () => {
 
       let inside: unknown;
       const Asks = System.tick("Asks", function* () {
-        try {
-          asking!.checkpoint();
-        } catch (error) {
-          inside = error;
-        }
+        const asked = yield* Effect.exit(asking!.checkpoint());
+        inside = Exit.isFailure(asked) ? Cause.squash(asked.cause) : undefined;
       });
       let asking: App.Any | undefined;
       yield* withApp(App.make(App.define({ systems: [Asks] })), (app) =>
         Effect.gen(function* () {
           asking = app;
-          app.tick(1);
+          yield* app.tick(1);
         })
       );
       expect(String(inside)).toMatch(/checkpoint\(\) was called during a tick/);
@@ -578,9 +582,13 @@ describe("a replay that checks itself", () => {
               };
               // The replay closed it, and it is an app of the game all the
               // same: it takes the game's actions, and no other.
-              const dropped = app.dispatch(Drop, { value: 1 });
+              const dropped = yield* Effect.exit(
+                app.dispatch(Drop, { value: 1 })
+              );
               // @ts-expect-error the game has no handler for `Add`
-              expect(() => app.dispatch(Add, { by: 1 })).toThrow(/No handler/);
+              expect(yield* thrown(app.dispatch(Add, { by: 1 }))).toThrow(
+                /No handler/
+              );
               return {
                 ...seen,
                 dropped: Exit.isSuccess(dropped),
@@ -841,10 +849,10 @@ describe("a replay that checks itself", () => {
               if (tick === 8) {
                 hidden = 7;
               }
-              app.dispatch(Drop, { value: 1 });
-              app.tick(1 / 60);
+              yield* app.dispatch(Drop, { value: 1 });
+              yield* app.tick(1 / 60);
             }
-            return app.record();
+            return yield* app.record();
           })
       );
       const replayed = yield* replayInto({}, recorded);
@@ -861,14 +869,16 @@ describe("a replay that checks itself", () => {
       Effect.gen(function* () {
         const recorded = yield* withApp(game({ checkpointEvery: 0 }), (app) =>
           Effect.gen(function* () {
-            const dropped = app.dispatch(Drop, { value: 4 });
+            const dropped = yield* Effect.exit(
+              app.dispatch(Drop, { value: 4 })
+            );
             const coin = Exit.isSuccess(dropped) ? dropped.value : entityOf(0);
-            app.tick(1 / 60);
-            app.enqueue(Take, { coin });
-            app.enqueue(Take, { coin }); // refused: the coin is gone by then
-            app.tick(1 / 60);
-            app.tick(1 / 60);
-            return app.record();
+            yield* app.tick(1 / 60);
+            yield* app.enqueue(Take, { coin });
+            yield* app.enqueue(Take, { coin }); // refused: the coin is gone by then
+            yield* app.tick(1 / 60);
+            yield* app.tick(1 / 60);
+            return yield* app.record();
           })
         );
         expect(moves(recorded.log).map((entry) => entry.refused)).toEqual([
@@ -1028,10 +1038,10 @@ describe("the action log", () => {
     () =>
       withApp(busy(0), (app) =>
         Effect.gen(function* () {
-          app.enqueue(Add, { by: 1 });
-          app.dispatch(Chain, { by: 100 }); // its handler enqueues an Add
-          app.enqueueByName("rp/Double", {});
-          app.dispatch(Add, { by: 1000 });
+          yield* app.enqueue(Add, { by: 1 });
+          yield* app.dispatch(Chain, { by: 100 }); // its handler enqueues an Add
+          yield* app.enqueueByName("rp/Double", {});
+          yield* app.dispatch(Add, { by: 1000 });
           expect(app.actionLog).toEqual([
             { tick: 0, name: "rp/Add", payload: { by: 1 }, queued: true },
             { tick: 0, name: "rp/Chain", payload: { by: 100 } },
@@ -1040,11 +1050,11 @@ describe("the action log", () => {
           ]);
           // Applied in the order they arrived, the handler's own among them:
           // 1 + 1000 at once, then (+1, +100, doubled) when the tick starts.
-          app.tick(1);
+          yield* app.tick(1);
           expect((yield* tallyOf(app)).value).toBe((1001 + 1 + 100) * 2);
           // The tick ran the bot and the heckler, and none of their moves is logged.
           for (let i = 0; i < 12; i++) {
-            app.tick(1);
+            yield* app.tick(1);
           }
           expect((yield* tallyOf(app)).value).toBeGreaterThan(10_000);
           expect(app.actionLog.length).toBe(4);
@@ -1057,11 +1067,13 @@ describe("the action log", () => {
     () =>
       withApp(busy(0, 1e12), (app) =>
         Effect.gen(function* () {
-          expect(Exit.isFailure(app.dispatch(Double, {}))).toBe(true);
-          app.enqueue(Double, {});
-          app.enqueueByName("rp/Nothing", { x: 1 });
-          app.enqueueByName("rp/Add", { by: "seven" });
-          app.tick(1);
+          expect(
+            Exit.isFailure(yield* Effect.exit(app.dispatch(Double, {})))
+          ).toBe(true);
+          yield* app.enqueue(Double, {});
+          yield* app.enqueueByName("rp/Nothing", { x: 1 });
+          yield* app.enqueueByName("rp/Add", { by: "seven" });
+          yield* app.tick(1);
           expect(
             app.actionLog.map((entry) =>
               Action.isCheckpoint(entry) ? "?" : [entry.name, entry.refused]
@@ -1072,7 +1084,7 @@ describe("the action log", () => {
             ["rp/Add", expect.stringMatching(/by/)],
           ]);
           // The referee saw all three refusals.
-          app.tick(1);
+          yield* app.tick(1);
           expect((yield* tallyOf(app)).rejections).toBe(3);
         })
       )
@@ -1127,12 +1139,16 @@ describe("app.enqueue from inside the simulation", () => {
    */
   const Relay = Action.define("rp/Relay", Schema.Struct({ by: Schema.Int }));
   const holding = Effect.gen(function* () {
-    let enqueue: ((by: number) => void) | undefined;
+    let enqueue: ((by: number) => Effect.Effect<void>) | undefined;
     const relay = Action.handler(Relay, function* ({ by }) {
-      enqueue?.(by);
+      if (enqueue !== undefined) {
+        yield* enqueue(by);
+      }
     });
     const Clock = System.tick("Clock", function* () {
-      enqueue?.(1);
+      if (enqueue !== undefined) {
+        yield* enqueue(1);
+      }
     });
     const app = yield* App.make(
       App.define({
@@ -1142,9 +1158,7 @@ describe("app.enqueue from inside the simulation", () => {
       }),
       { checkpointEvery: 1 }
     );
-    enqueue = (by) => {
-      app.enqueue(Add, { by });
-    };
+    enqueue = (by) => Effect.orDie(app.enqueue(Add, { by }));
     return app;
   });
   /**
@@ -1187,10 +1201,10 @@ describe("app.enqueue from inside the simulation", () => {
         const recorded = yield* withApp(holding, (app, world) =>
           Effect.gen(function* () {
             for (let i = 0; i < 3; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
             return {
-              recording: app.record(),
+              recording: yield* app.record(),
               value: (yield* tallyOf(app)).value,
               hash: world.hash(),
             };
@@ -1212,10 +1226,14 @@ describe("app.enqueue from inside the simulation", () => {
       Effect.gen(function* () {
         const recorded = yield* withApp(holding, (app, world) =>
           Effect.gen(function* () {
-            expect(Exit.isSuccess(app.dispatch(Relay, { by: 100 }))).toBe(true);
-            app.tick(1);
+            expect(
+              Exit.isSuccess(
+                yield* Effect.exit(app.dispatch(Relay, { by: 100 }))
+              )
+            ).toBe(true);
+            yield* app.tick(1);
             return {
-              recording: app.record(),
+              recording: yield* app.record(),
               value: (yield* tallyOf(app)).value,
               hash: world.hash(),
             };
@@ -1248,8 +1266,8 @@ describe("app.enqueue from inside the simulation", () => {
           }),
           (app) =>
             Effect.gen(function* () {
-              app.enqueue(Add, { by: 4000 });
-              app.tick(1);
+              yield* app.enqueue(Add, { by: 4000 });
+              yield* app.tick(1);
               expect((yield* tallyOf(app)).value).toBe(4010);
               expect(app.actionLog).toEqual([
                 {
@@ -1267,37 +1285,39 @@ describe("app.enqueue from inside the simulation", () => {
 
 describe("a game whose simulation issues actions itself", () => {
   /** Outside moves mixed in with the bot's, the heckler's and a handler's. */
-  const play = (app: Effect.Success<ReturnType<typeof busy>>) => {
+  const play = Effect.fnUntraced(function* (
+    app: Effect.Success<ReturnType<typeof busy>>
+  ) {
     const dice = new EcsWorld({ seed: 77 }).random;
     for (let tick = 0; tick < 90; tick++) {
       for (let n = dice.int(0, 3); n > 0; n--) {
         const by = dice.int(1, 5);
         const move = dice.int(1, 6);
         if (move === 1) {
-          app.enqueue(Add, { by });
+          yield* app.enqueue(Add, { by });
         } else if (move === 2) {
-          app.dispatch(Chain, { by });
+          yield* app.dispatch(Chain, { by });
         } else if (move === 3) {
-          app.enqueueByName("rp/Double", {});
+          yield* app.enqueueByName("rp/Double", {});
         } else if (move === 4) {
-          app.dispatch(Add, { by });
+          yield* app.dispatch(Add, { by });
         } else if (move === 5) {
-          app.enqueueByName("rp/Add", { by: "not a number" });
+          yield* app.enqueueByName("rp/Add", { by: "not a number" });
         } else {
-          app.enqueue(Chain, { by });
+          yield* app.enqueue(Chain, { by });
         }
       }
-      app.tick(1);
+      yield* app.tick(1);
     }
-  };
+  });
 
   it.effect("replays from its log, checkpoint by checkpoint", () =>
     Effect.gen(function* () {
       const recorded = yield* withApp(busy(), (app, world) =>
         Effect.gen(function* () {
-          play(app);
+          yield* play(app);
           return {
-            recording: app.record(),
+            recording: yield* app.record(),
             log: [...app.actionLog],
             hash: world.hash(),
             tally: yield* tallyOf(app),
@@ -1342,9 +1362,9 @@ describe("a game whose simulation issues actions itself", () => {
         const recorded = yield* withApp(busy(), (app) =>
           Effect.gen(function* () {
             for (let i = 0; i < 9; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
-            return app.record();
+            return yield* app.record();
           })
         );
         expect(moves(recorded.log)).toEqual([]);
@@ -1390,16 +1410,16 @@ describe("a game whose simulation issues actions itself", () => {
           return yield* withApp(make, (app) =>
             Effect.gen(function* () {
               if (first === "enqueue") {
-                app.enqueue(Double, {});
-                app.dispatch(Chain, { by: 10 });
+                yield* app.enqueue(Double, {});
+                yield* app.dispatch(Chain, { by: 10 });
               } else {
-                app.dispatch(Chain, { by: 10 });
-                app.enqueue(Double, {});
+                yield* app.dispatch(Chain, { by: 10 });
+                yield* app.enqueue(Double, {});
               }
-              app.tick(1);
+              yield* app.tick(1);
               return {
                 value: (yield* tallyOf(app)).value,
-                recording: app.record(),
+                recording: yield* app.record(),
               };
             })
           );
@@ -1468,10 +1488,10 @@ describe("a recording", () => {
         const recorded = yield* withApp(walking, (app, world) =>
           Effect.gen(function* () {
             for (const delta of steps) {
-              app.dispatch(Drop, { value: 1 });
-              app.tick(delta);
+              yield* app.dispatch(Drop, { value: 1 });
+              yield* app.tick(delta);
             }
-            return { recording: app.record(), hash: world.hash() };
+            return { recording: yield* app.record(), hash: world.hash() };
           })
         );
         expect(recorded.recording).toMatchObject({
@@ -1500,15 +1520,15 @@ describe("a recording", () => {
     () =>
       withApp(walking, (app) =>
         Effect.gen(function* () {
-          app.tick(1 / 30);
-          app.tick(1 / 30);
-          app.tick(1 / 30);
-          app.dispatch(Drop, { value: 2 });
-          const save = app.save();
+          yield* app.tick(1 / 30);
+          yield* app.tick(1 / 30);
+          yield* app.tick(1 / 30);
+          yield* app.dispatch(Drop, { value: 2 });
+          const save = yield* Effect.exit(app.save());
           assert(Exit.isSuccess(save));
-          app.tick(1 / 30);
-          app.tick(1 / 60);
-          const tail = app.record(save.value);
+          yield* app.tick(1 / 30);
+          yield* app.tick(1 / 60);
+          const tail = yield* app.record(save.value);
           expect(tail).toMatchObject({
             start: 3,
             end: 5,
@@ -1525,14 +1545,14 @@ describe("a recording", () => {
   it.effect("forgets the ticks a rewind gave up", () =>
     withApp(walking, (app) =>
       Effect.gen(function* () {
-        app.tick(1 / 60);
-        const moment = Timeline.capture(app);
+        yield* app.tick(1 / 60);
+        const moment = yield* Effect.exit(Timeline.capture(app));
         assert(Exit.isSuccess(moment));
-        app.tick(1 / 30);
-        app.tick(1 / 30);
-        Timeline.rewind(app, moment.value);
-        app.tick(1 / 60);
-        expect(app.record()).toMatchObject({
+        yield* app.tick(1 / 30);
+        yield* app.tick(1 / 30);
+        yield* Timeline.rewind(app, moment.value);
+        yield* app.tick(1 / 60);
+        expect(yield* app.record()).toMatchObject({
           end: 2,
           deltas: [{ tick: 0, delta: 1 / 60 }],
         });
@@ -1543,18 +1563,18 @@ describe("a recording", () => {
   it.effect("records only a save of its own app", () =>
     withApp(walking, (app) =>
       Effect.gen(function* () {
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         // Not a save of this app: it is of a tick this one hasn't reached.
         const ahead = yield* withApp(walking, (other) =>
           Effect.gen(function* () {
             for (let i = 0; i < 5; i++) {
-              other.tick(1 / 60);
+              yield* other.tick(1 / 60);
             }
-            return other.save();
+            return yield* Effect.exit(other.save());
           })
         );
         assert(Exit.isSuccess(ahead));
-        expect(() => app.record(ahead.value)).toThrow(
+        expect(yield* thrown(app.record(ahead.value))).toThrow(
           /record\(\) was given a save of tick 5 that this app didn't make/
         );
       })
@@ -1570,12 +1590,12 @@ describe("how a recorded game began", () => {
     return String(Cause.squash(read.cause));
   };
   /** Plays `ticks` ticks of a seeded game, dropping a coin on each. */
-  const drops = (app: App.Any, ticks: number): void => {
+  const drops = Effect.fnUntraced(function* (app: App.App, ticks: number) {
     for (let i = 0; i < ticks; i++) {
-      app.dispatchByName("rp/Drop", { value: i + 1 });
-      app.tick(1 / 60);
+      yield* app.dispatchByName("rp/Drop", { value: i + 1 });
+      yield* app.tick(1 / 60);
     }
-  };
+  });
 
   it.effect(
     "is its seed for a game recorded from its start: an app made from the recording begins the same way",
@@ -1593,11 +1613,13 @@ describe("how a recorded game began", () => {
         const replayed = yield* withApp(
           Effect.orDie(Journal.replay(recorded.recording, coinGame())),
           (app, world) =>
-            Effect.sync(() => ({
-              tick: app.time.tick,
-              hash: world.hash(),
-              seed: app.record().seed,
-            }))
+            Effect.gen(function* () {
+              return {
+                tick: app.time.tick,
+                hash: world.hash(),
+                seed: (yield* app.record()).seed,
+              };
+            })
         );
         expect(replayed).toEqual({
           tick: 40,
@@ -1608,7 +1630,7 @@ describe("how a recorded game began", () => {
         // what `App.make` takes.
         const { save } = yield* withApp(game(), (app) =>
           Effect.gen(function* () {
-            const saved = app.save();
+            const saved = yield* Effect.exit(app.save());
             assert(Exit.isSuccess(saved));
             return { save: saved.value };
           })
@@ -1638,7 +1660,7 @@ describe("how a recorded game began", () => {
         // A game made with no seed began with seed 0, and its recording says so.
         yield* withApp(App.make(coinGame()), (app) =>
           Effect.gen(function* () {
-            expect(app.record().seed).toBe(0);
+            expect((yield* app.record()).seed).toBe(0);
           })
         );
         // Through bytes and back.
@@ -1656,14 +1678,14 @@ describe("how a recorded game began", () => {
           game({ seed: 3, checkpointEvery: 1 }),
           (app, world) =>
             Effect.gen(function* () {
-              drops(app, 10);
-              const saved = app.save();
+              yield* drops(app, 10);
+              const saved = yield* Effect.exit(app.save());
               assert(Exit.isSuccess(saved));
-              drops(app, 20);
+              yield* drops(app, 20);
               return {
                 save: saved.value,
-                tail: app.record(saved.value),
-                whole: app.record(),
+                tail: yield* app.record(saved.value),
+                whole: yield* app.record(),
                 hash: world.hash(),
               };
             })
@@ -1685,19 +1707,21 @@ describe("how a recorded game began", () => {
             Journal.replay(read.value, coinGame(), { checkpointEvery: 1 })
           ),
           (app, world) =>
-            Effect.sync(() => ({
-              tick: app.time.tick,
-              hash: world.hash(),
-              save: app.record().save,
-            }))
+            Effect.gen(function* () {
+              return {
+                tick: app.time.tick,
+                hash: world.hash(),
+                save: (yield* app.record()).save,
+              };
+            })
         );
         expect(present).toEqual({ tick: 30, hash: played.hash, save });
 
         // An app made from a save began there, and its recording says so.
         yield* withApp(Effect.orDie(App.make(coinGame(), { save })), (app) =>
           Effect.gen(function* () {
-            drops(app, 2);
-            const recording = app.record();
+            yield* drops(app, 2);
+            const recording = yield* app.record();
             expect(recording.save).toEqual(save);
             expect(recording).toMatchObject({ start: 10, end: 12 });
           })
@@ -1711,14 +1735,14 @@ describe("how a recorded game began", () => {
       Effect.gen(function* () {
         const { save, tail, whole } = yield* withApp(game({ seed: 3 }), (app) =>
           Effect.gen(function* () {
-            drops(app, 4);
-            const saved = app.save();
+            yield* drops(app, 4);
+            const saved = yield* Effect.exit(app.save());
             assert(Exit.isSuccess(saved));
-            drops(app, 2);
+            yield* drops(app, 2);
             return {
               save: saved.value,
-              tail: app.record(saved.value),
-              whole: app.record(),
+              tail: yield* app.record(saved.value),
+              whole: yield* app.record(),
             };
           })
         );
@@ -1739,9 +1763,10 @@ describe("how a recorded game began", () => {
   it.effect("can't be written with a payload that has no JSON form", () =>
     withApp(game({ seed: 3 }), (app) =>
       Effect.gen(function* () {
-        app.enqueueByName("rp/Nothing", { n: 1n });
-        app.tick(1 / 60);
-        expect(() => Journal.encode(app.record())).toThrow(
+        yield* app.enqueueByName("rp/Nothing", { n: 1n });
+        yield* app.tick(1 / 60);
+        const recording = yield* app.record();
+        expect(() => Journal.encode(recording)).toThrow(
           /a payload in its log has no JSON form/u
         );
       })
@@ -1752,14 +1777,14 @@ describe("how a recorded game began", () => {
     Effect.gen(function* () {
       const { save, tail, whole } = yield* withApp(game({ seed: 3 }), (app) =>
         Effect.gen(function* () {
-          drops(app, 4);
-          const saved = app.save();
+          yield* drops(app, 4);
+          const saved = yield* Effect.exit(app.save());
           assert(Exit.isSuccess(saved));
-          drops(app, 2);
+          yield* drops(app, 2);
           return {
             save: saved.value,
-            tail: app.record(saved.value),
-            whole: app.record(),
+            tail: yield* app.record(saved.value),
+            whole: yield* app.record(),
           };
         })
       );

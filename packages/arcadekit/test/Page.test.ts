@@ -164,11 +164,11 @@ const play = Effect.fnUntraced(function* (
     /** What a driver does each frame a tick is due: the devices, a tick, a frame. */
     step: (times = 1) =>
       inAct(
-        Effect.sync(() => {
+        Effect.gen(function* () {
           for (let i = 0; i < times; i++) {
-            app.input();
-            app.tick(1 / 60);
-            app.frame();
+            yield* app.input();
+            yield* app.tick(1 / 60);
+            yield* app.frame();
           }
         })
       ),

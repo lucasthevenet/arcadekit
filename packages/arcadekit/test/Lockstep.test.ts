@@ -81,7 +81,7 @@ describe("a lockstep session", () => {
                 for (const peer of peers) {
                   yield* act(peer);
                 }
-                round(peers, net);
+                yield* round(peers, net);
               }
               const [ada, grace] = peers as [Peer, Peer];
               // They got somewhere, and not by one of them running ahead alone.
@@ -93,7 +93,7 @@ describe("a lockstep session", () => {
               // The hashes are of a game in which things happened.
               expect(new Set(ada.hashes).size).toBeGreaterThan(common / 2);
 
-              const ticks = catchUp(peers, net);
+              const ticks = yield* catchUp(peers, net);
               // A tick that has run is let go of: what a peer holds is what the
               // others have said ahead of it, however long the game has gone on.
               expect(ada.session.held).toBeLessThanOrEqual(2 * (2 * 2 + 2));
@@ -126,11 +126,11 @@ describe("a lockstep session", () => {
           for (const peer of peers) {
             yield* act(peer);
           }
-          round(peers, net);
+          yield* round(peers, net);
         }
-        const ticks = catchUp(peers, net);
+        const ticks = yield* catchUp(peers, net);
         const [ada] = peers as [Peer];
-        const recording = ada.app.record();
+        const recording = yield* ada.app.record();
         expect(recording.end).toBe(ticks);
         yield* withApp(
           Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
@@ -151,9 +151,9 @@ describe("a lockstep session", () => {
         for (let i = 0; i < 200; i++) {
           yield* act(peers[0]!);
           yield* act(peers[1]!);
-          round(peers, net);
+          yield* round(peers, net);
         }
-        catchUp(peers, net);
+        yield* catchUp(peers, net);
         const [first, ...others] = peers as [Peer, Peer, Peer];
         expect(first.app.time.tick).toBeGreaterThan(30);
         for (const other of others) {
@@ -174,13 +174,13 @@ describe("a lockstep session", () => {
           const net = network(1, { min: 0, max: 0 });
           const [ada, grace] = peers as [Peer, Peer];
           while (ada.app.time.tick < 4) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          ada.app.enqueue(Drop, { by: "ada", value: 7 });
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 7 });
           // Nothing of it yet: not in the queue, and not in the log.
           expect(moves(ada.app.actionLog)).toEqual([]);
           for (let i = 0; i < 8; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
           // Issued when 4 ticks had run, so stamped 4 + 3.
           const expected = [
@@ -208,9 +208,9 @@ describe("a lockstep session", () => {
           expect(ada.session.delay).toBe(2);
           expect(ada.session.delta).toBe(DELTA);
           expect(ada.session.me).toBe("ada");
-          ada.app.enqueue(Drop, { by: "ada", value: 1 });
-          ada.app.enqueue(Drop, { by: "ada", value: 2 });
-          expect(ada.session.tick()).toBe(false);
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 1 });
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 2 });
+          expect(yield* ada.session.tick()).toBe(false);
           // Its first tick speaks for every tick up to the one its delay
           // reaches, and what was issued is in the last of them.
           expect(ada.session.outgoing()).toEqual([
@@ -244,7 +244,7 @@ describe("a lockstep session", () => {
           // Taken: asked again, there is nothing.
           expect(ada.session.outgoing()).toEqual([]);
           // A tick that waits says nothing twice.
-          expect(ada.session.tick()).toBe(false);
+          expect(yield* ada.session.tick()).toBe(false);
           expect(ada.session.outgoing()).toEqual([]);
         })
       )
@@ -257,8 +257,8 @@ describe("a lockstep session", () => {
         yield* withPeers(["ada", "edsger", "grace"], { delay: 1 }, (peers) =>
           Effect.gen(function* () {
             const [ada] = peers as [Peer];
-            ada.app.enqueue(Drop, { by: "ada", value: 1 });
-            ada.session.tick();
+            yield* ada.app.enqueue(Drop, { by: "ada", value: 1 });
+            yield* ada.session.tick();
             const said = ada.session.outgoing();
             expect(said.map((message) => message.tick)).toEqual([0, 1]);
             expect(ada.session.unheard).toBe(2);
@@ -312,7 +312,7 @@ describe("a lockstep session", () => {
         // A session of one keeps nothing, and says nothing of what it heard.
         yield* withPeers(["ada"], {}, ([ada]) =>
           Effect.gen(function* () {
-            ada!.session.tick();
+            yield* ada!.session.tick();
             expect(ada!.session.outgoing()[0]).not.toHaveProperty("heard");
             expect(ada!.session.unheard).toBe(0);
           })
@@ -334,13 +334,13 @@ describe("a lockstep session", () => {
               // Issued in either order, and ticked in either order.
               const order = first === "ada" ? [ada, grace] : [grace, ada];
               for (const peer of order) {
-                peer.app.enqueue(Drop, {
+                yield* peer.app.enqueue(Drop, {
                   by: peer.name as "ada" | "grace",
                   value: 1,
                 });
               }
               for (let i = 0; i < 6; i++) {
-                round(order, net);
+                yield* round(order, net);
               }
               for (const peer of peers) {
                 expect(
@@ -360,24 +360,24 @@ describe("a lockstep session", () => {
       Effect.gen(function* () {
         const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
         expect(ada.session.waitingFor).toEqual(["edsger", "grace"]);
-        expect(ada.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(false);
         expect(ada.app.time.tick).toBe(0);
-        expect(grace.session.tick()).toBe(false);
+        expect(yield* grace.session.tick()).toBe(false);
         for (const message of grace.session.outgoing()) {
           ada.session.receive(message);
         }
         expect(ada.session.waitingFor).toEqual(["edsger"]);
-        expect(ada.session.tick()).toBe(false);
-        expect(edsger.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(false);
+        expect(yield* edsger.session.tick()).toBe(false);
         for (const message of edsger.session.outgoing()) {
           ada.session.receive(message);
         }
         expect(ada.session.waitingFor).toEqual([]);
         // It holds their messages for ticks 0 and 1, and runs both.
-        expect(ada.session.tick()).toBe(true);
-        expect(ada.session.tick()).toBe(true);
+        expect(yield* ada.session.tick()).toBe(true);
+        expect(yield* ada.session.tick()).toBe(true);
         expect(ada.session.waitingFor).toEqual(["edsger", "grace"]);
-        expect(ada.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(false);
         expect(ada.app.time.tick).toBe(2);
       })
     )
@@ -403,13 +403,13 @@ describe("a lockstep session", () => {
           });
           // Nobody speaks for this peer but itself.
           ada.session.receive({ from: "ada", tick: 1, actions: [action] });
-          expect(ada.session.tick()).toBe(true);
+          expect(yield* ada.session.tick()).toBe(true);
           // For a tick that has run: it is not kept.
           const before = ada.session.held;
           ada.session.receive({ from: "grace", tick: 0, actions: [action] });
           expect(ada.session.held).toBe(before);
           ada.session.receive({ from: "grace", tick: 1, actions: [] });
-          expect(ada.session.tick()).toBe(true);
+          expect(yield* ada.session.tick()).toBe(true);
           expect(moves(ada.app.actionLog)).toEqual([]);
           expect(grace.app.time.tick).toBe(0);
         })
@@ -424,12 +424,12 @@ describe("a lockstep session", () => {
           const net = network(1, { min: 0, max: 0 });
           const [ada, grace] = peers as [Peer, Peer];
           // As data, which is how a tool or another program issues one.
-          ada.app.enqueueByName("ls/Drop", { by: "nobody", value: 1.5 });
-          ada.app.enqueueByName("ls/Nothing", {});
+          yield* ada.app.enqueueByName("ls/Drop", { by: "nobody", value: 1.5 });
+          yield* ada.app.enqueueByName("ls/Nothing", {});
           for (let i = 0; i < 5; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          catchUp(peers, net);
+          yield* catchUp(peers, net);
           const logged = moves(grace.app.actionLog);
           expect(logged.map((entry) => entry.name)).toEqual([
             "ls/Drop",
@@ -450,13 +450,13 @@ describe("a lockstep session", () => {
         const net = network(1, { min: 0, max: 0 });
         const [ada, grace] = peers as [Peer, Peer];
         while (ada.app.time.tick < 2) {
-          round(peers, net);
+          yield* round(peers, net);
         }
         ada.source.tap("Space");
         for (let i = 0; i < 6; i++) {
-          round(peers, net);
+          yield* round(peers, net);
         }
-        catchUp(peers, net);
+        yield* catchUp(peers, net);
         // Heard before the tick that ran when 2 had, so stamped 2 + 2.
         const expected = [
           {
@@ -479,17 +479,17 @@ describe("a lockstep session", () => {
       Effect.gen(function* () {
         const net = network(1, { min: 0, max: 0 });
         const [ada, grace] = peers as [Peer, Peer];
-        ada.session.tick();
+        yield* ada.session.tick();
         const said = ada.session.outgoing();
         ada.source.tap("Space");
         // Still waiting, and the press is not lost: it is in its next message.
-        expect(ada.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(false);
         expect(ada.session.outgoing()).toEqual([]);
         net.send(["grace"], said);
         for (let i = 0; i < 6; i++) {
-          round(peers, net);
+          yield* round(peers, net);
         }
-        catchUp(peers, net);
+        yield* catchUp(peers, net);
         expect(moves(grace.app.actionLog)).toEqual([
           {
             tick: 2,
@@ -511,8 +511,8 @@ describe("a lockstep session", () => {
         Effect.gen(function* () {
           const net = network(1, { min: 0, max: 0 });
           const [ada, grace] = peers as [Peer, Peer];
-          ada.app.enqueue(Mint, { on: MINTED });
-          ada.session.tick();
+          yield* ada.app.enqueue(Mint, { on: MINTED });
+          yield* ada.session.tick();
           const said = ada.session.outgoing();
           expect(said).toEqual([
             {
@@ -531,9 +531,9 @@ describe("a lockstep session", () => {
           ]);
           net.send(["grace"], said);
           for (let i = 0; i < 3; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          catchUp(peers, net);
+          yield* catchUp(peers, net);
           for (const peer of peers) {
             const coins = yield* coinsOf(peer);
             expect(coins).toHaveLength(1);
@@ -555,7 +555,9 @@ describe("a lockstep session", () => {
           // The compiler takes 1.5 for a number; the schema wants a whole one.
           // It has no JSON form to send, so it is refused here and now, and not
           // when its turn comes on this machine alone.
-          expect(ada.app.enqueue(Drop, { by: "ada", value: 1.5 })).toEqual(
+          expect(
+            yield* Effect.exit(ada.app.enqueue(Drop, { by: "ada", value: 1.5 }))
+          ).toEqual(
             Exit.fail(
               Action.InvalidPayload.make({
                 action: "ls/Drop",
@@ -564,9 +566,9 @@ describe("a lockstep session", () => {
             )
           );
           for (let i = 0; i < 5; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          catchUp(peers, net);
+          yield* catchUp(peers, net);
           // Neither app heard of it, and it is in nobody's log.
           expect(refusals).toEqual([]);
           expect(moves(ada.app.actionLog)).toEqual([]);
@@ -583,21 +585,21 @@ describe("a lockstep session", () => {
         Effect.gen(function* () {
           const net = network(1, { min: 0, max: 0 });
           const [ada, grace] = peers as [Peer, Peer];
-          ada.app.enqueue(Drop, { by: "ada", value: 3 });
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
           for (let i = 0; i < 3; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          catchUp(peers, net);
+          yield* catchUp(peers, net);
           const [coin] = yield* coinsOf(ada);
           assert(coin !== undefined);
           untaken.length = 0;
           // Both take the one coin on the same tick: ada's name comes first.
-          ada.app.enqueue(Take, { by: "ada", coin });
-          grace.app.enqueue(Take, { by: "grace", coin });
+          yield* ada.app.enqueue(Take, { by: "ada", coin });
+          yield* grace.app.enqueue(Take, { by: "grace", coin });
           for (let i = 0; i < 6; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
-          catchUp(peers, net);
+          yield* catchUp(peers, net);
           const refused = {
             payload: { by: "grace", coin },
             error: NoSuchCoin.make({ coin }),
@@ -617,18 +619,20 @@ describe("a lockstep session", () => {
     () =>
       Effect.gen(function* () {
         const going = yield* game();
-        const dropped = going.dispatch(Drop, { by: "ada", value: 3 });
+        const dropped = yield* Effect.exit(
+          going.dispatch(Drop, { by: "ada", value: 3 })
+        );
         assert(Exit.isSuccess(dropped));
         const coin = dropped.value;
-        going.enqueueByName("ls/Take", { by: "ada", coin }, "ada");
-        going.enqueueByName("ls/Take", { by: "grace", coin }, "grace");
-        const saved = going.save();
+        yield* going.enqueueByName("ls/Take", { by: "ada", coin }, "ada");
+        yield* going.enqueueByName("ls/Take", { by: "grace", coin }, "grace");
+        const saved = yield* Effect.exit(going.save());
         assert(Exit.isSuccess(saved));
         const loaded = yield* App.make(CoinGame, { save: saved.value });
         untaken.length = 0;
         for (const app of [going, loaded]) {
-          app.tick(DELTA);
-          app.input();
+          yield* app.tick(DELTA);
+          yield* app.input();
         }
         const refused: Action.Refused<
           { readonly by: "grace"; readonly coin: typeof coin },
@@ -678,16 +682,20 @@ describe("a lockstep session", () => {
       };
       yield* withMade(Session.make(Fused, alone), (session) =>
         Effect.gen(function* () {
-          expect(session.tickExit()).toEqual(Exit.succeed(true));
-          expect(session.tickExit()).toEqual(Exit.fail(new Blown({ at: 2 })));
-          expect(session.tick()).toBe(true);
+          expect(yield* Effect.exit(session.tick())).toEqual(
+            Exit.succeed(true)
+          );
+          expect(yield* Effect.exit(session.tick())).toEqual(
+            Exit.fail(new Blown({ at: 2 }))
+          );
+          expect(yield* session.tick()).toBe(true);
           expect(session.app.time.tick).toBe(3);
         })
       );
       yield* withMade(Session.make(Fused, alone), (session) =>
         Effect.gen(function* () {
-          session.tick();
-          expect(() => session.tick()).toThrow(Blown);
+          yield* session.tick();
+          expect(yield* thrown(session.tick())).toThrow(Blown);
         })
       );
     })
@@ -712,12 +720,16 @@ describe("a lockstep session", () => {
         }),
         (session) =>
           Effect.gen(function* () {
-            expect(session.tickExit()).toEqual(Exit.fail(new Jammed()));
+            expect(yield* Effect.exit(session.tick())).toEqual(
+              Exit.fail(new Jammed())
+            );
             expect(session.app.time.tick).toBe(0);
             // It said nothing for a tick it did not get to.
             expect(session.outgoing()).toEqual([]);
             jam = false;
-            expect(session.tickExit()).toEqual(Exit.succeed(true));
+            expect(yield* Effect.exit(session.tick())).toEqual(
+              Exit.succeed(true)
+            );
             expect(session.app.time.tick).toBe(1);
           })
       );
@@ -728,19 +740,19 @@ describe("a lockstep session", () => {
     withPeers(["ada", "grace"], { delay: 0 }, (peers) =>
       Effect.gen(function* () {
         const [ada, grace] = peers as [Peer, Peer];
-        ada.app.enqueue(Drop, { by: "ada", value: 3 });
+        yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
         for (let i = 0; i < 10; i++) {
           // Each says its piece, then both run.
-          ada.session.tick();
-          grace.session.tick();
+          yield* ada.session.tick();
+          yield* grace.session.tick();
           for (const message of ada.session.outgoing()) {
             grace.session.receive(message);
           }
           for (const message of grace.session.outgoing()) {
             ada.session.receive(message);
           }
-          expect(ada.session.tick()).toBe(true);
-          expect(grace.session.tick()).toBe(true);
+          expect(yield* ada.session.tick()).toBe(true);
+          expect(yield* grace.session.tick()).toBe(true);
           expect(ada.world.hash()).toBe(grace.world.hash());
         }
         expect(moves(grace.app.actionLog)).toEqual([
@@ -763,10 +775,12 @@ describe("a lockstep session", () => {
         Effect.gen(function* () {
           const [ada, grace] = peers as [Peer, Peer];
           const steps = peers.map((peer) => Driver.fixedStep(peer.session));
-          ada.app.enqueue(Drop, { by: "ada", value: 3 });
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
           for (let i = 0; i < 20; i++) {
             // A frame as long as the session's delta is one tick of it.
-            expect([steps[0]!(DELTA), steps[1]!(DELTA)]).toEqual([1, 1]);
+            expect([yield* steps[0]!(DELTA), yield* steps[1]!(DELTA)]).toEqual([
+              1, 1,
+            ]);
             for (const message of ada.session.outgoing()) {
               grace.session.receive(message);
             }
@@ -815,8 +829,6 @@ describe("a lockstep session", () => {
           const told = [
             // @ts-expect-error a session's tick takes no delta
             () => ada.session.tick(DELTA),
-            // @ts-expect-error a session's tick takes no delta
-            () => ada.session.tickExit(DELTA),
           ];
           void told;
         })
@@ -828,27 +840,29 @@ describe("a lockstep session", () => {
       yield* withPeers(["ada", "grace"], {}, (peers) =>
         Effect.gen(function* () {
           const [ada] = peers as [Peer];
-          // A session's app has none of the four in its type, and the app it
+          // A session's app has none of the three in its type, and the app it
           // is refuses each of them when it is reached all the same.
-          expect(() =>
-            // @ts-expect-error a session's app has no dispatch: it would apply the action on this machine alone
-            ada.app.dispatch(Drop, { by: "ada", value: 1 })
+          expect(
+            yield* thrown<unknown, unknown, never>(
+              // @ts-expect-error a session's app has no dispatch: it would apply the action on this machine alone
+              ada.app.dispatch(Drop, { by: "ada", value: 1 })
+            )
           ).toThrow(/on this machine alone.*Use enqueue/u);
-          expect(() =>
-            // @ts-expect-error a session's app has no dispatchByName: it would apply the action on this machine alone
-            ada.app.dispatchByName("ls/Drop", { by: "ada", value: 1 })
+          expect(
+            yield* thrown<unknown, unknown, never>(
+              // @ts-expect-error a session's app has no dispatchByName: it would apply the action on this machine alone
+              ada.app.dispatchByName("ls/Drop", { by: "ada", value: 1 })
+            )
           ).toThrow(/on this machine alone/u);
           // Nor is it stepped by anything but its session.
-          expect(() =>
-            // @ts-expect-error a session's app has no tick: the session steps it
-            ada.app.tick(DELTA)
+          expect(
+            yield* thrown<unknown, unknown, never>(
+              // @ts-expect-error a session's app has no tick: the session steps it
+              ada.app.tick(DELTA)
+            )
           ).toThrow(
             /a tick ahead of the other peers.*call the session's tick/u
           );
-          expect(() =>
-            // @ts-expect-error a session's app has no tickExit: the session steps it
-            ada.app.tickExit(DELTA)
-          ).toThrow(/taken over/u);
           expect(ada.app.time.tick).toBe(0);
           expect(ada.app.actionLog).toEqual([]);
         })
@@ -879,10 +893,10 @@ describe("a lockstep session", () => {
       source.tap("Space");
       // The tick is the session's to run, and the session has heard
       // the devices already when it does.
-      expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+      expect(yield* Effect.exit(reins.tick(DELTA))).toEqual(Exit.void);
       expect(app.time.tick).toBe(1);
       expect(taken).toEqual([]);
-      app.input();
+      yield* app.input();
       expect(taken).toEqual(["ls/Fire"]);
       reins.deliver("ls/Fire", {});
       expect(moves(app.actionLog)).toEqual([
@@ -901,13 +915,15 @@ describe("a lockstep session", () => {
             const reins = take(() => {});
             const told: (string | undefined)[] = [];
             expect(
-              reins.tickExit(DELTA, (system) => {
-                told.push(system);
-              })
+              yield* Effect.exit(
+                reins.tick(DELTA, (system) => {
+                  told.push(system);
+                })
+              )
             ).toEqual(Exit.void);
             // Before the first system, then after each.
             expect(told).toEqual([undefined, ...app.systemOrder]);
-            expect(reins.tickExit(DELTA)).toEqual(Exit.void);
+            expect(yield* Effect.exit(reins.tick(DELTA))).toEqual(Exit.void);
             expect(told).toHaveLength(1 + app.systemOrder.length);
           })
       )
@@ -954,11 +970,11 @@ describe("a lockstep session", () => {
         // A game that has been going for a while, saved for every peer.
         const going = yield* game();
         const world = yield* going.read(World);
-        going.dispatch(Drop, { by: "ada", value: 2 });
+        yield* going.dispatch(Drop, { by: "ada", value: 2 });
         for (let i = 0; i < 9; i++) {
-          going.tick(DELTA);
+          yield* going.tick(DELTA);
         }
-        const saved = going.save();
+        const saved = yield* Effect.exit(going.save());
         assert(Exit.isSuccess(saved));
         const peerOf = (me: string) =>
           Session.make(CoinGame, {
@@ -976,7 +992,7 @@ describe("a lockstep session", () => {
         expect((yield* ada.app.read(World)).hash()).toBe(world.hash());
         // A loaded game's log starts empty.
         expect(ada.app.actionLog).toEqual([]);
-        expect(ada.tick()).toBe(false);
+        expect(yield* ada.tick()).toBe(false);
         const said = ada.outgoing();
         expect(said.map((message) => message.tick)).toEqual([9, 10]);
         // Where it starts is the first thing it says: the session takes
@@ -984,11 +1000,11 @@ describe("a lockstep session", () => {
         const start = { tick: 9, hash: world.hash() };
         expect(said[0]!.checkpoints).toEqual([start]);
         expect(ada.app.actionLog).toEqual([start]);
-        grace.tick();
+        yield* grace.tick();
         for (const message of grace.outgoing()) {
           ada.receive(message);
         }
-        expect(ada.tick()).toBe(true);
+        expect(yield* ada.tick()).toBe(true);
         expect(ada.app.time.tick).toBe(10);
         // The tick took none for where it started: the log has the one.
         expect(
@@ -1000,8 +1016,8 @@ describe("a lockstep session", () => {
         // A checkpoint the game took itself where it starts is the one
         // sent, and the session takes no second.
         const edsger = yield* peerOf("ada");
-        const own = edsger.app.checkpoint();
-        expect(edsger.tick()).toBe(false);
+        const own = yield* edsger.app.checkpoint();
+        expect(yield* edsger.tick()).toBe(false);
         expect(edsger.outgoing()[0]!.checkpoints).toEqual([
           { tick: 9, hash: own },
         ]);
@@ -1033,8 +1049,8 @@ describe("peers that have come apart", () => {
                   Effect.gen(function* () {
                     setGlitch({ tick: at, apps: "all" });
                     const net = network(every * 10 + delay, lag);
-                    peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
-                    const stopped = untilStopped(peers, net, 600);
+                    yield* peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
+                    const stopped = yield* untilStopped(peers, net, 600);
                     const where = `checkpointEvery ${every}, delay ${delay}, lag ${lag.max}`;
                     // The first checkpoint at or after the tick that differed.
                     const checkpoint = Math.ceil(at / every) * every;
@@ -1082,15 +1098,17 @@ describe("peers that have come apart", () => {
         setGlitch({ tick: 9, apps: "all" });
         const net = network(1, { min: 0, max: 0 });
         const [ada] = peers as [Peer];
-        ada.app.enqueue(Drop, { by: "ada", value: 3 });
+        yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
         expect(ada.session.drifted).toBeUndefined();
-        const stopped = untilStopped(peers, net, 100);
+        const stopped = yield* untilStopped(peers, net, 100);
         const drifted = stopped.get("ada") as Drift.Drifted;
         expect(ada.session.drifted).toBe(drifted);
         const { tick } = ada.app.time;
         // Every tick fails with it from then on, and runs nothing.
-        expect(ada.session.tickExit()).toEqual(Exit.fail(drifted));
-        expect(() => ada.session.tick()).toThrow(Drift.Drifted);
+        expect(yield* Effect.exit(ada.session.tick())).toEqual(
+          Exit.fail(drifted)
+        );
+        expect(yield* thrown(ada.session.tick())).toThrow(Drift.Drifted);
         expect(ada.app.time.tick).toBe(tick);
         expect(drifted.message).toBe(
           `The peers are no longer playing the same game. At tick 9 the hashes of their worlds are: ada ${drifted.hashes.ada}, grace ${drifted.hashes.grace} (found by "ada"). They last agreed at tick 8, so they came apart in one of the 1 ticks after it: look for a system or a handler that reads what is not in the world (Math.random, a clock, a service that keeps state of its own, the order of a Map or a Set), or for peers whose systems of the same name do different things.`
@@ -1121,9 +1139,11 @@ describe("peers that have come apart", () => {
                 : {}),
             });
           }
-          expect(ada.session.tickExit()).toEqual(Exit.succeed(true));
+          expect(yield* Effect.exit(ada.session.tick())).toEqual(
+            Exit.succeed(true)
+          );
           expect(ada.session.drifted).toBeUndefined();
-          const exit = ada.session.tickExit();
+          const exit = yield* Effect.exit(ada.session.tick());
           expect(ada.app.time.tick).toBe(2);
           expect(exit).toEqual(
             Exit.fail(
@@ -1147,7 +1167,7 @@ describe("peers that have come apart", () => {
           Effect.gen(function* () {
             const net = network(2, { min: 0, max: 4 });
             for (let i = 0; i < 200; i++) {
-              round(peers, net);
+              yield* round(peers, net);
             }
             // What is left is what the other has not had the time to answer.
             expect(peers[0]!.session.unanswered).toBeLessThanOrEqual(2 * 2 + 2);
@@ -1167,7 +1187,7 @@ describe("peers that have come apart", () => {
           (session) =>
             Effect.gen(function* () {
               for (let i = 0; i < 700; i++) {
-                session.tick();
+                yield* session.tick();
               }
               expect(session.app.time.tick).toBe(700);
               expect(session.unanswered).toBe(601);
@@ -1188,7 +1208,7 @@ describe("peers that have come apart", () => {
         (peers) =>
           Effect.gen(function* () {
             const net = network(1, { min: 0, max: 3 });
-            const stopped = untilStopped(peers, net, 100);
+            const stopped = yield* untilStopped(peers, net, 100);
             for (const peer of peers) {
               const drifted = stopped.get(peer.name) as Drift.Drifted;
               expect(drifted).toBeInstanceOf(Drift.Drifted);
@@ -1215,7 +1235,7 @@ describe("peers that have come apart", () => {
           },
           (peers) =>
             Effect.gen(function* () {
-              const stopped = untilStopped(
+              const stopped = yield* untilStopped(
                 peers,
                 network(1, { min: 0, max: 0 }),
                 50
@@ -1232,8 +1252,8 @@ describe("peers that have come apart", () => {
           (peers) =>
             Effect.gen(function* () {
               setGlitch({ tick: 9, apps: "all" });
-              peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
-              const stopped = untilStopped(
+              yield* peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
+              const stopped = yield* untilStopped(
                 peers,
                 network(1, { min: 0, max: 0 }),
                 50
@@ -1253,8 +1273,8 @@ describe("peers that have come apart", () => {
           const [ada, grace, edsger] = peers as [Peer, Peer, Peer];
           setGlitch({ tick: 12, apps: new Set([grace.app]) });
           const net = network(6, { min: 0, max: 3 });
-          ada.app.enqueue(Drop, { by: "ada", value: 3 });
-          const stopped = untilStopped(peers, net, 300);
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
+          const stopped = yield* untilStopped(peers, net, 300);
           expect(stopped.size).toBe(3);
           const reports = [ada, grace, edsger].map(
             (peer) => stopped.get(peer.name) as Drift.Drifted
@@ -1293,10 +1313,10 @@ describe("peers that have come apart", () => {
             for (let i = 0; i < 100; i++) {
               yield* act(ada);
               yield* act(grace);
-              round(peers, net);
+              yield* round(peers, net);
               if (i === 40) {
                 // One taken by hand, at a tick of nobody's schedule.
-                ada.app.checkpoint();
+                yield* ada.app.checkpoint();
               }
             }
             // A healthy game is not stopped by what one peer alone recorded.
@@ -1305,7 +1325,7 @@ describe("peers that have come apart", () => {
             expect(ada.app.time.tick).toBeGreaterThan(40);
             const at = ada.app.time.tick + 3;
             setGlitch({ tick: at, apps: "all" });
-            const stopped = untilStopped(peers, net, 100);
+            const stopped = yield* untilStopped(peers, net, 100);
             // Caught at the first tick both record: a multiple of 6.
             const drifted = stopped.get("grace") as Drift.Drifted;
             expect(drifted).toBeInstanceOf(Drift.Drifted);
@@ -1320,7 +1340,10 @@ describe("peers that have come apart", () => {
 interface Seat {
   readonly receive: (message: Message.Message) => void;
   readonly outgoing: () => readonly Message.Message[];
-  readonly tickExit: () => Exit.Exit<boolean, unknown>;
+  readonly tick: () => Effect.Effect<
+    boolean,
+    Effect.Error<ReturnType<Peer["session"]["tick"]>>
+  >;
   readonly confirmed: number;
   readonly app: { readonly time: { readonly tick: number } };
 }
@@ -1346,7 +1369,7 @@ const madeApart = (
         for (const message of net.arrivals(name)) {
           seat.receive(message);
         }
-        const exit = seat.tickExit();
+        const exit = yield* Effect.exit(seat.tick());
         if (Exit.isFailure(exit)) {
           stopped.set(name, Cause.squash(exit.cause));
         }
@@ -1498,9 +1521,9 @@ describe("peers that were not made alike", () => {
         const saved = yield* withApp(game(), (going) =>
           Effect.gen(function* () {
             for (let i = 0; i < 9; i++) {
-              going.tick(DELTA);
+              yield* going.tick(DELTA);
             }
-            const save = going.save();
+            const save = yield* Effect.exit(going.save());
             assert(Exit.isSuccess(save));
             return save.value;
           })

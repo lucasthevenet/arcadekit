@@ -13,6 +13,7 @@ import {
   readSnapshot,
 } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
+import { thrown } from "./checks.ts";
 import {
   CoinGame,
   DELTA,
@@ -42,11 +43,11 @@ describe("who issued an action", () => {
     withApp(game(), (app, world) =>
       Effect.gen(function* () {
         // Brought in on someone's behalf, as a server does for its clients.
-        expect(app.dispatchByName("ls/Tip", { amount: 3 }, "ada")).toEqual(
-          Exit.succeed("ada")
-        );
-        app.enqueueByName("ls/Tip", { amount: 4 }, "grace");
-        app.tick(DELTA);
+        expect(
+          yield* Effect.exit(app.dispatchByName("ls/Tip", { amount: 3 }, "ada"))
+        ).toEqual(Exit.succeed("ada"));
+        yield* app.enqueueByName("ls/Tip", { amount: 4 }, "grace");
+        yield* app.tick(DELTA);
         expect(purseOf(world)).toEqual({ ada: 3, grace: 4 });
       })
     )
@@ -57,14 +58,14 @@ describe("who issued an action", () => {
       yield* withApp(game(), (app, world) =>
         Effect.gen(function* () {
           // Typed, through the app: a game of one has no one to name.
-          expect(app.dispatch(Tip, { amount: 1 })).toEqual(
+          expect(yield* Effect.exit(app.dispatch(Tip, { amount: 1 }))).toEqual(
             Exit.fail(Stranger.make({ from: undefined }))
           );
-          expect(app.dispatchByName("ls/Tip", { amount: 1 })).toEqual(
-            Exit.fail(Stranger.make({ from: undefined }))
-          );
-          app.enqueue(Tip, { amount: 1 });
-          app.tick(DELTA);
+          expect(
+            yield* Effect.exit(app.dispatchByName("ls/Tip", { amount: 1 }))
+          ).toEqual(Exit.fail(Stranger.make({ from: undefined })));
+          yield* app.enqueue(Tip, { amount: 1 });
+          yield* app.tick(DELTA);
           expect(moves(app.actionLog).at(-1)?.refused).toBeDefined();
           expect(purseOf(world)).toEqual({ ada: 0, grace: 0 });
         })
@@ -87,8 +88,8 @@ describe("who issued an action", () => {
         App.make(App.define({ systems: [Bot], handlers: [poke] })),
         (app) =>
           Effect.gen(function* () {
-            app.tick(DELTA);
-            app.tick(DELTA);
+            yield* app.tick(DELTA);
+            yield* app.tick(DELTA);
             expect(told).toEqual([undefined]);
           })
       );
@@ -99,11 +100,11 @@ describe("who issued an action", () => {
     Effect.gen(function* () {
       const recorded = yield* withApp(game(), (app, world) =>
         Effect.gen(function* () {
-          app.dispatchByName("ls/Tip", { amount: 2 }, "ada");
-          app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
-          app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
-          app.tick(DELTA);
-          return { recording: app.record(), hash: world.hash() };
+          yield* app.dispatchByName("ls/Tip", { amount: 2 }, "ada");
+          yield* app.enqueueByName("ls/Tip", { amount: 5 }, "grace");
+          yield* app.enqueueByName("ls/Tip", { amount: 9 }, "mallory");
+          yield* app.tick(DELTA);
+          return { recording: yield* app.record(), hash: world.hash() };
         })
       );
       const { log } = recorded.recording;
@@ -193,9 +194,9 @@ describe("who issued an action", () => {
       Effect.gen(function* () {
         const saved = yield* withApp(game(), (app, world) =>
           Effect.gen(function* () {
-            app.tick(DELTA);
-            app.enqueueByName("ls/Tip", { amount: 6 }, "grace");
-            const save = app.save();
+            yield* app.tick(DELTA);
+            yield* app.enqueueByName("ls/Tip", { amount: 6 }, "grace");
+            const save = yield* Effect.exit(app.save());
             if (Exit.isFailure(save)) {
               throw new Error("the game could not be saved");
             }
@@ -209,15 +210,15 @@ describe("who issued an action", () => {
               ],
             });
             // And where a game goes back to: the tip is waiting again, hers still.
-            const moment = Timeline.capture(app);
-            app.tick(DELTA);
+            const moment = yield* Effect.exit(Timeline.capture(app));
+            yield* app.tick(DELTA);
             expect(purseOf(world)).toEqual({ ada: 0, grace: 6 });
-            Timeline.rewind(
+            yield* Timeline.rewind(
               app,
               Exit.isSuccess(moment) ? moment.value : { tick: -1 }
             );
             expect(purseOf(world)).toEqual({ ada: 0, grace: 0 });
-            app.tick(DELTA);
+            yield* app.tick(DELTA);
             expect(purseOf(world)).toEqual({ ada: 0, grace: 6 });
             return Save.encode(save.value);
           })
@@ -231,7 +232,7 @@ describe("who issued an action", () => {
             save: read.value,
             checkpointEvery: 1,
           });
-          app.tick(DELTA);
+          yield* app.tick(DELTA);
           const { ada, grace } = yield* app.read(Purse);
           expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
         }
@@ -258,10 +259,10 @@ describe("who issued an action", () => {
         App.make(App.define({ systems: [Hear], handlers: [never] })),
         (app) =>
           Effect.gen(function* () {
-            app.enqueueByName("or/Never", { n: 1 }, "ada");
-            app.enqueue(Never, { n: 2 });
-            app.enqueueByName("or/Nobody", {}, "grace");
-            app.tick(DELTA);
+            yield* app.enqueueByName("or/Never", { n: 1 }, "ada");
+            yield* app.enqueue(Never, { n: 2 });
+            yield* app.enqueueByName("or/Nobody", {}, "grace");
+            yield* app.tick(DELTA);
             // Whose each was, so that a UI can show a player their own.
             expect(heard).toEqual(["ada", undefined, "grace"]);
           })
@@ -283,13 +284,13 @@ describe("who issued an action, in a session", () => {
               Effect.gen(function* () {
                 const net = network(6, { min: 0, max: 4 });
                 const [ada, grace] = peers as [Peer, Peer];
-                ada.app.enqueue(Tip, { amount: 2 });
-                grace.app.enqueue(Tip, { amount: 5 });
-                grace.app.enqueue(Tip, { amount: 1 });
+                yield* ada.app.enqueue(Tip, { amount: 2 });
+                yield* grace.app.enqueue(Tip, { amount: 5 });
+                yield* grace.app.enqueue(Tip, { amount: 1 });
                 for (let i = 0; i < 30; i++) {
-                  round(peers, net);
+                  yield* round(peers, net);
                 }
-                catchUp(peers, net);
+                yield* catchUp(peers, net);
                 for (const peer of peers) {
                   expect(purseOf(peer.world)).toEqual({ ada: 2, grace: 6 });
                   expect(
@@ -317,9 +318,9 @@ describe("who issued an action, in a session", () => {
         const [ada, grace] = peers as [Peer, Peer];
         grace.source.tap("Space");
         for (let i = 0; i < 6; i++) {
-          round(peers, net);
+          yield* round(peers, net);
         }
-        catchUp(peers, net);
+        yield* catchUp(peers, net);
         expect(moves(ada.app.actionLog)).toEqual([
           {
             tick: expect.any(Number),
@@ -338,15 +339,17 @@ describe("who issued an action, in a session", () => {
     withPeers(["ada", "grace"], {}, (peers) =>
       Effect.gen(function* () {
         const [ada] = peers as [Peer];
-        expect(() =>
-          // @ts-expect-error a session's app takes no issuer
-          ada.app.enqueueByName("ls/Tip", { amount: 1 }, "grace")
+        expect(
+          yield* thrown(
+            // @ts-expect-error a session's app takes no issuer
+            ada.app.enqueueByName("ls/Tip", { amount: 1 }, "grace")
+          )
         ).toThrow(
           /was given who issued it, "grace", on an app that a session has taken over.*nobody speaks for another/u
         );
         // With no name it is this peer's, as any action it enqueues is.
-        ada.app.enqueueByName("ls/Tip", { amount: 1 });
-        ada.session.tick();
+        yield* ada.app.enqueueByName("ls/Tip", { amount: 1 });
+        yield* ada.session.tick();
         expect(
           ada.session.outgoing().flatMap((message) => message.actions)
         ).toEqual([{ name: "ls/Tip", payload: { amount: 1 } }]);
@@ -365,7 +368,9 @@ describe("who issued an action, in a session", () => {
           tick: 0,
           actions: [{ name: "ls/Tip", payload: { amount: 7 } }],
         });
-        expect(ada.session.tickExit()).toEqual(Exit.succeed(true));
+        expect(yield* Effect.exit(ada.session.tick())).toEqual(
+          Exit.succeed(true)
+        );
         expect(purseOf(ada.world)).toEqual({ ada: 0, grace: 7 });
       })
     )

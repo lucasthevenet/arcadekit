@@ -249,8 +249,8 @@ export interface Recorder extends Speaker {
  *   const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
  *     Effect.provide(Sound.layer(sound))
  *   )
- *   app.tick(1 / 60)
- *   app.frame()
+ *   yield* app.tick(1 / 60)
+ *   yield* app.frame()
  *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }]
  *
  * @category Testing

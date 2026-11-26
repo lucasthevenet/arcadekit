@@ -48,7 +48,9 @@ const withApp = <A, T, E = never, E2 = never>(
 ) => Effect.flatMap(make, use);
 
 /** The events waiting to be read, by name, as `app.inspect()` copies them. */
-const waiting = (app: App.Any): unknown => app.inspect().stores[Event.STORE];
+const waiting = Effect.fnUntraced(function* (app: App.Any) {
+  return (yield* app.inspect()).stores[Event.STORE];
+});
 
 /** The applied actions of a log, without the checkpoints recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
@@ -77,14 +79,14 @@ describe("events", () => {
         yield* withApp(App.make(App.define({ systems })), (app) =>
           Effect.gen(function* () {
             for (let i = 0; i < 4; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
             // The later system sees events the tick they are emitted...
             expect(seen.After).toEqual([[10, 11], [20, 21], [], []]);
             // ...the earlier one sees the same events, once, a tick later.
             expect(seen.Before).toEqual([[], [10, 11], [20, 21], []]);
             // And then they are gone.
-            expect(waiting(app)).toBeUndefined();
+            expect(yield* waiting(app)).toBeUndefined();
           })
         );
       })
@@ -107,7 +109,7 @@ describe("events", () => {
         yield* withApp(App.make(App.define({ systems: [Shoot] })), (app) =>
           Effect.gen(function* () {
             for (let i = 0; i < 3; i++) {
-              app.tick(1);
+              yield* app.tick(1);
             }
             // Each of its own once, on the tick after, as a system listed ahead of
             // it hears them: by then the entity is spawned.
@@ -150,7 +152,7 @@ describe("events", () => {
           App.make(App.define({ plugins: [Two], systems: [Hit, Report] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
+              yield* app.tick(1);
               expect(log).toEqual(wounded.map((entity) => `${idOf(entity)}:3`));
               expect(wounded).toHaveLength(2);
             })
@@ -171,13 +173,13 @@ describe("events", () => {
         App.make(App.define({ systems: [Sometimes], handlers: [say] })),
         (app) =>
           Effect.gen(function* () {
-            app.tick(1); // creates the reader
-            app.dispatch(Say, { n: 1 });
-            app.tick(1);
-            app.dispatch(Say, { n: 2 });
-            app.tick(1);
-            app.dispatch(Say, { n: 3 });
-            app.tick(1);
+            yield* app.tick(1); // creates the reader
+            yield* app.dispatch(Say, { n: 1 });
+            yield* app.tick(1);
+            yield* app.dispatch(Say, { n: 2 });
+            yield* app.tick(1);
+            yield* app.dispatch(Say, { n: 3 });
+            yield* app.tick(1);
             // It looked at ticks 1 and 4 only: events 1 and 2 had been dropped by then.
             expect(seen).toEqual([[], [3]]);
           })
@@ -203,8 +205,8 @@ describe("events", () => {
           App.make(App.define({ systems: [Keeper], handlers: [say] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(1);
-              expect(waiting(app)).toEqual({ "ru/Ping": [7] });
+              yield* app.tick(1);
+              expect(yield* waiting(app)).toEqual({ "ru/Ping": [7] });
               const refused =
                 /The event "ru\/Ping" was emitted from outside the simulation\..*Issue an action whose handler emits it/;
               // @ts-expect-error the app hands out no bus to emit through
@@ -212,10 +214,10 @@ describe("events", () => {
               // Through a handle and through the bus, each of which a system kept.
               expect(() => kept!.emit(1)).toThrow(refused);
               expect(() => bus!.emit(Ping, 1)).toThrow(refused);
-              expect(waiting(app)).toEqual({ "ru/Ping": [7] });
+              expect(yield* waiting(app)).toEqual({ "ru/Ping": [7] });
               // An action's handler is the simulation's.
-              app.dispatch(Say, { n: 1 });
-              expect(waiting(app)).toEqual({ "ru/Ping": [7, 1] });
+              yield* app.dispatch(Say, { n: 1 });
+              expect(yield* waiting(app)).toEqual({ "ru/Ping": [7, 1] });
             })
         );
       })
@@ -320,6 +322,7 @@ const summon = Action.handler(Summon, function* ({ hp, player }) {
 import { idOf } from "../src/ecs/component.ts";
 // The World service, imported under another name so `world` reads naturally above.
 import { World as App_World } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
 const Death = System.tick("Death", function* () {
   const damaged = yield* Damaged.emits;
@@ -418,7 +421,9 @@ describe("actions", () => {
     () =>
       withApp(duel(), ({ app, world, one, two }) =>
         Effect.gen(function* () {
-          const exit = app.dispatch(Attack, { attacker: one, target: two });
+          const exit = yield* Effect.exit(
+            app.dispatch(Attack, { attacker: one, target: two })
+          );
           expect(exit).toEqual(Exit.succeed(2));
           expect(world.get(two, Health)).toEqual({ hp: 2 });
           expect(world.get(one, Energy)).toEqual({ points: 1 });
@@ -437,9 +442,11 @@ describe("actions", () => {
           > = exit;
           void typed;
           const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
-            app.dispatch(EndTurn, {
-              player: 1,
-            });
+            yield* Effect.exit(
+              app.dispatch(EndTurn, {
+                player: 1,
+              })
+            );
           expect(Exit.isSuccess(ended)).toBe(true);
         })
       )
@@ -449,11 +456,15 @@ describe("actions", () => {
     withApp(duel(), ({ app, world, one, two }) =>
       Effect.gen(function* () {
         const before = yield* snapshot(app);
-        const notYours = app.dispatch(Attack, { attacker: two, target: one });
+        const notYours = yield* Effect.exit(
+          app.dispatch(Attack, { attacker: two, target: one })
+        );
         expect(notYours).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
 
-        app.dispatch(Attack, { attacker: one, target: two });
-        const tired = app.dispatch(Attack, { attacker: one, target: two });
+        yield* app.dispatch(Attack, { attacker: one, target: two });
+        const tired = yield* Effect.exit(
+          app.dispatch(Attack, { attacker: one, target: two })
+        );
         expect(tired).toEqual(
           Exit.fail(NotEnoughEnergy.make({ have: 1, need: 2 }))
         );
@@ -468,16 +479,20 @@ describe("actions", () => {
     withApp(duel(), ({ app, world }) =>
       Effect.gen(function* () {
         const entities = world.entityCount;
-        const refused = app.dispatch(Summon, { player: 1, hp: 0 });
+        const refused = yield* Effect.exit(
+          app.dispatch(Summon, { player: 1, hp: 0 })
+        );
         expect(Exit.isFailure(refused)).toBe(true);
         expect(world.entityCount).toBe(entities);
-        expect(waiting(app)).toBeUndefined();
+        expect(yield* waiting(app)).toBeUndefined();
 
         // Had the refused spawn been kept, it would be applied with this one.
-        const accepted = app.dispatch(Summon, { player: 1, hp: 5 });
+        const accepted = yield* Effect.exit(
+          app.dispatch(Summon, { player: 1, hp: 5 })
+        );
         assert(Exit.isSuccess(accepted));
         expect(world.entityCount).toBe(entities + 1);
-        expect(waiting(app)).toEqual({
+        expect(yield* waiting(app)).toEqual({
           "ru/Died": [{ entity: accepted.value }],
         });
         // The id the refused summon had reserved was released and is reused.
@@ -499,13 +514,13 @@ describe("actions", () => {
       });
       yield* withApp(duel(Mourning), ({ app, world, one, two }) =>
         Effect.gen(function* () {
-          app.dispatch(Attack, { attacker: one, target: two });
-          app.tick(1);
+          yield* app.dispatch(Attack, { attacker: one, target: two });
+          yield* app.tick(1);
           expect(world.isAlive(two)).toBe(true);
-          app.tick(1); // energy is back to 3
-          app.dispatch(Attack, { attacker: one, target: two });
+          yield* app.tick(1); // energy is back to 3
+          yield* app.dispatch(Attack, { attacker: one, target: two });
           expect(world.get(two, Health)).toEqual({ hp: -2 });
-          app.tick(1);
+          yield* app.tick(1);
           expect(world.isAlive(two)).toBe(false);
           expect(deaths).toEqual([two]);
         })
@@ -534,10 +549,10 @@ describe("actions", () => {
         );
         yield* withApp(make, ({ app, world, one, two }) =>
           Effect.gen(function* () {
-            app.enqueue(Attack, { attacker: one, target: two });
-            app.enqueue(Attack, { attacker: two, target: one });
+            yield* app.enqueue(Attack, { attacker: one, target: two });
+            yield* app.enqueue(Attack, { attacker: two, target: one });
             expect(world.get(two, Health)).toEqual({ hp: 6 });
-            app.tick(1);
+            yield* app.tick(1);
             expect(world.get(two, Health)).toEqual({ hp: 2 });
             expect(world.get(one, Health)).toEqual({ hp: 10 });
             expect(rejected).toEqual(["Attack: NotYourTurn"]);
@@ -579,10 +594,10 @@ describe("actions", () => {
         );
         yield* withApp(make, (app) =>
           Effect.gen(function* () {
-            app.dispatch(EndTurn, { player: 1 });
-            app.tick(1); // the bot sees it is its turn and queues EndTurn
+            yield* app.dispatch(EndTurn, { player: 1 });
+            yield* app.tick(1); // the bot sees it is its turn and queues EndTurn
             expect(yield* snapshot(app)).toContain("turn 2 player 2");
-            app.tick(1); // applied at the start of this tick
+            yield* app.tick(1); // applied at the start of this tick
             expect(yield* snapshot(app)).toContain("turn 3 player 1");
             // The log holds the move that came from outside. The bot's own is the
             // simulation's doing: a replay's bot makes it again.
@@ -599,12 +614,16 @@ describe("actions", () => {
       yield* withApp(duel(), ({ app, one, two }) =>
         Effect.gen(function* () {
           // @ts-expect-error no handler was registered for this action
-          expect(() => app.dispatch(Unhandled, {})).toThrow(/No handler/);
+          expect(yield* thrown(app.dispatch(Unhandled, {}))).toThrow(
+            /No handler/
+          );
           // @ts-expect-error the payload does not match the action
-          void app.dispatch(Attack, { attacker: one });
+          void (yield* Effect.exit(app.dispatch(Attack, { attacker: one })));
           expect(
             Exit.isFailure(
-              app.dispatchByName("Attack", { attacker: two, target: one })
+              yield* Effect.exit(
+                app.dispatchByName("Attack", { attacker: two, target: one })
+              )
             )
           ).toBe(true);
         })
@@ -617,7 +636,7 @@ describe("actions", () => {
         App.make(App.define({ systems: [], handlers: [waits] })),
         (app) =>
           Effect.gen(function* () {
-            expect(() => app.dispatch(EndTurn, { player: 1 })).toThrow(
+            expect(yield* thrown(app.dispatch(EndTurn, { player: 1 }))).toThrow(
               /did not finish synchronously/
             );
           })
@@ -647,7 +666,9 @@ describe("actions", () => {
         return yield* withApp(
           App.make(App.define({ systems: [], handlers: [roll] })),
           (app) =>
-            Effect.sync(() => [1, 2, 3].map(() => app.dispatch(Unhandled, {})))
+            Effect.forEach([1, 2, 3], () =>
+              Effect.exit(app.dispatch(Unhandled, {}))
+            )
         );
       });
       const rolled = yield* rolls();
@@ -707,14 +728,14 @@ describe("actions", () => {
           App.make(App.define({ systems: [], handlers: [kick] })),
           (app) =>
             Effect.gen(function* () {
-              expect(app.dispatch(Kick, { by: 3 })).toEqual(
+              expect(yield* Effect.exit(app.dispatch(Kick, { by: 3 }))).toEqual(
                 Exit.fail({ _tag: "ru/Offside", by: 3 })
               );
             })
         );
         const ended: Exit.Exit<void, NotYourTurn | Action.InvalidPayload> =
           yield* withApp(duel(), ({ app }) =>
-            Effect.sync(() => app.dispatch(EndTurn, { player: 2 }))
+            Effect.exit(app.dispatch(EndTurn, { player: 2 }))
           );
         expect(ended).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
       })
@@ -749,9 +770,9 @@ describe("actions", () => {
         yield* withApp(make, ({ app }) =>
           Effect.gen(function* () {
             const before = yield* snapshot(app);
-            app.enqueue(Crash, {});
-            app.enqueue(EndTurn, { player: 2 });
-            expect(() => app.tick(1)).toThrow(/a bug in the handler/);
+            yield* app.enqueue(Crash, {});
+            yield* app.enqueue(EndTurn, { player: 2 });
+            expect(yield* thrown(app.tick(1))).toThrow(/a bug in the handler/);
             expect(heard).toEqual(["EndTurn"]);
             expect(yield* snapshot(app)).toEqual(
               before.map((line) => line.replace("tick=0", "tick=1"))
@@ -763,16 +784,16 @@ describe("actions", () => {
 
   it.effect("cannot be dispatched in the middle of a tick", () =>
     Effect.gen(function* () {
-      let app!: App.Any;
+      let app!: App.App;
       const Sneaky = System.tick("Sneaky", function* () {
-        yield* Effect.sync(() => app.dispatchByName("EndTurn", { player: 1 }));
+        yield* Effect.orDie(app.dispatchByName("EndTurn", { player: 1 }));
       });
       yield* withApp(
         App.make(App.define({ systems: [Sneaky], handlers: [endTurn] })),
         (made) =>
           Effect.gen(function* () {
             app = made;
-            expect(() => made.tick(1)).toThrow(/Use enqueue/);
+            expect(yield* thrown(made.tick(1))).toThrow(/Use enqueue/);
           })
       );
     })
@@ -787,24 +808,32 @@ describe("replay", () => {
           Effect.gen(function* () {
             // A mix of direct and queued actions, including refused ones, over
             // several ticks. Refusals are not logged and must not matter.
-            app.dispatch(Attack, { attacker: one, target: two });
-            app.dispatch(Attack, { attacker: two, target: one });
-            app.tick(1);
-            app.enqueue(EndTurn, { player: 1 });
-            app.tick(1);
-            app.dispatch(Summon, { player: 2, hp: 3 });
-            app.enqueue(Attack, { attacker: two, target: one });
-            app.enqueue(Attack, { attacker: one, target: two });
-            app.tick(1);
-            app.tick(1);
-            app.dispatch(Attack, { attacker: two, target: one });
-            app.dispatch(EndTurn, { player: 2 });
-            app.tick(1);
-            app.dispatch(Attack, { attacker: one, target: two });
-            app.tick(1);
-            app.tick(1);
+            yield* Effect.exit(
+              app.dispatch(Attack, { attacker: one, target: two })
+            );
+            yield* Effect.exit(
+              app.dispatch(Attack, { attacker: two, target: one })
+            );
+            yield* app.tick(1);
+            yield* app.enqueue(EndTurn, { player: 1 });
+            yield* app.tick(1);
+            yield* Effect.exit(app.dispatch(Summon, { player: 2, hp: 3 }));
+            yield* app.enqueue(Attack, { attacker: two, target: one });
+            yield* app.enqueue(Attack, { attacker: one, target: two });
+            yield* app.tick(1);
+            yield* app.tick(1);
+            yield* Effect.exit(
+              app.dispatch(Attack, { attacker: two, target: one })
+            );
+            yield* Effect.exit(app.dispatch(EndTurn, { player: 2 }));
+            yield* app.tick(1);
+            yield* Effect.exit(
+              app.dispatch(Attack, { attacker: one, target: two })
+            );
+            yield* app.tick(1);
+            yield* app.tick(1);
             return {
-              recording: app.record(),
+              recording: yield* app.record(),
               state: yield* snapshot(app),
             };
           })

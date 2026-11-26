@@ -53,7 +53,7 @@ describe("a game, from outside it", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(Game);
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         const world = yield* app.read(World);
         const [rock] = (yield* app.read(Placed)).entities();
         expect(world.get(rock!, Position)).toEqual({ x: 4 });
@@ -109,10 +109,10 @@ describe("a game, from outside it", () => {
           app.read(Score.writes),
         ];
         expect(reads).toHaveLength(8);
-        expect(app.enqueue(Drop, { x: 1 })).toEqual(
+        expect(yield* Effect.exit(app.enqueue(Drop, { x: 1 }))).toEqual(
           expect.objectContaining({ _tag: "Success" })
         );
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         expect(world.entityCount).toBe(2);
       })
   );
@@ -123,14 +123,14 @@ describe("a game, from outside it", () => {
       Effect.gen(function* () {
         const app = yield* App.make(Game, { checkpointEvery: 0 });
         for (let n = 0; n < 5; n++) {
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
         }
-        app.enqueue(Drop, { x: 2 });
+        yield* app.enqueue(Drop, { x: 2 });
         for (let n = 0; n < 5; n++) {
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
         }
         const count = (yield* app.read(World)).entityCount;
-        const recording = app.record();
+        const recording = yield* app.record();
         expect(count).toBe(2);
         const replayed = yield* Journal.replay(recording, Game, {
           checkpointEvery: 0,
@@ -152,7 +152,7 @@ describe("a game, from outside it", () => {
           Effect.gen(function* () {
             const app = yield* App.make(App.define({ systems: [Peek] }));
             outside.app = app;
-            app.tick(1 / 60);
+            yield* app.tick(1 / 60);
           })
         )
       ).toThrow(/app\.read\(\) was run during a tick/);
@@ -183,7 +183,7 @@ describe("the world a system is handed", () => {
         });
         {
           const app = yield* App.make(App.define({ plugins: [Setup] }));
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
           const world = yield* app.read(World);
           const [rock] = (yield* app.read(Placed)).entities();
           const [aim] = (yield* app.read(Aimed)).entities();
@@ -203,7 +203,7 @@ describe("the world a system is handed", () => {
           seen.push(yield* World, yield* World.writes(Position));
         });
         const app = yield* App.make(App.define({ systems: [Look] }));
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         expect(seen).toHaveLength(2);
         for (const world of seen) {
           expect(world).not.toBeInstanceOf(EcsWorld);

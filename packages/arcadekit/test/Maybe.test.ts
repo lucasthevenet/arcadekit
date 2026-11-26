@@ -215,15 +215,15 @@ describe("a term an entity may lack", () => {
               Rotation.of({ a: 1 })
             );
             const before = world.hash();
-            const moment = Timeline.capture(app);
+            const moment = yield* Effect.exit(Timeline.capture(app));
             if (Exit.isFailure(moment)) {
               throw new Error("the game could not be captured");
             }
-            app.dispatch(Turn, {});
+            yield* app.dispatch(Turn, {});
             expect(world.get(turned, Rotation)).toEqual({ a: 12 });
             expect(world.hash()).not.toBe(before);
             expect(world.hash()).toBe(world._fullHash());
-            Timeline.rewind(app, moment.value);
+            yield* Timeline.rewind(app, moment.value);
             expect(world.get(turned, Rotation)).toEqual({ a: 1 });
             expect(world.get(placed, Rotation)).toBeUndefined();
             expect(world.hash()).toBe(before);

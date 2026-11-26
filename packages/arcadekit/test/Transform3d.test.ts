@@ -94,7 +94,7 @@ describe("Transform3d", () => {
           App.define({ plugins: [Rocks], systems: [Drift] })
         );
         const world = yield* app.read(World);
-        app.tick(0.5);
+        yield* app.tick(0.5);
         const moved = spawned.map((id) =>
           world.get(placedIn(world, id), Position)
         );
@@ -206,7 +206,7 @@ describe("Transform3d", () => {
         });
         const app = yield* App.make(Game);
         const made = yield* app.read(rocks);
-        const save = app.save();
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("The game could not be saved");
         }

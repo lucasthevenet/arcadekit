@@ -274,7 +274,7 @@ describe("the frame loop", () => {
   it.effect("leaves nothing behind when it is interrupted", () =>
     Effect.gen(function* () {
       const display = Driver.makeManualDisplay();
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -322,7 +322,7 @@ describe("the frame loop", () => {
             };
           },
         };
-        let app: App.Any | undefined;
+        let app: App.App | undefined;
         const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
             app = yield* App.make(App.define({ systems: [Roll] }));
@@ -402,7 +402,7 @@ describe("the frame loop", () => {
   );
 
   it.effect(
-    "stops and dies with what a tick throws, leaving nothing behind",
+    "stops and fails with what a tick fails with, leaving nothing behind",
     () =>
       Effect.gen(function* () {
         class Jammed extends Data.TaggedError("Jammed")<{
@@ -425,11 +425,10 @@ describe("the frame loop", () => {
         turn(display, 3, 0);
         expect(fiber.pollUnsafe()).toBeUndefined();
         turn(display, 1, 3000 / 60);
-        const exit = yield* Fiber.await(fiber);
-        expect(Exit.isFailure(exit)).toBe(true);
-        expect(
-          Cause.squash((exit as Exit.Failure<never, never>).cause)
-        ).toEqual(new Jammed({ at: 3 }));
+        // A failure of the game's own, which a program catches by its tag.
+        expect(yield* Fiber.await(fiber)).toEqual(
+          Exit.fail(new Jammed({ at: 3 }))
+        );
         expect(display.pending).toBe(0);
         expect(display.watching).toBe(0);
       })
@@ -464,7 +463,7 @@ describe("the frame loop", () => {
   it.effect("drops the backlog of a long stall, as fixedStep does", () =>
     Effect.gen(function* () {
       const display = Driver.makeManualDisplay();
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -505,7 +504,7 @@ describe("the display when none is provided", () => {
         cleared.add(id);
         clear(id as ReturnType<typeof set>);
       });
-      let app: App.Any | undefined;
+      let app: App.App | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -557,7 +556,7 @@ describe("the timer", () => {
       ).pipe(Effect.provide(TestClock.layer()))
   );
 
-  it.effect("stops and dies with what a tick throws", () =>
+  it.effect("stops and fails with what a tick fails with", () =>
     Effect.gen(function* () {
       class Jammed extends Data.TaggedError("Jammed")<{
         readonly at: number;
@@ -579,8 +578,7 @@ describe("the timer", () => {
           return yield* Fiber.await(fiber);
         })
       ).pipe(Effect.provide(TestClock.layer()));
-      assert(Exit.isFailure(exit));
-      expect(Cause.squash(exit.cause)).toEqual(new Jammed({ at: 3 }));
+      expect(exit).toEqual(Exit.fail(new Jammed({ at: 3 })));
     })
   );
 });
@@ -596,113 +594,128 @@ describe("ticking when needed", () => {
       onInput: (): void => {},
       /** Run by a tick: what it leaves waiting, if anything. */
       onTick: (): void => {},
-      input() {
-        stepped.calls.push("input");
-        stepped.onInput();
-      },
-      tick(delta: number) {
-        stepped.calls.push(`tick ${delta}`);
-        stepped.ticks++;
-        stepped.onTick();
-      },
-      frame(alpha: number) {
-        // To two decimals: what is left of a tick is a sum of floats.
-        stepped.calls.push(`frame ${Math.round(alpha * 100) / 100}`);
-      },
+      input: () =>
+        Effect.sync(() => {
+          stepped.calls.push("input");
+          stepped.onInput();
+        }),
+      tick: (delta: number) =>
+        Effect.sync(() => {
+          stepped.calls.push(`tick ${delta}`);
+          stepped.ticks++;
+          stepped.onTick();
+        }),
+      frame: (alpha: number) =>
+        Effect.sync(() => {
+          // To two decimals: what is left of a tick is a sum of floats.
+          stepped.calls.push(`frame ${Math.round(alpha * 100) / 100}`);
+        }),
     };
     return stepped;
   };
 
-  it("rests while nothing is waiting: the input stage and the frame stage run, and no tick", () => {
-    const game = makeStepped();
-    const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });
-    // Until a tick's worth of time has passed nothing is due, as ever.
-    expect(advance(0)).toBe(0);
-    expect(advance(0.04)).toBe(0);
-    expect(game.calls).toEqual(["frame 0", "frame 0.4"]);
-    game.calls.length = 0;
-    // From then on: every frame the devices are read, and the game is
-    // drawn all the way to its last tick.
-    for (let frame = 0; frame < 50; frame++) {
-      expect(advance(0.016)).toBe(0);
-    }
-    expect(game.ticks).toBe(0);
-    expect(game.calls.slice(0, 2)).toEqual(["frame 0.56", "frame 0.72"]);
-    expect(game.calls.slice(-4)).toEqual([
-      "input",
-      "frame 1",
-      "input",
-      "frame 1",
-    ]);
-    expect(game.calls.filter((call) => call === "input").length).toBe(47);
-  });
+  it.effect(
+    "rests while nothing is waiting: the input stage and the frame stage run, and no tick",
+    () =>
+      Effect.gen(function* () {
+        const game = makeStepped();
+        const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });
+        // Until a tick's worth of time has passed nothing is due, as ever.
+        expect(yield* advance(0)).toBe(0);
+        expect(yield* advance(0.04)).toBe(0);
+        expect(game.calls).toEqual(["frame 0", "frame 0.4"]);
+        game.calls.length = 0;
+        // From then on: every frame the devices are read, and the game is
+        // drawn all the way to its last tick.
+        for (let frame = 0; frame < 50; frame++) {
+          expect(yield* advance(0.016)).toBe(0);
+        }
+        expect(game.ticks).toBe(0);
+        expect(game.calls.slice(0, 2)).toEqual(["frame 0.56", "frame 0.72"]);
+        expect(game.calls.slice(-4)).toEqual([
+          "input",
+          "frame 1",
+          "input",
+          "frame 1",
+        ]);
+        expect(game.calls.filter((call) => call === "input").length).toBe(47);
+      })
+  );
 
-  it("ticks in the frame a move arrives in, and while the game is not settled", () => {
-    const game = makeStepped();
-    const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });
-    advance(1);
-    advance(1);
-    expect(game.ticks).toBe(0);
-    game.calls.length = 0;
-    // A move comes in with the devices, and is done with after two ticks.
-    let waiting = 0;
-    let arriving = true;
-    game.onInput = () => {
-      if (arriving) {
-        arriving = false;
-        waiting = 2;
+  it.effect(
+    "ticks in the frame a move arrives in, and while the game is not settled",
+    () =>
+      Effect.gen(function* () {
+        const game = makeStepped();
+        const advance = Driver.fixedStep(game, { hz: 10, ticks: "whenNeeded" });
+        yield* advance(1);
+        yield* advance(1);
+        expect(game.ticks).toBe(0);
+        game.calls.length = 0;
+        // A move comes in with the devices, and is done with after two ticks.
+        let waiting = 0;
+        let arriving = true;
+        game.onInput = () => {
+          if (arriving) {
+            arriving = false;
+            waiting = 2;
+            game.settled = false;
+          }
+        };
+        game.onTick = () => {
+          waiting--;
+          game.settled = waiting <= 0;
+        };
+        // However little time has passed: the time spent at rest was kept.
+        expect(yield* advance(0.001)).toBe(1);
+        expect(game.calls).toEqual(["input", "tick 0.1", "frame 0"]);
+        // Then at the game's own rate, as any game: no tick until one is due.
+        expect(yield* advance(0.05)).toBe(0);
+        expect(yield* advance(0.05)).toBe(1);
+        expect(game.settled).toBe(true);
+        // Settled: it rests.
+        game.calls.length = 0;
+        expect(yield* advance(0.1)).toBe(0);
+        expect(yield* advance(0.1)).toBe(0);
+        expect(game.calls).toEqual(["input", "frame 1", "input", "frame 1"]);
+        expect(game.ticks).toBe(2);
+        // A frame long enough for the last tick and for finding the game at
+        // rest after it: drawn all the way to that tick, in that same frame.
+        arriving = true;
+        yield* advance(0.05);
+        game.calls.length = 0;
+        expect(yield* advance(0.3)).toBe(1);
+        expect(game.calls).toEqual(["input", "tick 0.1", "input", "frame 1"]);
+      })
+  );
+
+  it.effect(
+    "owes no ticks for the time it rested, and drops a backlog as ever while it does not rest",
+    () =>
+      Effect.gen(function* () {
+        const game = makeStepped();
+        const advance = Driver.fixedStep(game, {
+          hz: 10,
+          ticks: "whenNeeded",
+          maxStepsPerCall: 3,
+        });
+        // A long rest.
+        for (let i = 0; i < 20; i++) {
+          yield* advance(5);
+        }
+        expect(game.ticks).toBe(0);
+        // Something that is never done: it ticks at its rate from here on,
+        // one tick for the frame the move came in, not one per second rested.
         game.settled = false;
-      }
-    };
-    game.onTick = () => {
-      waiting--;
-      game.settled = waiting <= 0;
-    };
-    // However little time has passed: the time spent at rest was kept.
-    expect(advance(0.001)).toBe(1);
-    expect(game.calls).toEqual(["input", "tick 0.1", "frame 0"]);
-    // Then at the game's own rate, as any game: no tick until one is due.
-    expect(advance(0.05)).toBe(0);
-    expect(advance(0.05)).toBe(1);
-    expect(game.settled).toBe(true);
-    // Settled: it rests.
-    game.calls.length = 0;
-    expect(advance(0.1)).toBe(0);
-    expect(advance(0.1)).toBe(0);
-    expect(game.calls).toEqual(["input", "frame 1", "input", "frame 1"]);
-    expect(game.ticks).toBe(2);
-    // A frame long enough for the last tick and for finding the game at
-    // rest after it: drawn all the way to that tick, in that same frame.
-    arriving = true;
-    advance(0.05);
-    game.calls.length = 0;
-    expect(advance(0.3)).toBe(1);
-    expect(game.calls).toEqual(["input", "tick 0.1", "input", "frame 1"]);
-  });
-
-  it("owes no ticks for the time it rested, and drops a backlog as ever while it does not rest", () => {
-    const game = makeStepped();
-    const advance = Driver.fixedStep(game, {
-      hz: 10,
-      ticks: "whenNeeded",
-      maxStepsPerCall: 3,
-    });
-    // A long rest.
-    for (let i = 0; i < 20; i++) {
-      advance(5);
-    }
-    expect(game.ticks).toBe(0);
-    // Something that is never done: it ticks at its rate from here on,
-    // one tick for the frame the move came in, not one per second rested.
-    game.settled = false;
-    expect(advance(0.016)).toBe(1);
-    expect(advance(0.016)).toBe(0);
-    expect(advance(0.1)).toBe(1);
-    // A stall while it is busy: three ticks, and the rest dropped.
-    expect(advance(60)).toBe(3);
-    expect(advance(0.05)).toBe(0);
-    expect(advance(0.05)).toBe(1);
-  });
+        expect(yield* advance(0.016)).toBe(1);
+        expect(yield* advance(0.016)).toBe(0);
+        expect(yield* advance(0.1)).toBe(1);
+        // A stall while it is busy: three ticks, and the rest dropped.
+        expect(yield* advance(60)).toBe(3);
+        expect(yield* advance(0.05)).toBe(0);
+        expect(yield* advance(0.05)).toBe(1);
+      })
+  );
 
   it.effect(
     "is how the frame loop runs a game at rest: a frame asked for and drawn each time, the tab watched, and no tick",
@@ -753,7 +766,7 @@ describe("ticking when needed", () => {
         expect(display.watching).toBe(1);
         // A fuse lit from outside: the six ticks it burns, and the one that
         // finds it out and changes nothing.
-        app.enqueue(Light, {});
+        yield* app.enqueue(Light, {});
         now = turn(display, 60, now);
         expect(app.time.tick).toBe(8);
         // Hidden, it asks for nothing; shown, it is at rest as it was.
@@ -770,20 +783,31 @@ describe("ticking when needed", () => {
       })
   );
 
-  it("is asked for: left out, a settled game ticks all the same, and so does one that does not say", () => {
-    const game = makeStepped();
-    const always = Driver.fixedStep(game, { hz: 10 });
-    expect(always(0.35)).toBe(3);
-    const told = makeStepped();
-    expect(Driver.fixedStep(told, { hz: 10, ticks: "always" })(0.35)).toBe(3);
-    // Something with a tick and nothing to say of itself needs every one.
-    let ticks = 0;
-    const plain = Driver.fixedStep(
-      { tick: () => ticks++ },
-      { hz: 10, ticks: "whenNeeded" }
-    );
-    plain(0.35);
-    plain(0.1);
-    expect(ticks).toBe(4);
-  });
+  it.effect(
+    "is asked for: left out, a settled game ticks all the same, and so does one that does not say",
+    () =>
+      Effect.gen(function* () {
+        const game = makeStepped();
+        const always = Driver.fixedStep(game, { hz: 10 });
+        expect(yield* always(0.35)).toBe(3);
+        const told = makeStepped();
+        expect(
+          yield* Driver.fixedStep(told, { hz: 10, ticks: "always" })(0.35)
+        ).toBe(3);
+        // Something with a tick and nothing to say of itself needs every one.
+        let ticks = 0;
+        const plain = Driver.fixedStep(
+          {
+            tick: () =>
+              Effect.sync(() => {
+                ticks++;
+              }),
+          },
+          { hz: 10, ticks: "whenNeeded" }
+        );
+        yield* plain(0.35);
+        yield* plain(0.1);
+        expect(ticks).toBe(4);
+      })
+  );
 });

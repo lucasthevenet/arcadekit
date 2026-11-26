@@ -17,6 +17,7 @@ import {
   Field,
   Journal,
   Query,
+  Save,
   Singleton,
   System,
   Time,
@@ -28,6 +29,7 @@ import type { Entity, JsonValue } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
 import { partsOf } from "../src/internal/parts.ts";
 import { Session } from "../src/net/index.ts";
+import { thrown } from "./checks.ts";
 import {
   CoinGame,
   DELTA,
@@ -61,28 +63,31 @@ const stretch = Effect.fnUntraced(function* (
   for (let i = 0; i < ticks; i++) {
     const roll = dice.int(1, 5);
     if (roll <= 2) {
-      app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
+      yield* app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
     } else if (roll === 3) {
       const [oldest, ...rest] = lying.entities();
       if (oldest !== undefined) {
-        app.enqueue(Take, { by: "grace", coin: dice.pick([oldest, ...rest]) });
+        yield* app.enqueue(Take, {
+          by: "grace",
+          coin: dice.pick([oldest, ...rest]),
+        });
         // And once more, which is refused: the coin is gone by then.
-        app.enqueue(Take, { by: "ada", coin: oldest });
+        yield* app.enqueue(Take, { by: "ada", coin: oldest });
       }
     }
-    app.tick(DELTA);
+    yield* app.tick(DELTA);
     hashes.push(world.hash());
   }
   return hashes;
 });
 
-const captured = (app: App.Any): Timeline.Moment => {
-  const moment = Timeline.capture(app);
+const captured = Effect.fnUntraced(function* (app: App.Any) {
+  const moment = yield* Effect.exit(Timeline.capture(app));
   if (Exit.isFailure(moment)) {
     throw new Error("the game could not be captured");
   }
   return moment.value;
-};
+});
 
 describe("a game that is put back to a moment", () => {
   it.effect("is the game it was, and goes on as that game did", () =>
@@ -92,11 +97,11 @@ describe("a game that is put back to a moment", () => {
           Effect.gen(function* () {
             yield* stretch(app, seed, 40);
             // Something is waiting at this moment: an action for the next tick.
-            app.enqueue(Drop, { by: "ada", value: 4 });
-            const moment = captured(app);
+            yield* app.enqueue(Drop, { by: "ada", value: 4 });
+            const moment = yield* captured(app);
             expect(moment.tick).toBe(40);
             const then = {
-              save: app.save(),
+              save: yield* Effect.exit(app.save()),
               log: structuredClone(app.actionLog),
               time: { ...app.time },
               settled: app.settled,
@@ -104,12 +109,12 @@ describe("a game that is put back to a moment", () => {
             const first = yield* stretch(app, seed + 10, 30);
             const firstLog = structuredClone(app.actionLog);
             // Another way from the same moment, and back again.
-            Timeline.rewind(app, moment);
+            yield* Timeline.rewind(app, moment);
             yield* stretch(app, seed + 20, 45);
             expect(world.hash()).not.toBe(first.at(-1));
-            Timeline.rewind(app, moment);
+            yield* Timeline.rewind(app, moment);
             expect({
-              save: app.save(),
+              save: yield* Effect.exit(app.save()),
               log: app.actionLog,
               time: { ...app.time },
               settled: app.settled,
@@ -140,9 +145,9 @@ describe("a game that is put back to a moment", () => {
       const wandering = yield* withApp(game(), (app) =>
         Effect.gen(function* () {
           const before = yield* stretch(app, 5, 25);
-          const moment = captured(app);
+          const moment = yield* captured(app);
           yield* stretch(app, 99, 17);
-          Timeline.rewind(app, moment);
+          yield* Timeline.rewind(app, moment);
           return [...before, ...(yield* stretch(app, 6, 25))];
         })
       );
@@ -153,13 +158,13 @@ describe("a game that is put back to a moment", () => {
   it.effect("can be a moment before the game had started", () =>
     withApp(game(), (app) =>
       Effect.gen(function* () {
-        const moment = captured(app);
+        const moment = yield* captured(app);
         expect(app.actionLog).toEqual([]);
         const first = yield* stretch(app, 8, 5);
         const log = structuredClone(app.actionLog);
         // The log begins with the hash of the state the game starts from.
         expect(log[0]).toEqual({ tick: 0, hash: expect.any(Number) });
-        Timeline.rewind(app, moment);
+        yield* Timeline.rewind(app, moment);
         expect(app.actionLog).toEqual([]);
         expect(yield* stretch(app, 8, 5)).toEqual(first);
         // It starts again, and says so again.
@@ -184,13 +189,13 @@ describe("a game that is put back to a moment", () => {
       });
       yield* withApp(App.make(App.define({ systems: [Clock] })), (app) =>
         Effect.gen(function* () {
-          app.tick(DELTA);
+          yield* app.tick(DELTA);
           expect(app.settled).toBe(false);
-          const moment = captured(app);
-          app.tick(DELTA);
-          app.tick(DELTA);
+          const moment = yield* captured(app);
+          yield* app.tick(DELTA);
+          yield* app.tick(DELTA);
           expect(app.settled).toBe(true);
-          Timeline.rewind(app, moment);
+          yield* Timeline.rewind(app, moment);
           // The clock had changed in the tick before, and is owed the next again.
           expect(app.settled).toBe(false);
         })
@@ -201,18 +206,18 @@ describe("a game that is put back to a moment", () => {
   it.effect("keeps an action that is waiting for the next tick", () =>
     withApp(game(), (app) =>
       Effect.gen(function* () {
-        app.dispatch(Drop, { by: "ada", value: 1 });
-        app.enqueue(Whisper, { to: "grace" });
-        const moment = captured(app);
-        app.tick(DELTA);
+        yield* app.dispatch(Drop, { by: "ada", value: 1 });
+        yield* app.enqueue(Whisper, { to: "grace" });
+        const moment = yield* captured(app);
+        yield* app.tick(DELTA);
         expect(moves(app.actionLog).map((entry) => entry.name)).toEqual([
           "ls/Drop",
           "ls/Whisper",
         ]);
-        Timeline.rewind(app, moment);
+        yield* Timeline.rewind(app, moment);
         // It is waiting again, to be applied by the tick that follows.
         expect(app.settled).toBe(false);
-        app.tick(DELTA);
+        yield* app.tick(DELTA);
         expect(app.time.tick).toBe(1);
       })
     )
@@ -221,21 +226,21 @@ describe("a game that is put back to a moment", () => {
   it.effect("takes back what became of an action that was waiting", () =>
     withApp(game(), (app) =>
       Effect.gen(function* () {
-        app.tick(DELTA);
+        yield* app.tick(DELTA);
         // No such coin: the tick that applies it will refuse it.
-        app.enqueue(Take, { by: "ada", coin: entityOf(77) });
-        const moment = captured(app);
+        yield* app.enqueue(Take, { by: "ada", coin: entityOf(77) });
+        const moment = yield* captured(app);
         const entry = () => moves(app.actionLog).at(-1)!;
         expect(entry().refused).toBeUndefined();
         const logged = app.actionLog.length;
-        app.tick(DELTA);
+        yield* app.tick(DELTA);
         expect(entry().refused).toBeDefined();
         expect(app.actionLog.length).toBeGreaterThan(logged);
-        Timeline.rewind(app, moment);
+        yield* Timeline.rewind(app, moment);
         // Not yet applied, so not yet refused, and the log is as long as it was.
         expect(entry().refused).toBeUndefined();
         expect(app.actionLog.length).toBe(logged);
-        app.tick(DELTA);
+        yield* app.tick(DELTA);
         expect(entry().refused).toBeDefined();
       })
     )
@@ -258,16 +263,16 @@ describe("a game that is put back to a moment", () => {
           App.make(App.define({ systems: [Listen, Ring] })),
           (app) =>
             Effect.gen(function* () {
-              app.tick(DELTA);
-              app.tick(DELTA);
-              const moment = captured(app);
-              app.tick(DELTA);
-              app.tick(DELTA);
+              yield* app.tick(DELTA);
+              yield* app.tick(DELTA);
+              const moment = yield* captured(app);
+              yield* app.tick(DELTA);
+              yield* app.tick(DELTA);
               expect(heard).toEqual([[], [1], [2], [3]]);
-              Timeline.rewind(app, moment);
+              yield* Timeline.rewind(app, moment);
               heard.length = 0;
-              app.tick(DELTA);
-              app.tick(DELTA);
+              yield* app.tick(DELTA);
+              yield* app.tick(DELTA);
               // Each once, from where it was: 2 was waiting, and 3 is rung again.
               expect(heard).toEqual([[2], [3]]);
             })
@@ -300,18 +305,18 @@ describe("a game that is put back to a moment", () => {
         yield* withApp(App.make(game), (app) =>
           Effect.gen(function* () {
             for (let i = 0; i < 3; i++) {
-              app.tick(DELTA);
-              app.frame();
+              yield* app.tick(DELTA);
+              yield* app.frame();
             }
-            const moment = captured(app);
-            app.tick(DELTA);
-            app.frame();
+            const moment = yield* captured(app);
+            yield* app.tick(DELTA);
+            yield* app.frame();
             expect(seen).toEqual({ tick: [0, 1, 1, 1], frame: [1, 1, 1, 1] });
-            Timeline.rewind(app, moment);
+            yield* Timeline.rewind(app, moment);
             seen.tick.length = 0;
             seen.frame.length = 0;
-            app.tick(DELTA);
-            app.frame();
+            yield* app.tick(DELTA);
+            yield* app.frame();
             // The system of the tick sees the one dot it had yet to see. What
             // draws sees every dot again: all four are new to it.
             expect(seen).toEqual({ tick: [1], frame: [4] });
@@ -324,50 +329,44 @@ describe("a game that is put back to a moment", () => {
     "is refused with a moment of another app, and in the middle of a tick",
     () =>
       Effect.gen(function* () {
-        const moment = yield* withApp(game(), (app) =>
-          Effect.sync(() => captured(app))
-        );
+        const moment = yield* withApp(game(), (app) => captured(app));
         yield* withApp(game(), (app) =>
           Effect.gen(function* () {
-            expect(() => Timeline.rewind(app, moment)).toThrow(
+            expect(yield* thrown(Timeline.rewind(app, moment))).toThrow(
               /a moment that this app did not capture.*save it and load the save/u
             );
-            expect(() => Timeline.rewind(app, { tick: 0 })).toThrow(
+            expect(yield* thrown(Timeline.rewind(app, { tick: 0 }))).toThrow(
               /did not capture/u
             );
           })
         );
         let inside: App.Any | undefined;
         const Meddle = System.tick("rw/Meddle", function* () {
-          yield* Effect.sync(() => {
-            if (inside !== undefined && inside.time.tick === 2) {
-              Timeline.capture(inside);
-            }
-          });
+          if (inside !== undefined && inside.time.tick === 2) {
+            yield* Timeline.capture(inside);
+          }
         });
         yield* withApp(App.make(App.define({ systems: [Meddle] })), (app) =>
           Effect.gen(function* () {
             inside = app;
-            app.tick(DELTA);
-            expect(() => app.tick(DELTA)).toThrow(
+            yield* app.tick(DELTA);
+            expect(yield* thrown(app.tick(DELTA))).toThrow(
               /Timeline\.capture\(\) was called during a tick/u
             );
           })
         );
         const taken: Timeline.Moment[] = [];
         const Undo = System.tick("rw/Undo", function* () {
-          yield* Effect.sync(() => {
-            if (inside !== undefined && taken.length > 0) {
-              Timeline.rewind(inside, taken[0]!);
-            }
-          });
+          if (inside !== undefined && taken.length > 0) {
+            yield* Timeline.rewind(inside, taken[0]!);
+          }
         });
         yield* withApp(App.make(App.define({ systems: [Undo] })), (app) =>
           Effect.gen(function* () {
             inside = app;
-            app.tick(DELTA);
-            taken.push(captured(app));
-            expect(() => app.tick(DELTA)).toThrow(
+            yield* app.tick(DELTA);
+            taken.push(yield* captured(app));
+            expect(yield* thrown(app.tick(DELTA))).toThrow(
               /Timeline\.rewind\(\) was called during a tick/u
             );
           })
@@ -399,9 +398,9 @@ describe("a game that is put back to a moment", () => {
             const world = partsOf(app).world;
             const sprite = world.spawn(Sprite.of({ x: 0, handle: "sprite" }));
             const lamp = world.spawn(Lamp.of({ on: 1, handle: "lamp" }));
-            const moment = captured(app);
-            app.dispatch(Move, {});
-            Timeline.rewind(app, moment);
+            const moment = yield* captured(app);
+            yield* app.dispatch(Move, {});
+            yield* Timeline.rewind(app, moment);
             expect(world.get(sprite, Sprite)).toEqual({
               x: 0,
               handle: undefined,
@@ -426,9 +425,11 @@ describe("a game that is put back to a moment", () => {
       });
       yield* withApp(App.make(App.define({ handlers: [hold] })), (app) =>
         Effect.gen(function* () {
-          expect(Exit.isSuccess(Timeline.capture(app))).toBe(true);
-          app.dispatch(Hold, {});
-          const refused = Timeline.capture(app);
+          expect(
+            Exit.isSuccess(yield* Effect.exit(Timeline.capture(app)))
+          ).toBe(true);
+          yield* app.dispatch(Hold, {});
+          const refused = yield* Effect.exit(Timeline.capture(app));
           expect(Exit.isFailure(refused)).toBe(true);
           expect(String(Exit.isFailure(refused) ? refused.cause : "")).toMatch(
             /rw\/Holder/u
@@ -444,13 +445,13 @@ describe("a game that is put back to a moment", () => {
       const Back = Action.define("rw/Back", Schema.Struct({}));
       const taken: Timeline.Moment[] = [];
       const back = Action.handler(Back, function* () {
-        yield* Effect.sync(() => Timeline.rewind(inside!, taken[0]!));
+        yield* Timeline.rewind(inside!, taken[0]!);
       });
       yield* withApp(App.make(App.define({ handlers: [back] })), (app) =>
         Effect.gen(function* () {
           inside = app;
-          taken.push(captured(app));
-          const exit = app.dispatch(Back, {});
+          taken.push(yield* captured(app));
+          const exit = yield* Effect.exit(app.dispatch(Back, {}));
           expect(Exit.isFailure(exit)).toBe(true);
           expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
             /Timeline\.rewind\(\) was called during an action's handler/u
@@ -483,12 +484,12 @@ describe("what the input stage issues, across a rewind and a save", () => {
       const { fired, game: Pressed } = pressing();
       yield* withApp(App.make(Pressed), (app) =>
         Effect.gen(function* () {
-          app.tick(DELTA);
+          yield* app.tick(DELTA);
           fired.length = 0;
-          const moment = captured(app);
-          app.input();
-          Timeline.rewind(app, moment);
-          app.tick(DELTA);
+          const moment = yield* captured(app);
+          yield* app.input();
+          yield* Timeline.rewind(app, moment);
+          yield* app.tick(DELTA);
           expect(fired).toEqual([]);
         })
       );
@@ -500,12 +501,12 @@ describe("what the input stage issues, across a rewind and a save", () => {
       const { fired, game: Pressed } = pressing();
       yield* withApp(App.make(Pressed), (app) =>
         Effect.gen(function* () {
-          app.tick(DELTA);
+          yield* app.tick(DELTA);
           fired.length = 0;
-          app.input();
-          const moment = captured(app);
-          Timeline.rewind(app, moment);
-          app.tick(DELTA);
+          yield* app.input();
+          const moment = yield* captured(app);
+          yield* Timeline.rewind(app, moment);
+          yield* app.tick(DELTA);
           expect(fired).toEqual([1]);
         })
       );
@@ -517,9 +518,9 @@ describe("what the input stage issues, across a rewind and a save", () => {
       const { fired, game: Pressed } = pressing();
       const saved = yield* withApp(App.make(Pressed), (app) =>
         Effect.gen(function* () {
-          app.tick(DELTA);
-          app.input();
-          const save = app.save();
+          yield* app.tick(DELTA);
+          yield* app.input();
+          const save = yield* Effect.exit(app.save());
           if (Exit.isFailure(save)) {
             throw new Error("the game could not be saved");
           }
@@ -529,7 +530,7 @@ describe("what the input stage issues, across a rewind and a save", () => {
       fired.length = 0;
       yield* withApp(Effect.orDie(App.make(Pressed, { save: saved })), (app) =>
         Effect.gen(function* () {
-          app.tick(DELTA);
+          yield* app.tick(DELTA);
           expect(fired).toEqual([1]);
         })
       );
@@ -546,9 +547,9 @@ describe("what the input stage issues, across a rewind and a save", () => {
           (app, world) =>
             Effect.gen(function* () {
               const before = world.hash();
-              app.input();
+              yield* app.input();
               expect(world.hash()).toBe(before);
-              const save = app.save();
+              const save = yield* Effect.exit(app.save());
               if (Exit.isFailure(save)) {
                 throw new Error("the game could not be saved");
               }
@@ -607,27 +608,27 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const { app } = session;
-              session.tick(DELTA);
-              app.frame();
-              const back = session.capture();
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              yield* session.tick(DELTA);
+              yield* app.frame();
+              const back = yield* session.capture();
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
               heard.frame.length = 0;
               heard.input.length = 0;
               // Run again with a bell that rings on tick 3: only that is new.
-              session.rewind(back);
-              session.tick(DELTA);
-              app.enqueue(Louder, { by: 7 });
-              session.tick(DELTA);
-              app.frame();
+              yield* session.rewind(back);
+              yield* session.tick(DELTA);
+              yield* app.enqueue(Louder, { by: 7 });
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([307]);
               // Past where the game had got to, every event is new again. The input
               // stage runs before each tick, so it had not heard the third tick's
               // events before the rewind, and hears them now, before the fourth.
-              session.tick(DELTA);
-              app.frame();
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard).toEqual({
                 frame: [307, 4, 4, 407],
                 input: [3, 3, 307],
@@ -646,22 +647,22 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const { app } = session;
-              session.tick(DELTA);
-              app.frame();
-              const back = session.capture();
+              yield* session.tick(DELTA);
+              yield* app.frame();
+              const back = yield* session.capture();
               // Every stage hears each tick, so each tick drops the one before.
               for (let i = 0; i < 4; i++) {
-                session.tick(DELTA);
-                app.frame();
+                yield* session.tick(DELTA);
+                yield* app.frame();
               }
-              expect(app.inspect().stores[Event.STORE]).toEqual({
+              expect((yield* app.inspect()).stores[Event.STORE]).toEqual({
                 "rw/Rang": [{ n: 5 }, { n: 5 }],
               });
               heard.frame.length = 0;
-              session.rewind(back);
+              yield* session.rewind(back);
               for (let i = 0; i < 4; i++) {
-                session.tick(DELTA);
-                app.frame();
+                yield* session.tick(DELTA);
+                yield* app.frame();
               }
               expect(heard.frame).toEqual([]);
             })
@@ -679,15 +680,15 @@ describe("what the stages between ticks hear across a rewind", () => {
               const session = steered(built);
               const { app } = session;
               // Taken before anything between ticks has run.
-              const back = session.capture();
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              const back = yield* session.capture();
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               const first = [...heard.frame];
-              session.rewind(back);
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              yield* session.rewind(back);
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(first).toEqual([1, 1, 2, 2]);
               expect(heard.frame).toEqual([1, 1, 2, 2]);
               // The input stage runs before each tick, and heard what came before
@@ -707,16 +708,16 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const { app } = session;
-              session.tick(DELTA);
-              app.frame();
-              const back = session.capture();
+              yield* session.tick(DELTA);
+              yield* app.frame();
+              const back = yield* session.capture();
               // Ticks run with no frame: the frame stage heard none of them.
-              session.tick(DELTA);
-              session.tick(DELTA);
-              session.rewind(back);
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* session.rewind(back);
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([1, 1, 2, 2, 3, 3]);
             })
           );
@@ -732,20 +733,20 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const { app } = session;
-              session.tick(DELTA);
-              const back = session.capture();
+              yield* session.tick(DELTA);
+              const back = yield* session.capture();
               // As predicted: the chime on the second tick.
-              app.enqueue(Chime, { n: 5 });
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5]);
               // As it was: the second tick has none, and the third rings the same.
-              session.rewind(back);
-              session.tick(DELTA);
-              app.enqueue(Chime, { n: 5 });
-              session.tick(DELTA);
-              app.frame();
+              yield* session.rewind(back);
+              yield* session.tick(DELTA);
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5, 5]);
             })
           );
@@ -761,20 +762,20 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const { app } = session;
-              session.tick(DELTA);
-              const back = session.capture();
+              yield* session.tick(DELTA);
+              const back = yield* session.capture();
               // As predicted: the chime on the third tick.
-              session.tick(DELTA);
-              app.enqueue(Chime, { n: 5 });
-              session.tick(DELTA);
-              app.frame();
+              yield* session.tick(DELTA);
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5]);
               // As it was: on the second, which is not the tick it was heard of.
-              session.rewind(back);
-              app.enqueue(Chime, { n: 5 });
-              session.tick(DELTA);
-              session.tick(DELTA);
-              app.frame();
+              yield* session.rewind(back);
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5, 5]);
             })
           );
@@ -790,22 +791,24 @@ describe("what the stages between ticks hear across a rewind", () => {
             Effect.gen(function* () {
               const session = steered(built);
               const back = session.app;
-              session.tick(DELTA);
-              back.frame();
-              const at = session.capture();
-              session.tick(DELTA);
-              back.frame();
-              session.rewind(at);
-              session.tick(DELTA);
-              back.frame();
+              yield* session.tick(DELTA);
+              yield* back.frame();
+              const at = yield* session.capture();
+              yield* session.tick(DELTA);
+              yield* back.frame();
+              yield* session.rewind(at);
+              yield* session.tick(DELTA);
+              yield* back.frame();
               for (let i = 0; i < 2; i++) {
-                straight.tick(DELTA);
-                straight.frame();
+                yield* straight.tick(DELTA);
+                yield* straight.frame();
               }
               expect((yield* back.read(World)).hash()).toBe(
                 (yield* straight.read(World)).hash()
               );
-              expect(back.save()).toEqual(straight.save());
+              expect(yield* Effect.exit(back.save())).toEqual(
+                yield* Effect.exit(straight.save())
+              );
               expect(one.heard.frame).toEqual(other.heard.frame);
             })
           )
@@ -822,22 +825,22 @@ describe("what the stages between ticks hear across a rewind", () => {
           const { heard, make } = listening(Chimed);
           yield* withApp(make, (app) =>
             Effect.gen(function* () {
-              app.tick(DELTA);
-              const back = captured(app);
-              app.enqueue(Chime, { n: 5 });
-              app.tick(DELTA);
-              app.frame();
+              yield* app.tick(DELTA);
+              const back = yield* captured(app);
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* app.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5]);
               // The move is undone, and made again: it is a new one.
-              Timeline.rewind(app, back);
-              app.enqueue(Chime, { n: 5 });
-              app.tick(DELTA);
-              app.frame();
+              yield* Timeline.rewind(app, back);
+              yield* app.enqueue(Chime, { n: 5 });
+              yield* app.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([5, 5]);
               // Between two ticks as well.
-              Timeline.rewind(app, back);
-              app.dispatch(Chime, { n: 5 });
-              app.frame();
+              yield* Timeline.rewind(app, back);
+              yield* app.dispatch(Chime, { n: 5 });
+              yield* app.frame();
               expect(heard.frame).toEqual([5, 5, 5]);
             })
           );
@@ -851,17 +854,17 @@ describe("what the stages between ticks hear across a rewind", () => {
           const { heard, make } = listening();
           yield* withApp(make, (app) =>
             Effect.gen(function* () {
-              app.tick(DELTA);
-              app.frame();
-              const back = captured(app);
+              yield* app.tick(DELTA);
+              yield* app.frame();
+              const back = yield* captured(app);
               // Run ahead with no frame, as a search does, and come back.
-              app.tick(DELTA);
-              app.tick(DELTA);
-              Timeline.rewind(app, back);
-              app.frame();
+              yield* app.tick(DELTA);
+              yield* app.tick(DELTA);
+              yield* Timeline.rewind(app, back);
+              yield* app.frame();
               expect(heard.frame).toEqual([1, 1]);
-              app.tick(DELTA);
-              app.frame();
+              yield* app.tick(DELTA);
+              yield* app.frame();
               expect(heard.frame).toEqual([1, 1, 2, 2]);
             })
           );
@@ -893,18 +896,18 @@ describe("what the stages between ticks hear across a rewind", () => {
           yield* withMade(Build.build(game, {}), (built) =>
             Effect.gen(function* () {
               const session = steered(built);
-              session.tick(DELTA);
+              yield* session.tick(DELTA);
               const heard = listen();
-              const back = session.capture();
-              session.tick(DELTA);
-              session.tick(DELTA);
+              const back = yield* session.capture();
+              yield* session.tick(DELTA);
+              yield* session.tick(DELTA);
               expect(heard()).toEqual([2, 2, 3, 3]);
-              session.rewind(back);
-              session.tick(DELTA);
-              session.app.enqueue(Louder, { by: 7 });
-              session.tick(DELTA);
+              yield* session.rewind(back);
+              yield* session.tick(DELTA);
+              yield* session.app.enqueue(Louder, { by: 7 });
+              yield* session.tick(DELTA);
               expect(heard()).toEqual([307]);
-              session.tick(DELTA);
+              yield* session.tick(DELTA);
               expect(heard()).toEqual([4, 4, 407]);
             })
           );
@@ -918,13 +921,13 @@ describe("what the stages between ticks hear across a rewind", () => {
           const { game, listen } = kept();
           yield* withApp(App.make(game), (app) =>
             Effect.gen(function* () {
-              app.tick(DELTA);
+              yield* app.tick(DELTA);
               const heard = listen();
-              const back = captured(app);
-              app.tick(DELTA);
-              app.tick(DELTA);
-              Timeline.rewind(app, back);
-              app.tick(DELTA);
+              const back = yield* captured(app);
+              yield* app.tick(DELTA);
+              yield* app.tick(DELTA);
+              yield* Timeline.rewind(app, back);
+              yield* app.tick(DELTA);
               expect(heard()).toEqual([2, 2]);
             })
           );
@@ -972,23 +975,23 @@ describe("what the stages between ticks visit across a rewind", () => {
         const app = yield* App.make(game);
         const { world } = partsOf(app);
         for (let x = 0; x < 20; x++) {
-          app.enqueue(Act, { op: 0, pick: 0, x });
+          yield* app.enqueue(Act, { op: 0, pick: 0, x });
         }
-        app.tick(DELTA);
-        app.frame(0);
+        yield* app.tick(DELTA);
+        yield* app.frame(0);
         // A moment no one keeps, as an undo point that is let go.
-        captured(app);
+        yield* captured(app);
         // A weakly held object outlives the turn it was last reached in.
         yield* Effect.promise(
           () => new Promise((resolve) => setTimeout(resolve, 0))
         );
         collect();
         for (let tick = 0; tick < 2000; tick++) {
-          app.enqueue(Act, { op: 2, pick: tick, x: tick });
-          app.enqueue(Act, { op: 1, pick: tick, x: 0 });
-          app.enqueue(Act, { op: 0, pick: 0, x: tick });
-          app.tick(DELTA);
-          app.frame(0);
+          yield* app.enqueue(Act, { op: 2, pick: tick, x: tick });
+          yield* app.enqueue(Act, { op: 1, pick: tick, x: 0 });
+          yield* app.enqueue(Act, { op: 0, pick: 0, x: tick });
+          yield* app.tick(DELTA);
+          yield* app.frame(0);
         }
         const held = (kind: "changed" | "removed"): number => {
           const log = world._log(Dot, kind);
@@ -1016,24 +1019,24 @@ describe("what the stages between ticks visit across a rewind", () => {
                 const roll = dice.int(1, 10);
                 if (roll <= 5) {
                   for (let i = dice.int(0, 2); i > 0; i--) {
-                    app.enqueue(Act, {
+                    yield* app.enqueue(Act, {
                       op: dice.int(0, 2),
                       pick: dice.int(0, 99),
                       x: dice.int(0, 999),
                     });
                   }
-                  app.tick(DELTA);
+                  yield* app.tick(DELTA);
                 } else if (roll <= 8) {
-                  moments.push(captured(app));
+                  moments.push(yield* captured(app));
                 } else if (moments.length > 0) {
                   // To a moment of this future or of one given up, to run the
                   // same ticks again or to play on.
-                  Timeline.rewind(app, dice.pick(moments), {
+                  yield* Timeline.rewind(app, dice.pick(moments), {
                     again: roll !== 10,
                   });
                 }
                 if (dice.int(0, 2) > 0) {
-                  app.frame(0);
+                  yield* app.frame(0);
                   const dots = (yield* app.read(Dots)).entities();
                   for (const dot of dots) {
                     if (shown.get(dot) !== world.get(dot, Dot)?.x) {
@@ -1058,15 +1061,6 @@ describe("Session.syncTest", () => {
   const Steady = System.tick("vr/Steady", function* () {
     (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: (yield* Time).tick }));
   });
-  const failure = (run: () => void): unknown => {
-    try {
-      run();
-    } catch (error) {
-      return error;
-    }
-    throw new Error("it did not throw");
-  };
-
   it.effect("names the system that keeps what it reads outside the world", () =>
     Effect.gen(function* () {
       let outside = 0;
@@ -1081,7 +1075,7 @@ describe("Session.syncTest", () => {
         Session.syncTest(App.define({ systems: [Steady, Leaky, After] })),
         (test) =>
           Effect.gen(function* () {
-            const error = failure(() => test.tick(DELTA));
+            const error = yield* Effect.flip(test.tick(DELTA));
             expect(error).toBeInstanceOf(Session.RewindDiverged);
             expect(error).toMatchObject({ tick: 1, system: "vr/Leaky" });
             expect(String((error as Error).message)).toContain(
@@ -1104,9 +1098,9 @@ describe("Session.syncTest", () => {
         Session.syncTest(App.define({ systems: [Steady], handlers: [bump] })),
         (test) =>
           Effect.gen(function* () {
-            test.tick(DELTA);
-            test.app.enqueue(Bump, {});
-            const error = failure(() => test.tick(DELTA));
+            yield* test.tick(DELTA);
+            yield* test.app.enqueue(Bump, {});
+            const error = yield* Effect.flip(test.tick(DELTA));
             expect(error).toMatchObject({ tick: 2, system: undefined });
           })
       );
@@ -1126,7 +1120,7 @@ describe("Session.syncTest", () => {
         Session.syncTest(App.define({ systems: [Steady, Once] })),
         (test) =>
           Effect.gen(function* () {
-            const error = failure(() => test.tick(DELTA));
+            const error = yield* Effect.flip(test.tick(DELTA));
             expect(error).toMatchObject({ tick: 1, system: "vr/Once" });
           })
       );
@@ -1139,7 +1133,9 @@ describe("Session.syncTest", () => {
       Effect.gen(function* () {
         const stepped = Effect.fnUntraced(function* (test: {
           readonly app: SteeredGame;
-          readonly tick: (delta: number) => void;
+          readonly tick: (
+            delta: number
+          ) => Effect.Effect<void, Session.RewindDiverged | Save.SaveRefused>;
           readonly checked: number;
         }) {
           const { app } = test;
@@ -1148,14 +1144,14 @@ describe("Session.syncTest", () => {
           const hashes: number[] = [];
           for (let i = 0; i < 40; i++) {
             if (dice.int(1, 3) === 1) {
-              app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
+              yield* app.enqueue(Drop, { by: "ada", value: dice.int(1, 9) });
             }
-            test.tick(DELTA);
+            yield* test.tick(DELTA);
             hashes.push(world.hash());
           }
           return {
             hashes,
-            recording: Journal.encode(app.record()),
+            recording: Journal.encode(yield* app.record()),
             checked: test.checked,
           };
         });
@@ -1201,8 +1197,8 @@ describe("Session.syncTest", () => {
         (test) =>
           Effect.gen(function* () {
             for (let i = 0; i < 3; i++) {
-              test.tick(DELTA);
-              test.frame();
+              yield* test.tick(DELTA);
+              yield* test.frame();
             }
             expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
             // The input stage runs before each tick: it has heard the first two.
@@ -1230,12 +1226,14 @@ describe("Session.syncTest", () => {
           Session.syncTest(App.define({ systems: [Hold] })),
           (test) =>
             Effect.gen(function* () {
-              expect(() =>
-                // @ts-expect-error the app of a sync test has no tick: the test steps it
-                test.app.tick(DELTA)
+              expect(
+                yield* thrown<unknown, unknown, never>(
+                  // @ts-expect-error the app of a sync test has no tick: the test steps it
+                  test.app.tick(DELTA)
+                )
               ).toThrow(/taken over/u);
-              test.tick(DELTA);
-              const exit = test.tickExit(DELTA);
+              yield* test.tick(DELTA);
+              const exit = yield* Effect.exit(test.tick(DELTA));
               expect(Exit.isFailure(exit)).toBe(true);
               expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
                 /vr\/Held/u

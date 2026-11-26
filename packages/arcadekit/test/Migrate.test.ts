@@ -98,10 +98,10 @@ const savedByVersion0 = Effect.fnUntraced(function* () {
     App.make(App.define({ plugins: [Game0, Units0] })),
     (app, world) =>
       Effect.gen(function* () {
-        app.tick(1);
-        app.enqueue(Heal0, { amount: 3 });
+        yield* app.tick(1);
+        yield* app.enqueue(Heal0, { amount: 3 });
         const entities = spawned.map((id) => placedIn(world, id));
-        return { save: unwrap(app.save()), entities };
+        return { save: unwrap(yield* Effect.exit(app.save())), entities };
       })
   );
 });
@@ -320,7 +320,7 @@ describe("a save from another version of the game", () => {
       expect((yield* savedByVersion0()).save.version).toBe(0);
       yield* withApp(App.make(App.define({ version: 7 })), (app) =>
         Effect.gen(function* () {
-          const save = unwrap(app.save());
+          const save = unwrap(yield* Effect.exit(app.save()));
           expect(save.version).toBe(7);
           expect(unwrap(Save.decode(Save.encode(save))).version).toBe(7);
         })
@@ -362,9 +362,9 @@ describe("a save from another version of the game", () => {
               { power: 300, note: "buff 3", fresh: undefined },
               { power: 600, note: "buff 6", fresh: undefined },
             ]);
-            const known = readSnapshot(unwrap(app.save()).world).components.map(
-              ({ name }) => name
-            );
+            const known = readSnapshot(
+              unwrap(yield* Effect.exit(app.save())).world
+            ).components.map(({ name }) => name);
             expect(known).toContain("mg/Health");
             expect(known).not.toContain("mg/Old");
             expect(known).not.toContain("mg/Hp");
@@ -378,12 +378,12 @@ describe("a save from another version of the game", () => {
 
             // The action that was waiting is applied under its new name.
             const before = world.get(entities[1]!, Health2)!.points;
-            app.tick(1);
+            yield* app.tick(1);
             expect(world.get(entities[1]!, Health2)!.points).toBe(before + 3);
             expect(app.time.tick).toBe(2);
 
             // What it saves now is a save of version 2, which loads as it is.
-            const again = unwrap(app.save());
+            const again = unwrap(yield* Effect.exit(app.save()));
             expect(again.version).toBe(2);
             yield* withApp(App.make(Version2, { save: again }), (_, reloaded) =>
               Effect.gen(function* () {
@@ -392,7 +392,7 @@ describe("a save from another version of the game", () => {
             );
 
             // The next entity gets the id the old game would have given.
-            const next = app.dispatch(Recruit2, {});
+            const next = yield* Effect.exit(app.dispatch(Recruit2, {}));
             assert(Exit.isSuccess(next));
             expect(entityIndex(next.value)).toBe(4);
             expect(entityGeneration(next.value)).toBe(1);
@@ -437,7 +437,10 @@ describe("a save from another version of the game", () => {
     Effect.gen(function* () {
       const save = yield* withApp(
         App.make(App.define({ plugins: [Game2], version: 3 })),
-        (app) => Effect.sync(() => unwrap(app.save()))
+        (app) =>
+          Effect.gen(function* () {
+            return unwrap(yield* Effect.exit(app.save()));
+          })
       );
       const error = refusal(yield* Effect.exit(App.make(Version2, { save })));
       expect(error).toBeInstanceOf(Save.LoadRefused);

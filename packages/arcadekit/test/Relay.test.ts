@@ -13,6 +13,7 @@ import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index.ts";
 import { Message, Relay, Session, Transport } from "../src/net/index.ts";
+import { thrown } from "./checks.ts";
 import { CoinGame, DELTA, moves, players, purseOf } from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
@@ -36,7 +37,9 @@ const messagesIn = (
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
-  readonly connected: Transport.Connected;
+  readonly connected: Transport.Connected<
+    Effect.Error<ReturnType<Peer["session"]["tick"]>>
+  >;
 }
 
 /** A peer of the game, joined to the room "match" of the relay at `url`. */
@@ -611,6 +614,21 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
   throw new Error(`timed out waiting until ${what}`);
 };
 
+/** Waits, a few milliseconds at a time, until what `holds` runs says it does. */
+const waitUntil = <E>(
+  holds: Effect.Effect<boolean, E>,
+  what: string
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 400; i++) {
+      if (yield* Effect.orDie(holds)) {
+        return;
+      }
+      yield* Effect.promise(() => later(5));
+    }
+    return yield* Effect.die(new Error(`timed out waiting until ${what}`));
+  });
+
 describe("the transport between machines, a WebSocket to a relay", () => {
   let stop: (() => Promise<void>) | undefined;
   afterEach(async () => {
@@ -686,7 +704,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                 if (i < 40) {
                   yield* act(seat);
                 }
-                seat.connected.tick();
+                yield* seat.connected.tick();
                 yield* Effect.promise(() => later(1));
               }
             }
@@ -698,9 +716,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               i++
             ) {
               yield* Effect.promise(() => later(2));
-              (one.app.time.tick <= two.app.time.tick
-                ? one
-                : two
+              yield* (
+                one.app.time.tick <= two.app.time.tick ? one : two
               ).connected.tick();
             }
             expect(one.app.time.tick).toBe(two.app.time.tick);
@@ -753,7 +770,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                 for (let i = 0; i < rounds; i++) {
                   for (const seat of seats) {
                     yield* act(seat);
-                    seat.connected.tick();
+                    yield* seat.connected.tick();
                     yield* Effect.promise(() => later(1));
                   }
                 }
@@ -773,9 +790,8 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               i++
             ) {
               yield* Effect.promise(() => later(2));
-              (one.app.time.tick <= two.app.time.tick
-                ? one
-                : two
+              yield* (
+                one.app.time.tick <= two.app.time.tick ? one : two
               ).connected.tick();
             }
             expect(one.app.time.tick).toBe(two.app.time.tick);
@@ -825,11 +841,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                     reconnectFor: 0,
                   }
                 );
-                yield* Effect.promise(() =>
-                  until(() => {
-                    connected.tick();
+                yield* waitUntil(
+                  Effect.gen(function* () {
+                    yield* connected.tick();
                     return served.relay.members("blue").length === 2;
-                  }, "grace is in")
+                  }),
+                  "grace is in"
                 );
                 served.drop("grace");
                 yield* Effect.promise(() =>
@@ -840,11 +857,12 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                 );
               })
             );
-            yield* Effect.promise(() =>
-              until(() => {
-                connected.tick();
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* connected.tick();
                 return connected.away.length === 1;
-              }, "ada was told")
+              }),
+              "ada was told"
             );
             expect(connected.away).toEqual(["grace"]);
             // Ada waits for her, with what she has to say kept.
@@ -1020,7 +1038,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
         yield* Effect.promise(() =>
           until(() => served.relay.members("blue").length === 0, "ada has left")
         );
-        expect(() => connected.tick()).toThrow(
+        expect(yield* thrown(connected.tick())).toThrow(
           new RegExp(
             `The transport to ${url.replaceAll(/[.?]/gu, "\\$&")} was used after it was let go, and its socket closed: the connection Transport\\.connect made was closed`,
             "u"

@@ -17,6 +17,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { ComponentDef, Entity } from "../src/index.ts";
+import { thrown } from "./checks.ts";
 
 // Two components with the same fields: a query has to tell them apart.
 const Position = Component.define("rd/Position", {
@@ -402,20 +403,22 @@ describe("a query, which writes only what it names, in an app", () => {
           { checkpointEvery: 1 }
         );
         const world = yield* app.read(World);
-        app.tick(1);
-        app.tick(1);
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
         // The system reads the velocities every tick, raw, and the one
         // that watches them is left in peace after its first look.
         expect(turned).toEqual([4, 0, 0]);
         const before = world.hash();
-        expect(app.dispatch(Survey, { limit: 2 })).toEqual(
+        expect(yield* Effect.exit(app.dispatch(Survey, { limit: 2 }))).toEqual(
           Exit.fail(TooFast.make({}))
         );
         expect(world.hash()).toBe(before);
-        expect(app.dispatch(Survey, { limit: 5 })).toEqual(Exit.succeed(3));
+        expect(yield* Effect.exit(app.dispatch(Survey, { limit: 5 }))).toEqual(
+          Exit.succeed(3)
+        );
         expect(world.hash()).not.toBe(before);
-        app.tick(1);
+        yield* app.tick(1);
         expect(turned.at(-1)).toBe(0);
       })
   );
@@ -495,8 +498,8 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
         App.define({ plugins: [Bodies], systems: [Move] }),
         { verifyFrames: true }
       );
-      app.tick(1);
-      app.tick(1);
+      yield* app.tick(1);
+      yield* app.tick(1);
       expect((yield* bodies(app)).slice(0, 4)).toEqual([3, 0, 1, 2]);
     })
   );
@@ -510,7 +513,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
           { verifyFrames: true }
         );
         const before = yield* bodies(ticked);
-        expect(() => ticked.tick(1)).toThrow(refusal("x"));
+        expect(yield* thrown(ticked.tick(1))).toThrow(refusal("x"));
         expect(yield* bodies(ticked)).toEqual(before);
 
         const handled = yield* App.make(
@@ -518,7 +521,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
           { verifyFrames: true }
         );
         const unhalted = yield* bodies(handled);
-        const exit = handled.dispatch(Halt, {});
+        const exit = yield* Effect.exit(handled.dispatch(Halt, {}));
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
           refusal("y")
         );
@@ -529,7 +532,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
           { verifyFrames: true }
         );
         const unturned = yield* bodies(turned);
-        expect(() => turned.tick(1)).toThrow(
+        expect(yield* thrown(turned.tick(1))).toThrow(
           /^eachChunk\(\) wrote the target of "rd\/Pointing" through its raw column, and it has been put back\. "rd\/Pointing" is a relation/
         );
         expect(yield* bodies(turned)).toEqual(unturned);
@@ -541,7 +544,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
       const app = yield* App.make(
         App.define({ plugins: [Bodies], systems: [Brake] })
       );
-      app.tick(1);
+      yield* app.tick(1);
       expect((yield* bodies(app)).slice(0, 4)).toEqual([1, 0, 0, 2]);
     })
   );
@@ -580,7 +583,7 @@ describe("an id Commands.spawn returns", () => {
         App.define({ handlers: [fire], systems: [Hear] })
       );
       const world = yield* app.read(World);
-      const exit = app.dispatch(Fire, {});
+      const exit = yield* Effect.exit(app.dispatch(Fire, {}));
       // dispatch gives it back as an entity, once the handler has ended.
       const shot = Exit.isSuccess(exit) ? exit.value : undefined;
       expect(shot).toBeDefined();
@@ -590,7 +593,7 @@ describe("an id Commands.spawn returns", () => {
       expect(seen).toEqual([undefined]);
       expect(world.get(shot, Position)).toEqual({ x: 2, y: 0 });
       expect(world.sources(shot, Target)).toHaveLength(1);
-      app.tick(1 / 60);
+      yield* app.tick(1 / 60);
       expect(heard).toEqual([shot]);
     })
   );

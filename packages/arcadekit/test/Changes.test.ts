@@ -1389,18 +1389,25 @@ const game = (
 > => App.make(Game, { checkpointEvery: options.checkpointEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
-const play = (app: App.Any, from: number, to: number): void => {
+const play = Effect.fnUntraced(function* (
+  app: App.App,
+  from: number,
+  to: number
+) {
   for (let tick = from; tick < to; tick++) {
-    app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 });
+    // Refused on every third tick, as the game says.
+    yield* Effect.exit(
+      app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 })
+    );
     if (tick % 4 === 0) {
-      app.enqueueByName("ch/Spawn", {});
+      yield* app.enqueueByName("ch/Spawn", {});
     }
     if (tick % 7 === 3) {
-      app.enqueueByName("ch/Cull", { slot: 1 });
+      yield* app.enqueueByName("ch/Cull", { slot: 1 });
     }
-    app.tick(1);
+    yield* app.tick(1);
   }
-};
+});
 
 describe("change queries in an app", () => {
   it.effect(
@@ -1408,7 +1415,7 @@ describe("change queries in an app", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game();
-        app.tick(1);
+        yield* app.tick(1);
         // Tick 1: entities 2 and 5 drift (ids 1..6, tick 1). Count runs
         // for the first time and sees all six; Early saw six too.
         expect(yield* tallyOf(app)).toMatchObject({
@@ -1416,13 +1423,13 @@ describe("change queries in an app", () => {
           early: 6,
           born: 0,
         });
-        app.tick(1);
+        yield* app.tick(1);
         // Tick 2: Early sees the two that drifted in tick 1, a tick late;
         // Count sees the two that drift in tick 2.
         expect(yield* tallyOf(app)).toMatchObject({ moved: 8, early: 8 });
-        app.dispatch(Push, { slot: 0, refuse: false });
-        app.dispatch(Spawn, {});
-        app.tick(1);
+        yield* app.dispatch(Push, { slot: 0, refuse: false });
+        yield* app.dispatch(Spawn, {});
+        yield* app.tick(1);
         // Early: the two that drifted in tick 2, one of which was also
         // pushed, and the one that was spawned. Count: the pushed one, the
         // spawned one, and the two that drift in tick 3.
@@ -1445,15 +1452,17 @@ describe("change queries in an app", () => {
       const quiet = yield* App.make(
         App.define({ plugins: [One], systems: [Count], handlers: [push] })
       );
-      quiet.tick(1);
+      yield* quiet.tick(1);
       expect((yield* tallyOf(quiet)).moved).toBe(1);
       expect(
-        Exit.isFailure(quiet.dispatch(Push, { slot: 0, refuse: true }))
+        Exit.isFailure(
+          yield* Effect.exit(quiet.dispatch(Push, { slot: 0, refuse: true }))
+        )
       ).toBe(true);
-      quiet.tick(1);
+      yield* quiet.tick(1);
       expect((yield* tallyOf(quiet)).moved).toBe(1);
-      quiet.dispatch(Push, { slot: 0, refuse: false });
-      quiet.tick(1);
+      yield* quiet.dispatch(Push, { slot: 0, refuse: false });
+      yield* quiet.tick(1);
       expect((yield* tallyOf(quiet)).moved).toBe(2);
     })
   );
@@ -1482,12 +1491,18 @@ describe("change queries in an app", () => {
           handlers: [inspect, push],
         })
       );
-      expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
-      expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
-      app.dispatch(Push, { slot: 1, refuse: false });
-      app.tick(1);
-      expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
-      app.tick(1);
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(3)
+      );
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(0)
+      );
+      yield* app.dispatch(Push, { slot: 1, refuse: false });
+      yield* app.tick(1);
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(1)
+      );
+      yield* app.tick(1);
       // Each reads from its own place.
       expect(watched).toEqual([3, 0]);
     })
@@ -1498,10 +1513,10 @@ describe("change queries in an app", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game();
-        play(app, 0, 40);
+        yield* play(app, 0, 40);
         expect((yield* tallyOf(app)).moved).toBeGreaterThan(40);
         expect((yield* tallyOf(app)).gone).toBeGreaterThan(2);
-        const played = app.record();
+        const played = yield* app.record();
         const again = yield* Journal.replay(played, Game, {
           checkpointEvery: 1,
         });
@@ -1518,10 +1533,10 @@ describe("change queries in an app", () => {
       Effect.gen(function* () {
         for (const savedAt of [0, 1, 2, 9, 23]) {
           const app = yield* game();
-          play(app, 0, savedAt);
+          yield* play(app, 0, savedAt);
           // Between ticks, with changes waiting for both systems.
-          app.dispatchByName("ch/Push", { slot: 2, refuse: false });
-          const save = app.save();
+          yield* app.dispatchByName("ch/Push", { slot: 2, refuse: false });
+          const save = yield* Effect.exit(app.save());
           if (Exit.isFailure(save)) {
             throw new Error("the save was refused");
           }
@@ -1533,10 +1548,10 @@ describe("change queries in an app", () => {
           expect(read.value).toEqual(save.value);
           // Once a tick has run, there is a place to go on from.
           expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
-          play(app, savedAt, savedAt + 12);
+          yield* play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in a game loaded from the
           // save that was read, and every checkpoint of it holds.
-          const played = app.record(read.value);
+          const played = yield* app.record(read.value);
           const loaded = yield* Journal.replay(played, Game, {
             checkpointEvery: 1,
           });
@@ -1609,11 +1624,13 @@ describe("change queries in an app", () => {
         );
         const [, second] = made;
         assert(second !== undefined);
-        expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4, 4]));
-        app.dispatch(Hit, {
+        expect(yield* Effect.exit(app.dispatch(Look, {}))).toEqual(
+          Exit.succeed([4, 4, 4])
+        );
+        yield* app.dispatch(Hit, {
           entity: placedIn(yield* app.read(World), second),
         });
-        const save = app.save();
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1641,7 +1658,9 @@ describe("change queries in an app", () => {
         );
         // Only the entity hit since the last look counts as changed, and
         // none as added.
-        expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([1, 1, 0]));
+        expect(yield* Effect.exit(loaded.dispatch(Look, {}))).toEqual(
+          Exit.succeed([1, 1, 0])
+        );
       })
   );
 
@@ -1650,8 +1669,8 @@ describe("change queries in an app", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* game();
-        play(app, 0, 3);
-        const save = app.save();
+        yield* play(app, 0, 3);
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }

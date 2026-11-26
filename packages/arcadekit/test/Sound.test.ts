@@ -20,6 +20,7 @@ import {
   World,
 } from "../src/index.ts";
 import * as Build from "../src/internal/build.ts";
+import { thrown } from "./checks.ts";
 import { steered } from "./peers.ts";
 
 // --- a game that makes noise -------------------------------------------------------
@@ -126,12 +127,12 @@ const play = Effect.fnUntraced(function* (
 });
 
 /** A ball that hits the floor on the next tick, at `speed`. */
-const about = (
+const about = Effect.fnUntraced(function* (
   app: Effect.Success<ReturnType<typeof play>>,
   speed: number
-): void => {
-  app.dispatch(Throw, { speed });
-};
+) {
+  yield* app.dispatch(Throw, { speed });
+});
 
 describe("Sound.cues", () => {
   it.effect(
@@ -145,28 +146,28 @@ describe("Sound.cues", () => {
         }).pipe(Effect.provide(Sound.layer(sound)));
         const session = steered(built);
         const { app } = session;
-        session.tick(0.1);
-        app.frame();
-        const moment = session.capture();
-        app.enqueue(Drop, { height: 5 });
-        session.tick(0.1);
-        app.frame();
+        yield* session.tick(0.1);
+        yield* app.frame();
+        const moment = yield* session.capture();
+        yield* app.enqueue(Drop, { height: 5 });
+        yield* session.tick(0.1);
+        yield* app.frame();
         expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
         // A session goes back, and runs the tick again with the same drop: it
         // was heard already, so it isn't played twice.
-        session.rewind(moment);
-        app.enqueue(Drop, { height: 5 });
-        session.tick(0.1);
-        app.frame();
+        yield* session.rewind(moment);
+        yield* app.enqueue(Drop, { height: 5 });
+        yield* session.tick(0.1);
+        yield* app.frame();
         expect(sound.played.map((one) => one.cue)).toEqual(["whoosh"]);
         // Gone back again, the tick runs without it: nothing to play. Then a drop
         // of its own, past where the game had got to, is heard.
-        session.rewind(moment);
-        session.tick(0.1);
-        app.frame();
-        app.enqueue(Drop, { height: 5 });
-        session.tick(0.1);
-        app.frame();
+        yield* session.rewind(moment);
+        yield* session.tick(0.1);
+        yield* app.frame();
+        yield* app.enqueue(Drop, { height: 5 });
+        yield* session.tick(0.1);
+        yield* app.frame();
         expect(sound.played.map((one) => one.cue)).toEqual([
           "whoosh",
           "whoosh",
@@ -180,31 +181,31 @@ describe("Sound.cues", () => {
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
         const app = yield* play(sound);
-        app.dispatch(Drop, { height: 5 });
+        yield* app.dispatch(Drop, { height: 5 });
         // Nothing is played until a frame is drawn: not by the action, not by a tick.
         expect(sound.played).toEqual([]);
-        app.tick(0.1);
+        yield* app.tick(0.1);
         expect(sound.played).toEqual([]);
-        app.frame();
+        yield* app.frame();
         expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
         // Heard once: the next frames have nothing new to play.
-        app.frame(0.5);
-        app.tick(0.1);
-        app.frame();
+        yield* app.frame(0.5);
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played.length).toBe(1);
 
         // A payload decides the cue, how loud, and how fast.
-        about(app, 5);
-        app.tick(0.1);
-        app.frame();
+        yield* about(app, 5);
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played.at(-1)).toEqual({
           cue: "thud",
           volume: 0.6,
           rate: 1,
         });
-        about(app, 20);
-        app.tick(0.1);
-        app.frame();
+        yield* about(app, 20);
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played.at(-1)).toEqual({
           cue: "thud",
           volume: 1,
@@ -213,9 +214,9 @@ describe("Sound.cues", () => {
         // Or that there is nothing to hear.
         const before = sound.played.length;
         const lines = asked;
-        about(app, 0.5);
-        app.tick(0.1);
-        app.frame();
+        yield* about(app, 0.5);
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(asked).toBe(lines + 1);
         expect(sound.played.length).toBe(before);
       })
@@ -227,19 +228,19 @@ describe("Sound.cues", () => {
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
         const app = yield* play(sound);
-        app.frame();
+        yield* app.frame();
         // Three ticks and then one frame: a drop in the first, a bounce in the last.
-        app.enqueue(Drop, { height: 0.001 });
-        app.tick(0.1);
-        app.tick(0.1);
-        about(app, 6);
-        app.tick(0.1);
-        app.frame();
+        yield* app.enqueue(Drop, { height: 0.001 });
+        yield* app.tick(0.1);
+        yield* app.tick(0.1);
+        yield* about(app, 6);
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "thud"]);
         // A frame with no tick before it, and ticks with nothing to say.
-        app.frame(0.4);
-        app.tick(0.001);
-        app.frame();
+        yield* app.frame(0.4);
+        yield* app.tick(0.001);
+        yield* app.frame();
         expect(sound.played.length).toBe(2);
       })
   );
@@ -251,12 +252,12 @@ describe("Sound.cues", () => {
         const sound = Sound.makeRecorder();
         const app = yield* play(sound);
         for (const speed of [3, 9, 4, 0.1]) {
-          about(app, speed);
+          yield* about(app, speed);
         }
-        app.enqueue(Drop, { height: 50 });
-        app.enqueue(Drop, { height: 60 });
-        app.tick(0.01);
-        app.frame();
+        yield* app.enqueue(Drop, { height: 50 });
+        yield* app.enqueue(Drop, { height: 60 });
+        yield* app.tick(0.01);
+        yield* app.frame();
         // Four bounces and two drops: two sounds. The loudest bounce was the
         // fast one, and it is played at its own rate.
         expect(asked).toBe(4);
@@ -266,9 +267,9 @@ describe("Sound.cues", () => {
           { cue: "thud", volume: Math.fround(9 + 10 * 0.01) / 10, rate: 2 },
         ]);
         // The next frame's events are another frame's: played again.
-        about(app, 3);
-        app.tick(0.01);
-        app.frame();
+        yield* about(app, 3);
+        yield* app.tick(0.01);
+        yield* app.frame();
         expect(sound.played.length).toBe(3);
         expect(sound.played[2]!.cue).toBe("thud");
         expect(sound.played[2]!.rate).toBe(1);
@@ -279,10 +280,12 @@ describe("Sound.cues", () => {
     Effect.gen(function* () {
       const sound = Sound.makeRecorder();
       const app = yield* play(sound);
-      expect(Exit.isFailure(app.dispatch(Drop, { height: 500 }))).toBe(true);
-      app.enqueue(Drop, { height: 500 });
-      app.tick(0.1);
-      app.frame();
+      expect(
+        Exit.isFailure(yield* Effect.exit(app.dispatch(Drop, { height: 500 })))
+      ).toBe(true);
+      yield* app.enqueue(Drop, { height: 500 });
+      yield* app.tick(0.1);
+      yield* app.frame();
       expect(sound.played).toEqual([]);
     })
   );
@@ -298,19 +301,19 @@ describe("Sound.cues", () => {
         const app = yield* App.make(
           App.define({ plugins: [Rules, Sound.plugin], systems: [Quiet] })
         ).pipe(Effect.provide(Sound.layer(sound)));
-        app.dispatch(Mute, { on: true });
-        app.tick(0.1);
-        app.dispatch(Drop, { height: 1 });
-        app.tick(0.1);
-        app.frame();
+        yield* app.dispatch(Mute, { on: true });
+        yield* app.tick(0.1);
+        yield* app.dispatch(Drop, { height: 1 });
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played).toEqual([]);
-        app.dispatch(Mute, { on: false });
-        app.tick(0.1);
-        app.frame();
+        yield* app.dispatch(Mute, { on: false });
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played).toEqual([]);
-        app.dispatch(Drop, { height: 1 });
-        app.tick(0.1);
-        app.frame();
+        yield* app.dispatch(Drop, { height: 1 });
+        yield* app.tick(0.1);
+        yield* app.frame();
         expect(sound.played).toEqual([{ cue: "whoosh", volume: 1, rate: 1 }]);
         expect(Quiet.name).toBe("sd/Quiet");
         expect(Quiet.stage).toBe("frame");
@@ -320,16 +323,16 @@ describe("Sound.cues", () => {
   it.effect("reads nothing and plays nothing where sound goes nowhere", () =>
     Effect.gen(function* () {
       const app = yield* play(undefined);
-      about(app, 5);
-      app.dispatch(Drop, { height: 1 });
-      app.tick(0.1);
-      app.frame();
+      yield* about(app, 5);
+      yield* app.dispatch(Drop, { height: 1 });
+      yield* app.tick(0.1);
+      yield* app.frame();
       expect(asked).toBe(0);
       // With an output, the same frame asks.
       const heard = yield* play(Sound.makeRecorder());
-      about(heard, 5);
-      heard.tick(0.1);
-      heard.frame();
+      yield* about(heard, 5);
+      yield* heard.tick(0.1);
+      yield* heard.frame();
       expect(asked).toBe(1);
     })
   );
@@ -339,12 +342,12 @@ describe("Sound.cues", () => {
       const sound = Sound.makeRecorder();
       const app = yield* play(sound);
       const advance = Driver.fixedStep(app, { hz: 10 });
-      about(app, 5);
-      app.enqueue(Drop, { height: 3 });
+      yield* about(app, 5);
+      yield* app.enqueue(Drop, { height: 3 });
       // A frame in which no tick is due plays nothing: nothing happened.
-      advance(0.01);
+      yield* advance(0.01);
       expect(sound.played).toEqual([]);
-      advance(0.1);
+      yield* advance(0.1);
       expect(sound.played.map((one) => one.cue)).toEqual(["whoosh", "thud"]);
     })
   );
@@ -388,40 +391,40 @@ describe("Sound.Player", () => {
         const app = yield* App.make(
           App.define({ plugins: [Sound.plugin], systems: [Click] })
         ).pipe(Effect.provide(Sound.layer(sound)));
-        const frame = (
+        const frame = Effect.fnUntraced(function* (
           ...asked: (Sound.Options | undefined)[]
-        ): Sound.Played[] => {
+        ) {
           clicks = asked;
           sound.played.length = 0;
-          app.frame();
+          yield* app.frame();
           return [...sound.played];
-        };
+        });
         // As it is, and as it is told.
-        expect(frame(undefined)).toEqual([
+        expect(yield* frame(undefined)).toEqual([
           { cue: "click", volume: 1, rate: 1 },
         ]);
-        expect(frame({ volume: 0.25 })).toEqual([
+        expect(yield* frame({ volume: 0.25 })).toEqual([
           { cue: "click", volume: 0.25, rate: 1 },
         ]);
-        expect(frame({ rate: 1.5 })).toEqual([
+        expect(yield* frame({ rate: 1.5 })).toEqual([
           { cue: "click", volume: 1, rate: 1.5 },
         ]);
         // Not below nothing.
-        expect(frame({ volume: -3, rate: 0.5 })).toEqual([
+        expect(yield* frame({ volume: -3, rate: 0.5 })).toEqual([
           { cue: "click", volume: 0, rate: 0.5 },
         ]);
         expect(heard).toEqual([0, 0, 0, 0]);
         // Asked several times in one frame it is one sound, as the loudest
         // asked, and of two as loud the first.
         expect(
-          frame(
+          yield* frame(
             { volume: 0.5, rate: 2 },
             { volume: 0.9, rate: 3 },
             { volume: 0.9 }
           )
         ).toEqual([{ cue: "click", volume: 0.9, rate: 3 }]);
         // And nothing is left of a frame for the next.
-        expect(frame()).toEqual([]);
+        expect(yield* frame()).toEqual([]);
         expect(app.frameOrder).toEqual([
           "arcadekit/Sound.Begin",
           "sd/Click",
@@ -447,10 +450,10 @@ describe("Sound.Player", () => {
         const app = yield* App.make(
           App.define({ plugins: [Game], systems: [Theirs, Mine] })
         ).pipe(Effect.provide(Sound.layer(sound)));
-        about(app, 5);
-        app.dispatch(Drop, { height: 50 });
-        app.tick(0.1);
-        app.frame();
+        yield* about(app, 5);
+        yield* app.dispatch(Drop, { height: 50 });
+        yield* app.tick(0.1);
+        yield* app.frame();
         // The game's own cues ask for a whoosh and a thud, the second system
         // for both again, and the third for a whoosh: one of each, each as
         // the loudest asked, in the order they were first asked for.
@@ -477,9 +480,9 @@ describe("Sound.Player", () => {
       const app = yield* App.make(
         App.define({ plugins: [Sound.plugin], systems: [Click] })
       ).pipe(Effect.provide(Sound.layer(sound)));
-      expect(() => app.frame()).toThrow("broken");
+      expect(yield* thrown(app.frame())).toThrow("broken");
       failing = false;
-      app.frame();
+      yield* app.frame();
       expect(sound.played).toEqual([]);
     })
   );
@@ -493,8 +496,8 @@ describe("Sound.Player", () => {
         (yield* Sound.Player).play("anything");
       });
       const Asking = App.define({ plugins: [Sound.plugin], systems: [Ask] });
-      (yield* App.make(Asking)).frame();
-      (yield* App.make(Asking).pipe(
+      yield* (yield* App.make(Asking)).frame();
+      yield* (yield* App.make(Asking).pipe(
         Effect.provide(Sound.layer(Sound.makeRecorder()))
       )).frame();
       expect(seen).toEqual([false, true]);
@@ -529,21 +532,22 @@ describe("a game with sound", () => {
           checkpointEvery: 1,
         });
         for (const app of [heard, deaf]) {
-          app.dispatch(Drop, { height: 2 });
-          app.dispatch(Drop, { height: 0.5 });
+          yield* app.dispatch(Drop, { height: 2 });
+          yield* app.dispatch(Drop, { height: 0.5 });
         }
         const heardWorld = yield* heard.read(World);
         const deafWorld = yield* deaf.read(World);
         for (let i = 0; i < 80; i++) {
-          heard.tick(0.05);
-          heard.frame(0.5);
-          deaf.tick(0.05);
+          yield* heard.tick(0.05);
+          yield* heard.frame(0.5);
+          yield* deaf.tick(0.05);
           expect(heardWorld.hash()).toBe(deafWorld.hash());
         }
         expect(heard.actionLog).toEqual(deaf.actionLog);
-        const saves = [heard.save(), deaf.save()].map((save) =>
-          Exit.isSuccess(save) ? save.value : undefined
-        );
+        const saves = [
+          yield* Effect.exit(heard.save()),
+          yield* Effect.exit(deaf.save()),
+        ].map((save) => (Exit.isSuccess(save) ? save.value : undefined));
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
         // And it was heard: every bounce that was fast enough.
@@ -563,14 +567,14 @@ describe("a game with sound", () => {
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
         const app = yield* play(sound, 3);
-        app.dispatch(Drop, { height: 1 });
+        yield* app.dispatch(Drop, { height: 1 });
         for (let i = 0; i < 30; i++) {
-          app.tick(0.05);
-          app.frame();
+          yield* app.tick(0.05);
+          yield* app.frame();
         }
         expect(sound.played.length).toBeGreaterThan(1);
         const again = Sound.makeRecorder();
-        const recording = app.record();
+        const recording = yield* app.record();
         const replayed = yield* Journal.replay(recording, Noisy, {
           checkpointEvery: 1,
         }).pipe(Effect.provide(Sound.layer(again)));

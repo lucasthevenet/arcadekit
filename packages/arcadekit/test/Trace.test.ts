@@ -106,10 +106,10 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game());
-        app.enqueue(Begin, {});
-        app.enqueue(Add, { by: 2 });
-        app.enqueue(Refused, {});
-        app.tick(1 / 60);
+        yield* app.enqueue(Begin, {});
+        yield* app.enqueue(Add, { by: 2 });
+        yield* app.enqueue(Refused, {});
+        yield* app.tick(1 / 60);
 
         const ticks = spans.filter((span) => span.name === "arcadekit/tick");
         expect(ticks).toHaveLength(1);
@@ -148,8 +148,8 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game());
-        app.tick(1 / 60);
-        app.dispatch(Add, { by: 2 });
+        yield* app.tick(1 / 60);
+        yield* app.dispatch(Add, { by: 2 });
         const added = spans.find((span) => span.name === "action:tr/Add")!;
         expect(added.parent).toEqual(Option.none());
       })
@@ -161,10 +161,10 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game());
-        app.input();
-        app.tick(1 / 60);
-        app.frame(0.5);
-        app.frame(0.75);
+        yield* app.input();
+        yield* app.tick(1 / 60);
+        yield* app.frame(0.5);
+        yield* app.frame(0.75);
 
         expect(
           spans.filter((span) => span.parent._tag === "None").map((s) => s.name)
@@ -191,9 +191,9 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game().pipe(Effect.withSpan("made")));
-        app.input();
-        app.tick(1 / 60);
-        app.frame(0.5);
+        yield* app.input();
+        yield* app.tick(1 / 60);
+        yield* app.frame(0.5);
         const roots = spans.filter((span) =>
           span.name.startsWith("arcadekit/")
         );
@@ -211,7 +211,9 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game());
-        expect(Exit.isSuccess(app.dispatch(Add, { by: 1 }))).toBe(true);
+        expect(
+          Exit.isSuccess(yield* Effect.exit(app.dispatch(Add, { by: 1 })))
+        ).toBe(true);
         expect(spans.map((span) => [span.name, span.parent._tag])).toEqual([
           ["action:tr/Add", "None"],
         ]);
@@ -230,7 +232,7 @@ describe("tracing an app", () => {
           tracer,
           App.make(App.define({ systems: [Fails] }))
         );
-        const exit = app.tickExit(1 / 60);
+        const exit = yield* Effect.exit(app.tick(1 / 60));
         expect(Exit.isFailure(exit)).toBe(true);
         const [tick, fails] = spans;
         expect(tick!.name).toBe("arcadekit/tick");
@@ -253,9 +255,9 @@ describe("tracing an app", () => {
       const quietWorld = yield* quiet.read(World);
       for (let tick = 0; tick < 30; tick++) {
         for (const app of [tracing, quiet]) {
-          app.enqueue(Add, { by: tick });
-          app.tick(1 / 60);
-          app.frame(0.5);
+          yield* app.enqueue(Add, { by: tick });
+          yield* app.tick(1 / 60);
+          yield* app.frame(0.5);
         }
         expect(tracingWorld.hash()).toBe(quietWorld.hash());
       }
@@ -283,7 +285,7 @@ describe("whether an app traces", () => {
     const made = wrap(App.make(App.define({ systems: [Look] })));
     const app =
       tracer === undefined ? yield* made : yield* traced(tracer, made);
-    app.tick(1 / 60);
+    yield* app.tick(1 / 60);
     return seen!;
   });
 

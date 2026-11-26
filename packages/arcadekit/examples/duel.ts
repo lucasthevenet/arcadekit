@@ -236,7 +236,7 @@ const program = Effect.gen(function* () {
     attacker: Entity,
     target: Entity
   ) {
-    // The outcome of a dispatch is an Exit, and an Exit is an Effect.
+    // A dispatch is an Effect that fails with the action's refusal.
     const outcome = yield* Effect.match(
       app.dispatch(Strike, { attacker, target }),
       {
@@ -262,13 +262,13 @@ const program = Effect.gen(function* () {
       }
     );
     yield* Console.log(`${who} strikes: ${outcome}`);
-    app.tick(1);
-    app.frame();
+    yield* app.tick(1);
+    yield* app.frame();
   });
   const passTurn = Effect.fnUntraced(function* (player: 1 | 2) {
-    app.dispatch(Pass, { player });
-    app.tick(1);
-    app.frame();
+    yield* app.dispatch(Pass, { player });
+    yield* app.tick(1);
+    yield* app.frame();
     yield* Console.log(`player ${player} passes -> ${yield* standing(app)}`);
   });
 
@@ -290,7 +290,7 @@ const program = Effect.gen(function* () {
   // back, it reproduces this game in a fresh one, which checks itself against
   // those hashes as it goes. The replay installs only the rules, so it is
   // silent.
-  const saved = Journal.encode(app.record());
+  const saved = Journal.encode(yield* app.record());
   yield* Console.log(`saved: ${saved.byteLength} bytes`);
   // A fresh app, held in a scope that closes it when the replay is over.
   const replay = Effect.fnUntraced(function* (bytes: Uint8Array) {
@@ -338,7 +338,7 @@ const program = Effect.gen(function* () {
 
   // A save is the game as it stands, as bytes. Loaded into the rules alone,
   // it is the same fight at the same point: no replay, and no setup run.
-  const save = app.save();
+  const save = yield* Effect.exit(app.save());
   if (Exit.isSuccess(save)) {
     const file = Save.encode(save.value);
     const read = Save.decode(file);

@@ -30,10 +30,10 @@ const program = Effect.gen(function* () {
     (made) => made.close // closes its app with the program's scope
   );
 
-  session.app.enqueue(Move, { dx: 1 }); // as in a single-player game
+  yield* session.app.enqueue(Move, { dx: 1 }); // as in a single-player game
 
   const send = (message: Message.Message) => {};
-  session.tick(); // true if the tick ran, false if it is waiting for a peer
+  yield* session.tick(); // true if the tick ran, false if it is waiting for a peer
   for (const message of session.outgoing()) {
     send(message); // to every other peer
   }
@@ -83,7 +83,7 @@ Before each tick it isn't sure of, the session captures the game with [`Timeline
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one. A very large world pays that cost on each uncertain tick.
-- When the game can't be captured, because a field holds a value no snapshot can store, the tick doesn't run, and `session.tickExit()` fails with `Save.SaveRefused`.
+- When the game can't be captured, because a field holds a value no snapshot can store, the tick doesn't run, and `session.tick()` fails with `Save.SaveRefused`.
 
 ## Drive a session
 

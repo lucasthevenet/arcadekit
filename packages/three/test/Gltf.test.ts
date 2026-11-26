@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import type { MockInstance } from "@effect/vitest";
 /// <reference types="node" />
 import {
   Action,
@@ -24,7 +25,6 @@ import { FileLoader, InstancedMesh, Mesh, Texture } from "three";
 import type { BufferGeometry, MeshStandardMaterial, Scene } from "three";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import type { MockInstance } from "vitest";
 
 import { Gltf, Three } from "../src/index.ts";
 
@@ -757,17 +757,19 @@ describe("a level's models", () => {
             )
           )
         );
-        const travel = async (to: "dock" | "space"): Promise<void> => {
-          app.enqueue(Go, { to });
-          app.tick(1);
-          app.frame();
+        const travel = Effect.fnUntraced(function* (to: "dock" | "space") {
+          yield* app.enqueue(Go, { to });
+          yield* app.tick(1);
+          yield* app.frame();
           // A model is read in its own time.
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          app.frame();
-        };
-        app.frame();
+          yield* Effect.promise(
+            () => new Promise((resolve) => setTimeout(resolve, 0))
+          );
+          yield* app.frame();
+        });
+        yield* app.frame();
         expect(scene!.children).toEqual([]);
-        yield* Effect.promise(() => travel("space"));
+        yield* travel("space");
         const [one, two] = scene!.children.filter(
           (child) => !(child instanceof InstancedMesh)
         );
@@ -786,7 +788,7 @@ describe("a level's models", () => {
         hull.addEventListener("dispose", () => {
           disposed++;
         });
-        yield* Effect.promise(() => travel("dock"));
+        yield* travel("dock");
         expect(scene!.children).toEqual([]);
         expect(disposed).toBe(1);
         yield* app.close;

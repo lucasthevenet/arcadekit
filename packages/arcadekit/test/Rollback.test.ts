@@ -51,12 +51,16 @@ const withMade = <T, A, E2 = never>(
  * enough for every message that had something to say to arrive, and then
  * every peer brought to the same tick. Returns that tick.
  */
-const settle = (peers: readonly Peer[], net: Network, lag: number): number => {
+const settle = Effect.fnUntraced(function* (
+  peers: readonly Peer[],
+  net: Network,
+  lag: number
+) {
   for (let i = 0; i < 3 * lag + 12; i++) {
-    round(peers, net);
+    yield* round(peers, net);
   }
-  return catchUp(peers, net);
-};
+  return yield* catchUp(peers, net);
+});
 
 describe("a rollback session", () => {
   afterEach(() => {
@@ -71,13 +75,13 @@ describe("a rollback session", () => {
           const net = network(3, { min: 4, max: 6 });
           const [ada, grace] = peers as [Peer, Peer];
           for (let i = 0; i < 5; i++) {
-            round(peers, net);
+            yield* round(peers, net);
           }
           // Nobody waited: a tick a round, with messages four rounds away.
           expect(ada.app.time.tick).toBe(5);
           expect(grace.app.time.tick).toBe(5);
-          ada.app.enqueue(Drop, { by: "ada", value: 9 });
-          round(peers, net);
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 9 });
+          yield* round(peers, net);
           // It is in ada's world, applied on the tick it was issued for.
           const move = {
             tick: 5,
@@ -93,7 +97,7 @@ describe("a rollback session", () => {
           expect(grace.app.time.tick).toBe(6);
           expect(moves(grace.app.actionLog)).not.toContainEqual(move);
           const before = grace.session.rewinds;
-          settle(peers, net, 6);
+          yield* settle(peers, net, 6);
           // When she hears, it is put where it belongs: on tick 5, not on the
           // tick the message arrived in.
           expect(moves(grace.app.actionLog)).toContainEqual(move);
@@ -122,10 +126,10 @@ describe("a rollback session", () => {
                 for (const peer of peers) {
                   yield* act(peer);
                 }
-                round(peers, net);
+                yield* round(peers, net);
               }
               const [ada, grace] = peers as [Peer, Peer];
-              const ticks = settle(peers, net, lag.max);
+              const ticks = yield* settle(peers, net, lag.max);
               expect(ada.app.time.tick, where).toBe(ticks);
               expect(grace.app.time.tick, where).toBe(ticks);
               // It was a game: moves were made and refused, and unless the
@@ -165,7 +169,7 @@ describe("a rollback session", () => {
               // And the game a single app plays when it is given those actions
               // on those ticks and never goes back: the replay holds every
               // tick's hash against the log's, and ends on the same one.
-              const played = ada.app.record();
+              const played = yield* ada.app.record();
               yield* withApp(
                 Journal.replay(played, CoinGame, { checkpointEvery: 1 }),
                 (_, alone) =>
@@ -190,9 +194,9 @@ describe("a rollback session", () => {
         for (let i = 0; i < 200; i++) {
           yield* act(peers[0]!);
           yield* act(peers[1]!);
-          round(peers, net);
+          yield* round(peers, net);
         }
-        const ticks = settle(peers, net, 6);
+        const ticks = yield* settle(peers, net, 6);
         const [first, ...others] = peers as [Peer, Peer, Peer];
         for (const other of others) {
           expect(other.world.hash()).toBe(first.world.hash());
@@ -200,7 +204,7 @@ describe("a rollback session", () => {
           expect(other.session.drifted).toBeUndefined();
         }
         expect(first.session.rewinds).toBeGreaterThan(5);
-        const recording = first.app.record();
+        const recording = yield* first.app.record();
         expect(recording.end).toBe(ticks);
         yield* withApp(
           Journal.replay(recording, CoinGame, { checkpointEvery: 1 }),
@@ -229,7 +233,7 @@ describe("a rollback session", () => {
                 const act = players(6);
                 for (let i = 0; i < 120; i++) {
                   yield* act(peers[0]!);
-                  round(peers, net);
+                  yield* round(peers, net);
                 }
                 return peers[0]!.app.time.tick;
               })
@@ -246,15 +250,15 @@ describe("a rollback session", () => {
         const net = network(7, { min: 2, max: 5 });
         const [ada, grace] = peers as [Peer, Peer];
         for (let i = 0; i < 60; i++) {
-          round(peers, net);
+          yield* round(peers, net);
         }
         // Sixty ticks ahead of the network, every one predicted right.
         expect(ada.app.time.tick).toBe(60);
         expect(ada.session.rewinds).toBe(0);
         expect(grace.session.resimulated).toBe(0);
-        ada.app.enqueue(Drop, { by: "ada", value: 1 });
+        yield* ada.app.enqueue(Drop, { by: "ada", value: 1 });
         for (let i = 0; i < 20; i++) {
-          round(peers, net);
+          yield* round(peers, net);
         }
         // One move: grace went back once, and ada, who made it, never.
         expect(grace.session.rewinds).toBe(1);
@@ -272,7 +276,7 @@ describe("a rollback session", () => {
         Effect.gen(function* () {
           const [ada] = peers as [Peer];
           for (let i = 0; i < 5; i++) {
-            ada.session.tick();
+            yield* ada.session.tick();
           }
           expect(ada.session.confirmed).toBe(0);
           expect(ada.session.kept).toBe(5);
@@ -291,7 +295,7 @@ describe("a rollback session", () => {
           // move: it is right up to the tick the move is for, and no further.
           expect(ada.session.confirmed).toBe(2);
           expect(ada.session.rewinds).toBe(0);
-          ada.session.tick();
+          yield* ada.session.tick();
           expect(ada.session.rewinds).toBe(1);
           expect(ada.session.resimulated).toBe(3);
           expect(ada.session.confirmed).toBe(5);
@@ -337,11 +341,11 @@ describe("a rollback session", () => {
           }),
           (ada) =>
             Effect.gen(function* () {
-              expect(ada.tick()).toBe(true);
-              ada.frame(0);
-              ada.app.enqueue(Ring, {});
-              expect(ada.tick()).toBe(true);
-              ada.frame(0);
+              expect(yield* ada.tick()).toBe(true);
+              yield* ada.frame(0);
+              yield* ada.app.enqueue(Ring, {});
+              expect(yield* ada.tick()).toBe(true);
+              yield* ada.frame(0);
               expect(heard).toEqual(["ada"]);
               // Grace rang on the first tick: ada goes back, and runs ada's ring
               // again after grace's.
@@ -351,8 +355,8 @@ describe("a rollback session", () => {
                 actions: [{ name: "rb/Ring", payload: {} }],
               });
               ada.receive({ from: "grace", tick: 1, actions: [] });
-              expect(ada.tick()).toBe(true);
-              ada.frame(0);
+              expect(yield* ada.tick()).toBe(true);
+              yield* ada.frame(0);
               expect(ada.rewinds).toBe(1);
               expect(heard).toEqual(["ada", "grace"]);
             })
@@ -379,14 +383,14 @@ describe("a rollback session", () => {
       expect(start).toBe(2);
       for (let tick = 0; tick < 20; tick++) {
         sure.receive({ from: "grace", tick, actions: [] });
-        expect(sure.tick()).toBe(true);
+        expect(yield* sure.tick()).toBe(true);
         expect(sure.kept).toBe(0);
       }
       expect(sure.confirmed).toBe(20);
       // Grace says nothing: every tick is a guess, and is captured.
       const unsure = yield* counted;
       for (let tick = 0; tick < 5; tick++) {
-        expect(unsure.tick()).toBe(true);
+        expect(yield* unsure.tick()).toBe(true);
         expect(unsure.kept).toBe(tick + 1);
       }
       expect(unsure.confirmed).toBe(0);
@@ -401,21 +405,21 @@ describe("a rollback session", () => {
         expect(ada.session.delay).toBe(0);
         for (let i = 0; i < 3; i++) {
           expect(ada.session.waitingFor).toEqual([]);
-          expect(ada.session.tick()).toBe(true);
+          expect(yield* ada.session.tick()).toBe(true);
         }
         // Three ticks past what grace has said, which is nothing.
         expect(ada.session.waitingFor).toEqual(["grace"]);
-        expect(ada.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(false);
         expect(ada.app.time.tick).toBe(3);
         expect(ada.session.confirmed).toBe(0);
-        grace.session.tick();
+        yield* grace.session.tick();
         for (const message of grace.session.outgoing()) {
           ada.session.receive(message);
         }
         // Grace has said tick 0: one more may run.
         expect(ada.session.confirmed).toBe(1);
-        expect(ada.session.tick()).toBe(true);
-        expect(ada.session.tick()).toBe(false);
+        expect(yield* ada.session.tick()).toBe(true);
+        expect(yield* ada.session.tick()).toBe(false);
         expect(ada.app.time.tick).toBe(4);
       })
     )
@@ -438,7 +442,7 @@ describe("a rollback session", () => {
               expect(session.ahead).toBe(8);
               expect(session.delay).toBe(0);
               let ran = 0;
-              while (session.tick()) {
+              while (yield* session.tick()) {
                 ran++;
               }
               expect(ran).toBe(8);
@@ -472,9 +476,9 @@ describe("a rollback session", () => {
         for (let i = 0; i < 150; i++) {
           yield* act(peers[0]!);
           yield* act(peers[1]!);
-          round(peers, net);
+          yield* round(peers, net);
         }
-        catchUp(peers, net);
+        yield* catchUp(peers, net);
         const [ada, grace] = peers as [Peer, Peer];
         expect(ada.session.rewinds).toBe(0);
         expect(ada.session.confirmed).toBe(ada.app.time.tick);
@@ -492,12 +496,12 @@ describe("a rollback session", () => {
         Effect.gen(function* () {
           const net = network(4, { min: 3, max: 5 });
           const [ada, grace] = peers as [Peer, Peer];
-          round(peers, net);
+          yield* round(peers, net);
           // All for the tick that runs next, on each peer before it hears the other.
-          grace.app.enqueue(Drop, { by: "grace", value: 1 });
-          grace.app.enqueue(Drop, { by: "grace", value: 2 });
-          ada.app.enqueue(Drop, { by: "ada", value: 3 });
-          settle(peers, net, 5);
+          yield* grace.app.enqueue(Drop, { by: "grace", value: 1 });
+          yield* grace.app.enqueue(Drop, { by: "grace", value: 2 });
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 3 });
+          yield* settle(peers, net, 5);
           const order = (peer: Peer) =>
             moves(peer.app.actionLog).map(
               (entry) => (entry.payload as { value: number }).value
@@ -516,19 +520,19 @@ describe("a rollback session", () => {
         Effect.gen(function* () {
           const net = network(4, { min: 3, max: 5 });
           const [ada, grace] = peers as [Peer, Peer];
-          ada.app.enqueue(Drop, { by: "ada", value: 5 });
-          settle(peers, net, 5);
+          yield* ada.app.enqueue(Drop, { by: "ada", value: 5 });
+          yield* settle(peers, net, 5);
           const coin = (yield* coinsOf(grace))[0]!;
           // The first of them: the bot has dropped others since.
           expect(yield* coinsOf(ada)).toEqual(yield* coinsOf(grace));
           expect(ada.world.get(coin, Coin)?.value).toBe(5);
           // Both go for it on the same tick. Each sees itself take it.
-          ada.app.enqueue(Take, { by: "ada", coin });
-          grace.app.enqueue(Take, { by: "grace", coin });
-          round(peers, net);
+          yield* ada.app.enqueue(Take, { by: "ada", coin });
+          yield* grace.app.enqueue(Take, { by: "grace", coin });
+          yield* round(peers, net);
           expect(ada.world.singleton(Purse).ada).toBe(5);
           expect(grace.world.singleton(Purse).grace).toBe(5);
-          settle(peers, net, 5);
+          yield* settle(peers, net, 5);
           // Ada's name comes first: hers stands on both, and grace's is taken back.
           for (const peer of peers) {
             const purse = peer.world.singleton(Purse);
@@ -569,8 +573,8 @@ describe("a rollback session", () => {
               Effect.gen(function* () {
                 setGlitch({ tick: at, apps: "all" });
                 const net = network(every + delay + ahead, lag);
-                peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
-                const stopped = untilStopped(peers, net, 800);
+                yield* peers[0]!.app.enqueue(Drop, { by: "ada", value: 3 });
+                const stopped = yield* untilStopped(peers, net, 800);
                 const checkpoint = Math.ceil(at / every) * every;
                 for (const peer of peers) {
                   const drifted = stopped.get(peer.name) as Drift.Drifted;
@@ -622,13 +626,17 @@ describe("a rollback session", () => {
           (session) =>
             Effect.gen(function* () {
               const { app } = session;
-              expect(session.tickExit()).toEqual(Exit.succeed(true));
-              expect(session.tickExit()).toEqual(Exit.succeed(true));
-              const exit = session.tickExit();
+              expect(yield* Effect.exit(session.tick())).toEqual(
+                Exit.succeed(true)
+              );
+              expect(yield* Effect.exit(session.tick())).toEqual(
+                Exit.succeed(true)
+              );
+              const exit = yield* Effect.exit(session.tick());
               expect(Exit.isFailure(exit)).toBe(true);
               const refused = Exit.isFailure(exit) ? exit.cause : undefined;
               expect(String(refused)).toMatch(/rb\/Holder/u);
-              expect(() => session.tick()).toThrow(Save.SaveRefused);
+              expect(yield* thrown(session.tick())).toThrow(Save.SaveRefused);
               // The tick did not run.
               expect(app.time.tick).toBe(2);
             })
@@ -698,8 +706,8 @@ describe("a rollback session", () => {
               const dots = (yield* app.read(Dots)).entities();
               // Ahead of grace, who has said nothing: every tick is a guess.
               for (let tick = 0; tick < 5; tick++) {
-                session.tick();
-                app.frame(0);
+                yield* session.tick();
+                yield* app.frame(0);
               }
               expect(drawn.map(({ changed }) => changed.length)).toEqual([
                 10, 0, 2, 0, 0,
@@ -714,8 +722,8 @@ describe("a rollback session", () => {
                 });
               }
               drawn.length = 0;
-              session.tick();
-              app.frame(0);
+              yield* session.tick();
+              yield* app.frame(0);
               expect(session.rewinds).toBe(1);
               // The dot moved in the future given up and the one moved in the ticks
               // run again changed, and the despawned one is back: the dot spawned

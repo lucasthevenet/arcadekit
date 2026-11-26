@@ -11,7 +11,7 @@
  * something.
  *
  *   session.receive(message)                  // a message from another peer
- *   session.tick()                            // true if the tick ran, false if it waits
+ *   yield* session.tick()                     // true if the tick ran, false if it waits
  *   for (const message of session.outgoing()) send(message)
  *
  * A peer holds no socket and no timer. It receives the messages that arrived
@@ -37,8 +37,7 @@
  *
  * `Session.make` makes a peer with its app.
  */
-import { Cause, Exit } from "effect";
-import type { Effect } from "effect";
+import { Effect, Exit } from "effect";
 
 import * as Action from "../Action.ts";
 import type * as App from "../App.ts";
@@ -74,7 +73,9 @@ export interface Options {
  * @typeParam E What a tick of its app can fail with.
  * @category Models
  */
-export interface Peer<E = never> extends Paced {
+export interface Peer<E = never> extends Paced<
+  E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
+> {
   /** This peer's name. */
   readonly me: string;
   /**
@@ -114,27 +115,22 @@ export interface Peer<E = never> extends Paced {
   readonly unheard: number;
   /**
    * Runs the next tick if this peer has every peer's message for it, and
-   * returns whether it ran. First it runs the input stage, as a driver does
-   * before an app's tick, and what the devices issue goes into the message
-   * for the tick `delay` ticks ahead. Input issued while the session waits
-   * for a peer goes into its next message.
+   * succeeds with whether it ran. First it runs the input stage, as a driver
+   * does before an app's tick, and what the devices issue goes into the
+   * message for the tick `delay` ticks ahead. Input issued while the session
+   * waits for a peer goes into its next message.
    *
    * A session that runs ahead runs a tick before every message for it is in,
    * up to `ahead` ticks past what every peer has sent. Before that, it goes
    * back over the ticks that a message with actions has since arrived for.
    *
-   * The tick simulates the session's `delta`. It throws what `tickExit` fails
-   * with.
+   * The tick simulates the session's `delta`. It fails with a system's error,
+   * `Drift.Unlike` once a peer has said it was made otherwise,
+   * `Drift.Drifted` once the peers have drifted apart, or `Save.SaveRefused`
+   * when the game can't be captured before a tick it runs ahead. The tick
+   * doesn't run then.
    */
-  readonly tick: () => boolean;
-  /**
-   * Runs the next tick as `tick` does, and returns a failure instead of
-   * throwing it: a system's error, `Drift.Unlike` once a peer has said it was
-   * made otherwise, `Drift.Drifted` once the peers have drifted apart, or
-   * `Save.SaveRefused` when the game can't be captured before a tick it runs
-   * ahead. The tick doesn't run then.
-   */
-  readonly tickExit: () => Exit.Exit<
+  readonly tick: () => Effect.Effect<
     boolean,
     E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
   >;
@@ -176,7 +172,7 @@ export interface Peer<E = never> extends Paced {
    */
   readonly kept: number;
   /** The app's frame stage, for a driver to draw the game with. */
-  readonly frame: (alpha: number, delta?: number) => void;
+  readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
 }
 
 /** Orders names by code unit, which is the same on every machine. */
@@ -189,7 +185,7 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  */
 export type PeerApp<E> = Pick<
   App.App<E>,
-  "actionLog" | "checkpoint" | "close" | "frame" | "inputExit"
+  "actionLog" | "checkpoint" | "close" | "frame" | "input"
 > &
   Timeline.Game;
 
@@ -334,7 +330,7 @@ export const build = <E, A extends PeerApp<E>>(
   };
 
   /** Runs one tick with the actions known for it. */
-  const run = (tick: number): Exit.Exit<void, E | Save.SaveRefused> => {
+  const run = Effect.fnUntraced(function* (tick: number) {
     let whole = true;
     for (const next of have.values()) {
       whole &&= next > tick;
@@ -344,11 +340,7 @@ export const build = <E, A extends PeerApp<E>>(
     } else {
       // A peer has not said: the tick is run as if it had nothing to say,
       // and the game is kept as it was, to go back to if it had.
-      const moment = Timeline.capture(app);
-      if (Exit.isFailure(moment)) {
-        return Exit.failCause(moment.cause);
-      }
-      moments.set(tick, moment.value);
+      moments.set(tick, yield* Timeline.capture(app));
     }
     // Every peer applies the tick's actions in the same order: peer by
     // peer in order of name, and each peer's in the order it issued them.
@@ -357,7 +349,7 @@ export const build = <E, A extends PeerApp<E>>(
         reins.deliver(action.name, action.payload, name);
       }
     }
-    const exit = reins.tickExit(delta);
+    const exit = yield* Effect.exit(reins.tick(delta));
     // The checkpoint the tick recorded, if it did.
     const last = app.actionLog.at(-1);
     if (
@@ -367,8 +359,8 @@ export const build = <E, A extends PeerApp<E>>(
     ) {
       drift.took(last.tick, last.hash);
     }
-    return exit;
-  };
+    return yield* exit;
+  });
 
   /** Releases what no tick will need again. */
   const prune = (): void => {
@@ -396,10 +388,10 @@ export const build = <E, A extends PeerApp<E>>(
     return Exit.fail(reason);
   };
 
-  const tickExit = (): Exit.Exit<
+  const ticking: Effect.Effect<
     boolean,
     E | Drift.Unlike | Drift.Drifted | Save.SaveRefused
-  > => {
+  > = Effect.gen(function* () {
     const now = app.time.tick;
     if (!begun) {
       begun = true;
@@ -410,7 +402,7 @@ export const build = <E, A extends PeerApp<E>>(
         now,
         last !== undefined && Action.isCheckpoint(last) && last.tick === now
           ? last.hash
-          : app.checkpoint()
+          : yield* app.checkpoint()
       );
     }
     let failed: Exit.Exit<never, E | Save.SaveRefused> | undefined;
@@ -419,16 +411,16 @@ export const build = <E, A extends PeerApp<E>>(
       // that tick, and forward again with what is known now.
       const from = wrong;
       wrong = undefined;
-      Timeline.rewind(app, moments.get(from)!, { again: true });
+      yield* Timeline.rewind(app, moments.get(from)!, { again: true });
       rewinds++;
       for (let tick = from; tick < now; tick++) {
-        const exit = run(tick);
+        const exit = yield* Effect.exit(run(tick));
         resimulated++;
         if (Exit.isFailure(exit)) {
           failed ??= Exit.failCause(exit.cause);
           if (app.time.tick === tick) {
             // The tick did not run at all: it could not be captured.
-            return failed;
+            return yield* failed;
           }
         }
       }
@@ -436,32 +428,30 @@ export const build = <E, A extends PeerApp<E>>(
     compare();
     prune();
     if (drift.drifted !== undefined) {
-      return stop(drift.drifted);
+      return yield* stop(drift.drifted);
     }
     if (failed !== undefined) {
-      return failed;
+      return yield* failed;
     }
     // The devices next: what they issue goes into this tick's message.
-    const heard = app.inputExit();
-    if (Exit.isFailure(heard)) {
-      return Exit.failCause(heard.cause);
-    }
+    yield* app.input();
     say(now);
     // No further than `ahead` ticks past what every peer has said.
     if (now - known() >= ahead) {
-      return Exit.succeed(false);
+      return false;
     }
-    const exit = run(now);
+    const exit = yield* Effect.exit(run(now));
     if (Exit.isFailure(exit) && app.time.tick === now) {
-      return Exit.failCause(exit.cause);
+      return yield* Exit.failCause(exit.cause);
     }
     // The checkpoint this tick recorded, against what the others said of it.
     compare();
     if (drift.drifted !== undefined && Exit.isSuccess(exit)) {
-      return stop(drift.drifted);
+      return yield* stop(drift.drifted);
     }
-    return Exit.map(exit, () => true);
-  };
+    yield* exit;
+    return true;
+  });
 
   return {
     app,
@@ -531,14 +521,7 @@ export const build = <E, A extends PeerApp<E>>(
     get unheard() {
       return kept.size;
     },
-    tickExit,
-    tick() {
-      const exit = tickExit();
-      if (Exit.isFailure(exit)) {
-        throw Cause.squash(exit.cause);
-      }
-      return exit.value;
-    },
+    tick: () => ticking,
     get drifted() {
       return drift.drifted;
     },

@@ -80,6 +80,31 @@ const measure = (frame: () => void): { ns: number; bytes: number } => {
   return { ns: (median(times) * 1e6) / N, bytes: median(grown) };
 };
 
+/**
+ * `measure` for an app's frame stage: each frame yielded in one fiber, as a
+ * driver yields it.
+ */
+const measureFrames = (
+  frame: () => Effect.Effect<void>
+): { ns: number; bytes: number } =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      for (let i = 0; i < 300; i++) {
+        yield* frame();
+      }
+      const times: number[] = [];
+      const grown: number[] = [];
+      for (let i = 0; i < 301; i++) {
+        const heap = process.memoryUsage().heapUsed;
+        const started = performance.now();
+        yield* frame();
+        times.push(performance.now() - started);
+        grown.push(process.memoryUsage().heapUsed - heap);
+      }
+      return { ns: (median(times) * 1e6) / N, bytes: median(grown) };
+    })
+  );
+
 const variant = (
   name: string,
   parts: () => ComponentInput[],
@@ -96,7 +121,7 @@ const variant = (
       ? App.make(App.define({ plugins, systems: [system] }))
       : App.make(App.define({ plugins, systems: [also, system] }));
   const app = Effect.runSync(Effect.provide(made, noRenderer));
-  const { bytes, ns } = measure(() => app.frame());
+  const { bytes, ns } = measureFrames(() => app.frame());
   console.log(
     `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
   );
