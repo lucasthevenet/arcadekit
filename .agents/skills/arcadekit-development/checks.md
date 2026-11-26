@@ -23,4 +23,4 @@ Which kind of check a rule gets:
 | What must stay fast | A variant of the benchmark, which `bench:compare` holds |
 | What two runs must agree on | A comparison of `world.hash()`, tick by tick |
 
-A check is shown to hold the rule: break the rule and see it go red. What goes wrong with no error and that no check can hold yet is an issue labelled `silent-failure`, with what would close it, as `AGENTS.md` says.
+A check is shown to hold the rule: break the rule and see it go red. What goes wrong with no error and that no check can hold yet is an issue labelled `bug` whose title begins `Silent failure:`, with what would close it, as `AGENTS.md` says.

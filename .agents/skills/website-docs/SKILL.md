@@ -27,7 +27,7 @@ A package's README is neither. It is what GitHub and npm show: a sentence or two
    - A `ts` block of a page is a whole program and is compiled; a block titled `*.test.ts` is run. Mark a block that is not whole `ts sketch`.
    - A page links to another page by its relative path, to the reference by its address on the site (`/reference/arcadekit/Sound`), and to any other file of the repository by its relative path.
    - No page of the site mentions the roadmap, which is the repository's and not the docs'.
-   - A sentence that makes the game responsible for something ("your game must", "you are responsible for") is something the code does not stop: it also gets an issue labelled `silent-failure`, as `AGENTS.md` says.
+   - A sentence that makes the game responsible for something ("your game must", "you are responsible for") is something the code does not stop: it also gets an issue labelled `bug` whose title begins `Silent failure:`, as `AGENTS.md` says.
    - A guide that passes 12 KB is probably two: split it, and name the new page in `OUTLINE` of `website/src/lib/sidebar.ts`, which a test holds every guide to.
    - No doc sentence explains a workaround or why the right thing was not done.
 

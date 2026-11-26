@@ -11,7 +11,7 @@ A pull request is ready when a reviewer can judge the change from it, without ru
 2. **Give the change what it owes**, and nothing else in markdown:
    - a changeset, for a change to a published package: `.changeset/README.md` says how one is written, and what a bump means below 1.0;
    - the guide and the doc comments that the roadmap, issue [#173](https://github.com/lucasthevenet/arcadekit/issues/173), asks of a finished item, and `Closes #<n>` for the issue of each item or problem it finishes;
-   - an issue for what the change leaves to do later, named in the description and never a file of the repository: one labelled `silent-failure`, a sub-issue of the roadmap, for what goes wrong with no error, and a line under its area of the roadmap's "Not built yet" for what is not built;
+   - an issue for what the change leaves to do later, named in the description and never a file of the repository: one labelled `bug` whose title begins `Silent failure:`, a sub-issue of the roadmap, for what goes wrong with no error, and a line under its area of the roadmap's "Not built yet" for what is not built;
    - the site's pages, when what they show changed, with the `website-docs` skill, and the doc comment of each export that was added or changed, with the `jsdocs` skill.
 3. **Run the checks** that the table in `AGENTS.md` lists for the change, and fix what they find in the change, never in the check.
 4. **Write the description and the commit message** to pstack's [`technical-writing`](https://github.com/cursor/plugins/blob/main/pstack/skills/technical-writing/SKILL.md) skill, and **show the evidence** in the description:

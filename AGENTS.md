@@ -14,7 +14,7 @@ Every session reads this file, so it holds only what every task needs. What one 
 | The doc comment of an export | The `jsdocs` skill |
 | A changeset, a commit of a finished change, a pull request | The `pull-requests` skill |
 | Choosing what to build | The roadmap, issue [#173](https://github.com/lucasthevenet/arcadekit/issues/173), and the issue of the item |
-| An area where things go wrong with no error | The open issues labelled `silent-failure`, listed by area in the roadmap |
+| An area where things go wrong with no error | The open issues labelled `bug` whose title begins `Silent failure:`, listed by area in the roadmap |
 
 A skill is `.agents/skills/<name>/SKILL.md`; `.claude/skills` links to the folder.
 
@@ -35,7 +35,7 @@ Whatever is in this repository is what the next change copies, whether a person 
 - **When you are corrected on the packages' source, ask first whether a design can rule the mistake out or a check can catch it**, and propose that change, in the same PR when it is small. Apply a single correction to the case it was about. It becomes a line of this file or of a skill only when no check can hold it, and then it says what would.
 - **Fix the cause**, even when it is a larger change. A workaround is not a fix, and code that is already here is not precedent for one.
 - **Never disable, weaken or skip a check to get a change through**: no `oxlint-disable`, `@ts-ignore`, `it.skip`, a `describe.runIf` that is false in CI, an assertion loosened until it passes, a writer left out of a test's list, or `Bench-slower:` for a slowdown nobody chose. If a check seems wrong, stop and say so in the reply or the PR. A type test's `// @ts-expect-error` is not this.
-- **What goes wrong with no error, and that no check can hold yet, is an issue labelled `silent-failure`**, filed with the change that finds it, saying what would close it, a sub-issue of the roadmap listed under its area, and closed by the PR that closes it.
+- **What goes wrong with no error, and that no check can hold yet, is an issue labelled `bug` whose title begins `Silent failure:`**, filed with the change that finds it, saying what would close it, a sub-issue of the roadmap listed under its area, and closed by the PR that closes it.
 - **No markdown nobody asked for**: no plan, summary, notes or to-do file, and no prose to defend a decision or to explain a workaround. Say that in the reply or the PR. Work left for later is an issue, below.
 
 ## Verifying
@@ -55,6 +55,6 @@ CI runs `pnpm check`, `pnpm test` and `pnpm build`, on a pull request `pnpm buil
 
 ## Issues
 
-Issues live in this repository's GitHub Issues, with the triage labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human` and `wontfix`.
+Issues live in this repository's GitHub Issues, each labelled by its kind: `bug`, `feature` or `docs`. `needs-decision` is on one that waits for a decision, `rivet` on feature or fix work for the rivet bot, and `sprout` on maintenance for the sprout bot.
 
 Whatever is found and left to fix later is an issue, filed when it is left and named in the PR that leaves it: a bug, a debt, a departure from a skill, or a thing that goes wrong with no error. A feature not built yet is a line under its area of the roadmap's "Not built yet" until it is work of its own, and then an issue. None of it is ever a markdown file of the repository, a list in a skill, or a `TODO` in the code. The roadmap is [#173](https://github.com/lucasthevenet/arcadekit/issues/173): what to build next, in order, and what to close before a stable release, as its sub-issues, and what is not built yet, by area, in its description.
