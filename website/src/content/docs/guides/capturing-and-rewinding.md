@@ -94,7 +94,7 @@ Browser.runMain(
 - A move, a load or a rewind gives up every turn ahead: there is nothing to redo once the player has played on. A tick with no move gives up none, so a game that ticks by itself keeps its redo until the next move, as a game that ticks only when needed does.
 - A redo goes to the game as it was at the undo, and gives up the ticks run since, as an undo gives up those run since the turn. What moves at rest, such as a running timer, is as it was at the undo.
 - `app.load` gives up every turn kept, which are of the game the load replaced.
-- It keeps the `last` turns, 100 by default. It captures the game after each tick and each dispatched action, which costs what changed since the last capture.
+- It keeps the `last` turns, 100 by default. It captures the game when a move arrives, before the tick or the dispatch that applies it, which costs what changed since the last capture. A tick with no move captures nothing, so a game at rest pays for no capture.
 - An app that a session steps can't be kept: it has no `tick`, and a turn gone back would be this machine's alone.
 
 ## Control what the frame and input stages hear after a rewind

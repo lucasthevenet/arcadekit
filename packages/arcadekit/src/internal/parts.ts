@@ -27,10 +27,19 @@ export interface Parts {
   /**
    * What code outside the game has the app do once the game has moved: after
    * a tick, a dispatched action that was applied, a load and a rewind, between
-   * ticks, in the order they were added. `Timeline.keep` keeps the game's
-   * turns there, and `Save.autosave` the saves the game asks for.
+   * ticks, in the order they were added. Each does at once what it can, and
+   * returns what it has left to run, if anything, which runs before the next.
+   * `Timeline.keep` keeps the game's turns there, and `Save.autosave` the
+   * saves the game asks for.
    */
-  readonly after: Set<() => Effect.Effect<void>>;
+  readonly after: Set<() => Effect.Effect<void> | undefined>;
+  /**
+   * What code outside the game has the app do before something from outside
+   * enters it: an action enqueued or dispatched from outside, before it is
+   * queued or applied, between ticks or in the frame or input stage.
+   * `Timeline.keep` captures the game there, as it stood before the turn.
+   */
+  readonly before: Set<() => void>;
   /** Takes the game's save between ticks: `Save.make`. */
   readonly save: () => Effect.Effect<Save, Refused>;
   /** Loads a save in place of the game, between ticks: `Save.load`. */
@@ -46,14 +55,26 @@ export interface Parts {
 }
 
 /**
- * Runs what code outside the game has the app do once the game has moved.
+ * Runs what code outside the game has the app do once the game has moved, and
+ * returns what it left to run, or undefined when it left nothing.
  *
  * @internal
  */
-export const moved = (parts: Parts): Effect.Effect<void> =>
-  parts.after.size === 0
-    ? Effect.void
-    : Effect.forEach([...parts.after], (step) => step(), { discard: true });
+export const moved = (parts: Parts): Effect.Effect<void> | undefined =>
+  parts.after.size === 0 ? undefined : from(parts.after.values());
+
+/** Runs the steps still to come, each once the one before has run all of it. */
+const from = (
+  steps: Iterator<() => Effect.Effect<void> | undefined>
+): Effect.Effect<void> | undefined => {
+  for (let step = steps.next(); step.done !== true; step = steps.next()) {
+    const left = step.value();
+    if (left !== undefined) {
+      return Effect.flatMap(left, () => from(steps) ?? Effect.void);
+    }
+  }
+  return undefined;
+};
 
 const held = new WeakMap<object, Parts>();
 
