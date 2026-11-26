@@ -270,8 +270,8 @@ export const prepare = (
 
 /**
  * Commands that give every entity they spawn the tags of a state's values, as
- * `State.scoping` makes them. They add, despawn and remove as the commands
- * they wrap do.
+ * `State.scoping` makes them. They add, despawn, remove and say what is
+ * despawning as the commands they wrap do.
  */
 class Scoping implements Spawning<string> {
   constructor(
@@ -289,6 +289,10 @@ class Scoping implements Spawning<string> {
 
   despawn(entity: Entity | Spawned): void {
     this.buffer.despawn(entity);
+  }
+
+  despawning(entity: Entity | Spawned): boolean {
+    return this.buffer.despawning(entity);
   }
 
   remove(entity: Entity | Spawned, def: ComponentDef): void {

@@ -100,9 +100,8 @@ export const Hit = System.tick("game/Hit", function* () {
 
 A shape is a component beside `Transform2d.Position`: `Overlap.Circle` gives a `radius`, and `Overlap.Box` a `halfWidth` and a `halfHeight`, centred on the position. Each query given to `Overlap.pairs` starts with the position, then the shape, then any terms of its own. A query of other terms doesn't compile.
 
-`Overlap.pairs` calls the callback for every pair of an entity of the first query and an entity of the second whose shapes touch, and the callback returns what to despawn: `"first"`, `"second"`, `"both"` or `"neither"`. An entity despawned that way takes part in no later pair of the call. Here a bullet is spent on the first enemy it reaches, and an enemy two bullets reach in one tick takes one hit for each, and dies once.
+`Overlap.pairs` calls the callback for every pair of an entity of the first query and an entity of the second whose shapes touch, and the callback returns what to despawn: `"first"`, `"second"`, `"both"` or `"neither"`. An entity queued to despawn takes part in no later pair of the call, whether the callback returned it or despawned it with `commands.despawn`. Here a bullet is spent on the first enemy it reaches, and an enemy two bullets reach in one tick takes one hit for each, and dies once.
 
-- Despawn what a pair uses up by what the callback returns, not with `commands.despawn` in the callback. A despawn through `Commands` is applied when the system finishes, so an entity despawned that way is still paired for the rest of the call.
 - Pairs come in the order of the first query's entities, and for each, of the second's, so a replay hits the same enemies.
 - Where the entities are is read once, when the call begins.
 - It tests every pair: about 2.5 ms for a thousand bullets against a thousand enemies. Keep the two queries to what can touch, with a tag or `Query.without`.
