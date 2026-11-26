@@ -167,7 +167,7 @@ const present = yield * Replay.verify(tail, Game);
 
 The app knows where in its action log each save it made was taken. Record what the game played since its last save, and replay only that tail to return to the present. The tail holds the save, so replaying it costs the same however long the game has run.
 
-`Replay.record(app, save)` knows a save by what it holds: the one `Save.make` gave, or a copy read back from its bytes, as `Save.read` gives one from a slot. It dies for a save the app didn't make, and for one its log no longer reaches because the app loaded a save since or the game went back to before it. An app made from a save starts its own log empty, and a recording of it begins at that save.
+`Replay.record(app, save)` knows a save by what it holds: the one `Save.make` gave, or a copy read back from its bytes, as `Save.read` gives one from a slot. It dies for a save the app didn't make, and for one its log no longer reaches: the app loaded a save since, or the game went back to before the save and came to it again past a move, as a rollback of a session does. A game that undoes a turn back to its save still records since it. An app made from a save starts its own log empty, and a recording of it begins at that save.
 
 The [replay](replays.md) checks itself against the tail's hash checks, so a save that didn't restore the game exactly is caught at the next hash check.
 
