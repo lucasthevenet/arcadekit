@@ -62,7 +62,7 @@ export const layer = (options: Options): Layer.Layer<never> => {
         page,
         // Its sound sleeps while the page's own document is hidden.
         Layer.provide(
-          layerSound(options.sounds ?? {}, options),
+          layerSound(options.sounds ?? [], options),
           Layer.merge(Driver.layer(display), loader)
         )
       );

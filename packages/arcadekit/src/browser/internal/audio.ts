@@ -2,6 +2,7 @@ import { Effect, Fiber, Layer } from "effect";
 
 import * as Assets from "../../Assets.ts";
 import * as Driver from "../../Driver.ts";
+import { Entry } from "../../internal/sheet.ts";
 import * as Sound from "../../Sound.ts";
 import type { ContextLike, MediaLike } from "../Audio.ts";
 import type { Options } from "../Browser.ts";
@@ -78,7 +79,7 @@ interface Hold {
  * the first touch.
  */
 const openPage = (
-  files: Readonly<Record<string, string | Sound.Clip>>,
+  sheets: readonly Sound.Sheet[],
   options: Pick<Options, "audio" | "decode" | "media" | "volume" | "window">,
   loader: Assets.LoaderShape,
   display: Driver.DisplayShape,
@@ -97,7 +98,21 @@ const openPage = (
   // and started with it, and what waits to stop one.
   const streaming = new Set<MediaLike>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const buffers = new Map<string, unknown>();
+  // The sounds of the sheets it was given that are files, by the clip's
+  // entry, and each one's decoded buffer once it is here.
+  const files = new Map<
+    Entry,
+    { readonly cue: string; readonly url: string }
+  >();
+  for (const sheet of sheets) {
+    for (const clip of Object.values(sheet)) {
+      const { data } = clip;
+      if (data instanceof Entry && data.url !== undefined) {
+        files.set(data, { cue: clip.name, url: data.url });
+      }
+    }
+  }
+  const buffers = new Map<Entry, unknown>();
   const missing = new Set<string>();
   const channels = new Map<string, Channel>();
   let audio: ContextLike | undefined;
@@ -112,25 +127,29 @@ const openPage = (
       )
     );
   };
-  /** Returns what is played for a name or a clip, if it is available. */
+  /** Returns what is played for a clip, if it is available. */
   const bufferOf = (sound: Sound.Playable): unknown => {
-    if (typeof sound !== "string") {
-      return sound.data;
+    const { data } = sound;
+    if (!(data instanceof Entry)) {
+      return data;
     }
-    if (!Object.hasOwn(files, sound)) {
-      if (!missing.has(sound)) {
-        missing.add(sound);
+    // A sheet's sound that is another clip plays what that clip does.
+    if (data.url === undefined) {
+      return data.data;
+    }
+    if (!files.has(data)) {
+      const said = `${data.sheet}.${sound.name}`;
+      if (!missing.has(said)) {
+        missing.add(said);
         fork(
           Effect.logWarning(
-            `The sound "${sound}" was played and has no file. The page's sounds are: ${Object.keys(files).join(", ") || "none"}.`
+            `The sound "${sound.name}" of the sheet "${data.sheet}" was played, and the page was not given its sheet, so it has not its file. Give the sheet in sounds, as Browser.runMain(game, { sounds: [Sheet] }) does. The page's sheets are: ${Array.from(new Set(Array.from(files.keys(), (entry) => `"${entry.sheet}"`))).join(", ") || "none"}.`
           )
         );
       }
       return undefined;
     }
-    // A name is a file that was decoded, or a clip under that name.
-    const file = files[sound]!;
-    return typeof file === "string" ? buffers.get(sound) : file.data;
+    return buffers.get(data);
   };
   /** Starts a streamed track, silent, with its own volume. */
   const startStream = (
@@ -257,18 +276,15 @@ const openPage = (
   // that is still on its way when it is closed is given up.
   const fetching = fork(
     Effect.forEach(
-      // A name that is a clip's has no file to fetch.
-      Object.entries(files).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string"
-      ),
-      ([cue, url]) =>
+      files,
+      ([entry, { cue, url }]) =>
         Effect.match(loader.bytes(url), {
           onSuccess: (bytes) => {
             // A copy: decoding keeps the buffer it is given.
             decode(bytes.slice().buffer).then(
               (buffer) => {
                 if (!closed) {
-                  buffers.set(cue, buffer);
+                  buffers.set(entry, buffer);
                   // A channel may have been waiting for it.
                   settleAll();
                 }
@@ -332,7 +348,7 @@ const openPage = (
             early = true;
             fork(
               Effect.logInfo(
-                `The cue "${typeof cue === "string" ? cue : cue.name}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`
+                `The cue "${cue.name}" was asked for before the page was touched, and is not played: a browser lets a page make no sound until its user has pressed a key or a button, and a cue that came late would be worse than none. A track asked for then starts at the first touch. This is said once.`
               )
             );
           }
@@ -410,7 +426,7 @@ const openPage = (
  * @internal
  */
 export const layerSound = (
-  files: Readonly<Record<string, string | Sound.Clip>>,
+  sheets: readonly Sound.Sheet[],
   options: Pick<Options, "audio" | "decode" | "media" | "volume" | "window">
 ): Layer.Layer<never> =>
   Layer.effect(
@@ -424,7 +440,7 @@ export const layerSound = (
         open: Effect.map(
           Effect.acquireRelease(
             Effect.sync((): Hold => {
-              held ??= openPage(files, options, loader, display, fork);
+              held ??= openPage(sheets, options, loader, display, fork);
               held.holders += 1;
               return { page: held, open: true };
             }),

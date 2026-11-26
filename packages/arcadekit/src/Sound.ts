@@ -1,14 +1,17 @@
 /**
- * Sound plays named cues in response to events, and keeps music playing to
- * match the game's state.
+ * Sound plays cues in response to events, and keeps music playing to match
+ * the game's state.
  *
  *   // The simulation reports what happened. It knows nothing about sound.
  *   const Collided = Event.define("physics/Collided", Schema.Struct({ speed: Schema.Finite }))
  *
+ *   // The sounds, by name: a cue that isn't in the sheet doesn't compile.
+ *   const Sfx = Sound.sheet("game/Sfx", { coin: "/coin.wav", thud: "/thud.wav" })
+ *
  *   // What it sounds like: a frame-stage system.
  *   const Cues = Sound.cues("game/Cues",
- *     Sound.on(Scored, "coin"),
- *     Sound.on(Collided, ({ speed }) => ({ cue: "thud", volume: Math.min(1, speed / 10) }))
+ *     Sound.on(Scored, Sfx.coin),
+ *     Sound.on(Collided, ({ speed }) => ({ cue: Sfx.thud, volume: Math.min(1, speed / 10) }))
  *   )
  *
  *   const Game = Plugin.make("game/Game", {
@@ -16,9 +19,9 @@
  *     systems: [Physics, Cues],
  *   })
  *
- *   // Where it plays: in a page, with the cues' files.
+ *   // Where it plays: in a page, which fetches the sheet's files.
  *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
- *     sounds: { coin: "/coin.wav", thud: "/thud.wav" },
+ *     sounds: [Sfx],
  *   })
  *
  * Music isn't an event. It is what should be heard for as long as the game
@@ -27,8 +30,14 @@
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* Level
- *     return level.value === "menu" ? "menu-theme" : { track: "forest-theme", volume: 0.6 }
+ *     return level.value === "menu" ? Tracks.menu : { track: Tracks.forest, volume: 0.6 }
  *   })
+ *
+ * Every sound plays on a bus, `Sound.EffectsBus` for a cue and
+ * `Sound.MusicBus` for a track unless it names another, and a frame-stage
+ * system sets a bus's volume while the game runs, as a settings menu does:
+ *
+ *   (yield* Sound.Player).volume(Sound.MusicBus, 0.5)
  *
  * A level's own sounds are assets of its bundle, made with `Audio.sound(url)`
  * in a page. They load and are released with the rest of the bundle:
@@ -50,22 +59,24 @@ import type { Scope } from "effect";
 
 import * as Assets from "./Assets.ts";
 import type * as Event from "./Event.ts";
+import { Entry } from "./internal/sheet.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
 import type { Events } from "./Services.ts";
 import * as System from "./System.ts";
 
-// --- a sound that is not a name ------------------------------------------------------
+// --- what is played --------------------------------------------------------------------
 
 /**
- * A loaded sound, such as a level's sound held by its bundle. A clip works
- * anywhere a cue's or a track's name does.
+ * A sound that can be played: a sound of a cue sheet, a level's sound held by
+ * its bundle, or a stream. Every cue and every track is a clip.
  *
  * **Details**
  *
- * Whatever loads a clip makes it for the output that will play it, such as the
- * `Audio.sound(url)` asset in a page. `name` is what a log or a recorder
- * calls it. `data` is what the output plays, and only the output reads it.
+ * Whatever makes a clip makes it for the output that will play it: a sheet
+ * names a file that a page fetches, and the `Audio.sound(url)` asset is
+ * decoded for a page. `name` is what a log or a recorder calls it. `data` is
+ * what the output plays, and only the output reads it.
  *
  * @category Models
  */
@@ -90,15 +101,73 @@ export const clip = (name: string, data?: unknown): Clip =>
   new Clip(name, data);
 
 /**
- * What can be played: one of the output's own sounds, by name, or a loaded
- * clip.
+ * What can be played: a clip, of a sheet, of a bundle, or made by hand.
  *
  * @category Models
  */
-export type Playable = string | Clip;
+export type Playable = Clip;
 
-const nameOf = (sound: Playable): string =>
-  typeof sound === "string" ? sound : sound.name;
+/**
+ * A cue sheet: a game's sounds for its whole lifetime, each a clip under its
+ * name, made by `Sound.sheet`.
+ *
+ * @category Models
+ */
+export type Sheet<K extends string = string> = { readonly [P in K]: Clip };
+
+/**
+ * Makes a cue sheet: a clip for each sound a game plays by name, from the URL
+ * of its file, or from a clip such as `Audio.stream(url)`. A cue or a track
+ * names a sound as a property of the sheet, so a name that isn't in it doesn't
+ * compile, and a page given the sheet fetches its files.
+ *
+ *   const Sfx = Sound.sheet("game/Sfx", { coin: "/coin.wav", thud: "/thud.wav" })
+ *
+ *   Sound.on(Scored, Sfx.coin)
+ *   Sound.on(Scored, Sfx.coni)                  // doesn't compile
+ *   Browser.runMain(game, { sounds: [Sfx] })
+ *
+ * **When to use**
+ *
+ * Use for the sounds a game has from start to end: its cues, its menu's
+ * music. A level's own sounds, loaded and released with it, are assets of its
+ * bundle, made with `Audio.sound(url)`.
+ *
+ * **Details**
+ *
+ * - Each clip's name is its key, as a recorder records it: `Sfx.coin` plays
+ *   as `"coin"`.
+ * - A page plays a sheet's files once it is given the sheet, in the `sounds`
+ *   of `Browser.runMain` or `Audio.layerSound`, which fetches them when its
+ *   audio starts. A recorder records them whatever it was given.
+ *
+ * **Gotchas**
+ *
+ * - A sound of a sheet that the page wasn't given plays nothing, and is
+ *   logged once through Effect's logger with the sheet's name.
+ *
+ * @category Constructors
+ */
+export const sheet = <const F extends Readonly<Record<string, string | Clip>>>(
+  name: string,
+  files: F
+): Sheet<Extract<keyof F, string>> =>
+  Object.fromEntries(
+    Object.entries(files).map(([key, file]) => [
+      key,
+      new Clip(
+        key,
+        typeof file === "string"
+          ? new Entry(name, file, undefined)
+          : new Entry(name, undefined, file.data)
+      ),
+    ])
+  ) as Sheet<Extract<keyof F, string>>;
+
+const nameOf = (sound: Playable): string => sound.name;
+
+/** A clip of a sheet, which a recorder records by its name alone, as a named sound. */
+const isNamed = (sound: Playable): boolean => sound.data instanceof Entry;
 
 // --- where sound goes ------------------------------------------------------------
 
@@ -202,11 +271,12 @@ export const layer = (speaker: Speaker): Layer.Layer<never> =>
  * @category Testing
  */
 export interface Played {
-  /** The cue's name, or the name of the clip that was played. */
+  /** The clip's name: a sheet's key, such as `"coin"`, or a loaded clip's. */
   readonly cue: string;
+  /** The volume it was played at, its bus's volume included. */
   readonly volume: number;
   readonly rate: number;
-  /** The clip itself, if it was one. */
+  /** The clip itself, for one that is no sheet's, such as a bundle's. */
   readonly clip?: Clip;
 }
 
@@ -217,11 +287,12 @@ export interface Played {
  */
 export interface Told {
   readonly channel: string;
-  /** The track's name, the clip's name, or `undefined` for silence. */
+  /** The clip's name, such as a sheet's key, or `undefined` for silence. */
   readonly track: string | undefined;
+  /** The volume it plays at, its bus's volume included. */
   readonly volume: number;
   readonly fade: number;
-  /** The clip itself, if it was one. */
+  /** The clip itself, for one that is no sheet's, such as a bundle's. */
   readonly clip?: Clip;
   /** Present and true for a track that plays once and ends. */
   readonly once?: true;
@@ -252,7 +323,7 @@ export interface Recorder extends Speaker {
  *   )
  *   yield* app.tick(1 / 60)
  *   yield* app.frame()
- *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }]
+ *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }], for Sfx.coin
  *
  * @category Testing
  */
@@ -266,8 +337,8 @@ export const makeRecorder = (): Recorder => {
     playing,
     play(cue, volume, rate) {
       played.push(
-        typeof cue === "string"
-          ? { cue, volume, rate }
+        isNamed(cue)
+          ? { cue: cue.name, volume, rate }
           : { cue: cue.name, volume, rate, clip: cue }
       );
     },
@@ -283,7 +354,7 @@ export const makeRecorder = (): Recorder => {
         track: nameOf(track),
         volume,
         fade,
-        ...(typeof track === "string" ? {} : { clip: track }),
+        ...(isNamed(track) ? {} : { clip: track }),
         ...(once === true ? { once } : {}),
       });
     },
@@ -296,6 +367,55 @@ export const makeRecorder = (): Recorder => {
 const MUSIC = "music";
 
 /**
+ * A group of sounds whose volume is set together, such as the music or the
+ * effects of a settings menu. A bus is a value, declared once, so a bus that
+ * was never declared doesn't compile.
+ *
+ *   player.volume(Sound.MusicBus, 0.5)
+ *   player.volume(Sound.MusicBuss, 0.5)          // doesn't compile
+ *
+ * @category Models
+ */
+export class Bus {
+  constructor(
+    /** What an error calls it. */
+    readonly name: string
+  ) {}
+}
+
+/**
+ * Declares a bus of a game's own, beside `Sound.MusicBus` and
+ * `Sound.EffectsBus`, for sounds whose volume a menu sets apart, such as a
+ * UI's clicks.
+ *
+ *   const UiBus = Sound.bus("ui")
+ *   Sound.on(Clicked, { cue: Sfx.click, bus: UiBus })
+ *   player.volume(UiBus, 0.5)
+ *
+ * **Gotchas**
+ *
+ * - Each call is a bus of its own: declare one once, at module level, and
+ *   use that value everywhere, as a sheet's sounds are used.
+ *
+ * @category Constructors
+ */
+export const bus = (name: string): Bus => new Bus(name);
+
+/**
+ * The bus a track plays on unless it names another.
+ *
+ * @category Constants
+ */
+export const MusicBus: Bus = new Bus("music");
+
+/**
+ * The bus a cue plays on unless it names another.
+ *
+ * @category Constants
+ */
+export const EffectsBus: Bus = new Bus("effects");
+
+/**
  * Options for playing a cue.
  *
  * @category Options
@@ -305,6 +425,8 @@ export interface PlayOptions {
   readonly volume?: number;
   /** The playback speed, and therefore pitch, where 1 is normal speed. Defaults to 1. */
   readonly rate?: number;
+  /** The bus it plays on, whose volume scales its own. Defaults to `Sound.EffectsBus`. */
+  readonly bus?: Bus;
 }
 
 /**
@@ -328,6 +450,8 @@ export interface MusicOptions {
    * plays again from the start.
    */
   readonly once?: boolean;
+  /** The bus it plays on, whose volume scales its own. Defaults to `Sound.MusicBus`. */
+  readonly bus?: Bus;
 }
 
 /**
@@ -366,6 +490,26 @@ export interface PlayerShape {
     track: Playable | undefined,
     options?: MusicOptions
   ) => void;
+  /**
+   * Sets a bus's volume, which scales the volume of everything that plays on
+   * it: 1 plays it as asked, 0.5 at half, and 0 silences it. Every bus is at 1
+   * until it is set. Cues play on `Sound.EffectsBus` and tracks on
+   * `Sound.MusicBus` unless they name another, declared with `Sound.bus`.
+   *
+   *   const Volumes = System.frame("game/Volumes", function*() {
+   *     const settings = yield* Settings
+   *     const player = yield* Sound.Player
+   *     player.volume(Sound.MusicBus, settings.music)
+   *     player.volume(Sound.EffectsBus, settings.effects ? 1 : 0)
+   *   })
+   *
+   * The volume holds from the end of the frame, for the cues of that frame
+   * and every later one, until it is set again, so a system can set it every
+   * frame. A track that plays on a bus whose volume changes is made louder or
+   * softer at once, and keeps playing. It throws for a volume below 0 or that
+   * is not a number.
+   */
+  readonly volume: (bus: Bus, volume: number) => void;
 }
 
 /**
@@ -376,7 +520,7 @@ export interface PlayerShape {
  *
  * Use in a frame-stage system to play a sound that no event stands for:
  *
- *   (yield* Sound.Player).play("click", { volume: 0.5 })
+ *   (yield* Sound.Player).play(Sfx.click, { volume: 0.5 })
  *
  * **Gotchas**
  *
@@ -403,6 +547,9 @@ const playerLayer = Layer.effect(
   Player,
   Effect.gen(function* () {
     const speaker = yield* open;
+    // Each bus's volume, 1 until a system sets it.
+    const buses = new Map<Bus, number>();
+    const busVolume = (bus: Bus): number => buses.get(bus) ?? 1;
     // What each channel was last told: the speaker hears of a change only.
     // And what this frame's systems have said of it so far, if any has:
     // kept in the same record, so that a frame makes none.
@@ -410,17 +557,26 @@ const playerLayer = Layer.effect(
       string,
       {
         track: Playable | undefined;
+        /** The volume asked for, and the bus's volume times it, as the speaker was told. */
+        base: number;
         volume: number;
         once: boolean;
+        bus: Bus;
         said: boolean;
         next: Playable | undefined;
         nextVolume: number;
         nextOnce: boolean;
         nextFade: number;
+        nextBus: Bus;
       }
     >();
-    const describe = (track: Playable, volume: number, once: boolean) =>
-      `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}`;
+    const describe = (
+      track: Playable,
+      volume: number,
+      once: boolean,
+      bus: Bus
+    ) =>
+      `"${nameOf(track)}"${volume === 1 ? "" : ` at ${volume}`}${once ? ", once" : ""}${bus === MusicBus ? "" : ` on the bus "${bus.name}"`}`;
     // An app that goes leaves nothing playing in a speaker that stays.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -435,17 +591,25 @@ const playerLayer = Layer.effect(
     );
     // What a frame's systems have asked to hear, by the cue: one sound for
     // each, however many asked and whichever system they were.
-    const asked = new Map<Playable, { volume: number; rate: number }>();
+    const asked = new Map<
+      Playable,
+      { volume: number; rate: number; bus: Bus }
+    >();
     const player: PlayerShape = {
       audible: speaker !== silent,
       play(cue, options) {
         const volume = Math.max(0, options?.volume ?? 1);
         const already = asked.get(cue);
         if (already === undefined) {
-          asked.set(cue, { volume, rate: options?.rate ?? 1 });
+          asked.set(cue, {
+            volume,
+            rate: options?.rate ?? 1,
+            bus: options?.bus ?? EffectsBus,
+          });
         } else if (volume > already.volume) {
           already.volume = volume;
           already.rate = options?.rate ?? 1;
+          already.bus = options?.bus ?? EffectsBus;
         }
       },
       music(channel, track, options) {
@@ -453,19 +617,23 @@ const playerLayer = Layer.effect(
           track === undefined ? 0 : Math.max(0, options?.volume ?? 1);
         const once = track !== undefined && options?.once === true;
         const fade = Math.max(0, options?.fade ?? 0.5);
+        const bus = options?.bus ?? MusicBus;
         const told = channels.get(channel);
         if (told === undefined) {
           // A channel that was never told anything is silent already.
           if (track !== undefined) {
             channels.set(channel, {
               track: undefined,
+              base: 0,
               volume: 0,
               once: false,
+              bus,
               said: true,
               next: track,
               nextVolume: volume,
               nextOnce: once,
               nextFade: fade,
+              nextBus: bus,
             });
           }
           return;
@@ -476,6 +644,7 @@ const playerLayer = Layer.effect(
           told.nextVolume = volume;
           told.nextOnce = once;
           told.nextFade = fade;
+          told.nextBus = bus;
           return;
         }
         // Said already this frame. Silence gives way to a track, whichever
@@ -488,17 +657,27 @@ const playerLayer = Layer.effect(
           told.nextVolume = volume;
           told.nextOnce = once;
           told.nextFade = fade;
+          told.nextBus = bus;
           return;
         }
         if (
           told.next !== track ||
           told.nextVolume !== volume ||
-          told.nextOnce !== once
+          told.nextOnce !== once ||
+          told.nextBus !== bus
         ) {
           throw new Error(
-            `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce)} and ${describe(track, volume, once)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`
+            `The channel "${channel}" was told to play two things in one frame: ${describe(told.next, told.nextVolume, told.nextOnce, told.nextBus)} and ${describe(track, volume, once, bus)}. A channel plays one track at a time. The systems made with Sound.music share the channel "${MUSIC}" unless they name another: they are one score, of which one says what plays. For two that play together, music and the wind, give one a channel of its own: Sound.music(name, body, { channel: "wind" }).`
           );
         }
+      },
+      volume(bus, volume) {
+        if (!(volume >= 0 && Number.isFinite(volume))) {
+          throw new Error(
+            `The bus "${bus.name}" was given the volume ${volume}. A bus's volume is a number from 0, silent, up, where 1 plays what is on it as it asks.`
+          );
+        }
+        buses.set(bus, volume);
       },
     };
     frames.set(player, {
@@ -510,24 +689,39 @@ const playerLayer = Layer.effect(
       },
       flush() {
         for (const [channel, told] of channels) {
-          if (!told.said) {
+          // Not said this frame, a channel keeps what it plays, at its bus's
+          // volume of now.
+          const track = told.said ? told.next : told.track;
+          if (track === undefined && told.track === undefined) {
             continue;
           }
-          const { next, nextOnce, nextVolume } = told;
+          const base = told.said ? told.nextVolume : told.base;
+          const once = told.said ? told.nextOnce : told.once;
+          const bus = told.said ? told.nextBus : told.bus;
+          const volume = base * busVolume(bus);
           if (
-            told.track === next &&
-            told.volume === nextVolume &&
-            told.once === nextOnce
+            told.track === track &&
+            told.volume === volume &&
+            told.once === once
           ) {
+            told.base = base;
+            told.bus = bus;
             continue;
           }
-          told.track = next;
-          told.volume = nextVolume;
-          told.once = nextOnce;
-          speaker.music(channel, next, nextVolume, told.nextFade, nextOnce);
+          // Only its bus's volume changed: at once, as a menu's slider moves.
+          const fade =
+            told.track === track && told.base === base && told.once === once
+              ? 0
+              : told.nextFade;
+          told.track = track;
+          told.base = base;
+          told.volume = volume;
+          told.once = once;
+          told.bus = bus;
+          speaker.music(channel, track, volume, fade, once);
         }
         for (const [cue, how] of asked) {
-          speaker.play(cue, how.volume, how.rate);
+          speaker.play(cue, how.volume * busVolume(how.bus), how.rate);
         }
       },
     });
@@ -604,13 +798,15 @@ export interface Binding {
 /**
  * Makes an entry of `Sound.cues` that plays a cue each time an event happens.
  *
- *   Sound.on(Scored, "coin")
- *   Sound.on(Collided, ({ speed }) => ({ cue: "thud", volume: Math.min(1, speed / 10) }))
- *   Sound.on(Landed, ({ hard }) => (hard ? "crash" : undefined))
+ *   Sound.on(Scored, Sfx.coin)
+ *   Sound.on(Collided, ({ speed }) => ({ cue: Sfx.thud, volume: Math.min(1, speed / 10) }))
+ *   Sound.on(Landed, ({ hard }) => (hard ? Sfx.crash : undefined))
+ *   Sound.on(Clicked, { cue: Sfx.click, bus: UiBus })
  *
- * The cue is a name or a clip, optionally with a volume and a rate, or a
- * function of the event's payload that returns one of those, or nothing.
- * Several entries can share an event, and each receives it.
+ * The cue is a clip, such as a sound of a sheet, optionally with a volume, a
+ * rate and a bus, or a function of the event's payload that returns one of
+ * those, or nothing. Several entries can share an event, and each receives
+ * it.
  *
  * @category Constructors
  */
@@ -624,7 +820,7 @@ export const on = <P>(event: Event.Event<P>, cue: CueOf<P>): Binding => ({
 type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 const isCue = (picked: Playable | Cue): picked is Cue =>
-  typeof picked !== "string" && !(picked instanceof Clip);
+  !(picked instanceof Clip);
 
 /** Entries grouped by event, so a system reads each event once for all of them. */
 type Heard = readonly (readonly [
@@ -650,8 +846,8 @@ const byEvent = (lines: readonly Binding[]): Heard => {
  * since the last frame sound like.
  *
  *   const Cues = Sound.cues("game/Cues",
- *     Sound.on(Scored, "coin"),
- *     Sound.on(Collided, "thud")
+ *     Sound.on(Scored, Sfx.coin),
+ *     Sound.on(Collided, Sfx.thud)
  *   )
  *
  * **Details**
@@ -767,7 +963,7 @@ export interface Track extends MusicOptions {
 export type TrackOf = Playable | Track | undefined;
 
 const isTrack = (picked: Playable | Track): picked is Track =>
-  typeof picked !== "string" && !(picked instanceof Clip);
+  !(picked instanceof Clip);
 
 /**
  * Makes a frame-stage system that keeps a channel playing the music that
@@ -776,16 +972,16 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* Level
- *     if ((yield* Paused).on) return { track: "theme", volume: 0.2 }
- *     return level.value === "menu" ? undefined : "theme"
+ *     if ((yield* Paused).on) return { track: Tracks.theme, volume: 0.2 }
+ *     return level.value === "menu" ? undefined : Tracks.theme
  *   }, { fade: 1 })
  *
  * **Details**
  *
- * - A track loops until the body returns another, or nothing. It is a name the
- *   output knows, a clip, or either with its own `volume` and `fade`.
+ * - A track loops until the body returns another, or nothing. It is a clip,
+ *   such as a sound of a sheet, or one with its own `volume` and `fade`.
  * - With `once: true`, a track plays to its end and stops, such as a fanfare
- *   for as long as the game is won: `{ track: "fanfare", once: true }`. It
+ *   for as long as the game is won: `{ track: Tracks.fanfare, once: true }`. It
  *   isn't restarted while the body keeps returning it. When the body returns
  *   something else before it ends, it fades like any other track.
  * - Music is computed from the game and stored nowhere in it. A game loaded
@@ -801,6 +997,8 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *   name, such as `Sound.music("game/Wind", body, { channel: "wind" })`.
  *   Channels play at the same time.
  * - `fade` is how many seconds a change takes. Defaults to half a second.
+ * - Its tracks play on `Sound.MusicBus`, or on the `bus` it names, whose
+ *   volume `Sound.Player`'s `volume` sets.
  * - When sound goes nowhere, the body doesn't run at all.
  * - It requires `Sound.plugin`.
  * - Under `System.runIf`, while the condition doesn't hold, the system requests
@@ -820,12 +1018,20 @@ const isTrack = (picked: Playable | Track): picked is Track =>
 export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: System.FrameBody<Eff, TrackOf>,
-  options?: { readonly fade?: number; readonly channel?: string }
+  options?: {
+    readonly fade?: number;
+    readonly channel?: string;
+    readonly bus?: Bus;
+  }
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player>;
 export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
   name: string,
   body: () => Generator<Eff, TrackOf, never>,
-  options: { readonly fade?: number; readonly channel?: string } = {}
+  options: {
+    readonly fade?: number;
+    readonly channel?: string;
+    readonly bus?: Bus;
+  } = {}
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> {
   const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
@@ -842,6 +1048,7 @@ export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
         volume: picked.volume ?? 1,
         fade: picked.fade ?? options.fade ?? 0.5,
         once: picked.once === true,
+        bus: picked.bus ?? options.bus ?? MusicBus,
       });
     } else {
       player.music(channel, picked, options);

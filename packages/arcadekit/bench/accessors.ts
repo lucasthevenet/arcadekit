@@ -341,10 +341,14 @@ const sounding = (happening: boolean): number =>
           (yield* Scored.emits).emit({});
         }
       });
+      const Sfx = Sound.sheet("bench/Sfx", {
+        coin: "/coin.wav",
+        thud: "/thud.wav",
+      });
       const Cues = Sound.cues(
         "bench/Cues",
-        Sound.on(Scored, "coin"),
-        Sound.on(Bounced, { cue: "thud", volume: 0.5 })
+        Sound.on(Scored, Sfx.coin),
+        Sound.on(Bounced, { cue: Sfx.thud, volume: 0.5 })
       );
       const app = yield* App.make(
         App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
@@ -368,9 +372,10 @@ const scoring = (): number =>
   Effect.runSync(
     Effect.gen(function* () {
       const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
+      const Tracks = Sound.sheet("bench/Tracks", { theme: "/theme.ogg" });
       const Score = Sound.music("bench/Music", function* () {
         return (yield* Phase).value === "playing"
-          ? { track: "theme", volume: 0.5 }
+          ? { track: Tracks.theme, volume: 0.5 }
           : undefined;
       });
       const app = yield* App.make(
