@@ -53,16 +53,81 @@ Loading takes real time, so only the frame and input stages can request a bundle
 
 A load receives the services the app was given from outside, but none of the app's own. Nothing it does counts as part of the game. The random numbers that a loader draws to back off before a retry don't come from the world.
 
-When the rules need something from a file, such as where the walls are, pass it to them as an action. An input-stage system issues the action once the file has loaded, with the file's contents as the payload. From then on the contents are in the log, and a replay has them without the file:
+When the rules need something from a file, such as where the walls are, pass it to them as an action. `Assets.onReady(bundle, rules, payload)` makes a plugin that does it: once the bundle is loaded, an input-stage system issues an action with a payload made from its assets, and `rules`, a handler of yours, applies it. From then on the contents are in the log, and a replay has them without the file:
 
 ```ts sketch
-const Begin = System.input("game/Begin", function* () {
-  const forest = yield* Forest;
-  if (forest._tag === "Ready" && (yield* Walls).count() === 0) {
-    (yield* Action.Actions).enqueue(Build, forest.assets.layout);
+const build = Action.handler(Build, function* (layout) {
+  /* … */
+});
+const Begin = Assets.onReady(Forest, build, ({ layout }) => layout);
+```
+
+List the plugin in your game's `plugins`, and `build` nowhere else. The world records what it was handed, and that record holds the rest:
+
+- `rules` runs once for each time the world is handed the bundle, so the game writes no check of its own against handing it over twice. A level whose file spawns nothing is handed over once, like any other.
+- An app made from a save has the record, and doesn't hand the level over again when its bundle loads.
+- A rewind to before a handover hands it over again, once.
+- In a [session](sessions.md), every peer whose bundle loads issues the action, and the first one applied counts, on every peer. A peer that fails to load holds nobody up, and its bundle is `Failed`.
+- `Assets.forget(bundle)`, in code of the tick, makes the world forget the handover, so that the bundle is handed over again, as when a new run starts.
+
+## Make a game of several levels
+
+A game whose levels are files gives each level a bundle with `Assets.family`, and adds a level by adding its file:
+
+```ts
+import {
+  Action,
+  Assets,
+  Commands,
+  Component,
+  Field,
+  Plugin,
+  Query,
+  Singleton,
+} from "arcadekit";
+import { Effect, Schema } from "effect";
+
+const Layout = Schema.Struct({ walls: Schema.Array(Schema.Int) });
+const Wall = Component.define("game/Wall", { at: Field.i32 });
+const Progress = Singleton.define(
+  "game/Progress",
+  { level: Field.i32 },
+  { level: 1 }
+);
+
+// /levels/1.json, /levels/2.json, and so on: one bundle for each level's number.
+const Levels = Assets.family("game/Level", (level: number) => ({
+  layout: Assets.json(`/levels/${level}.json`, Layout),
+}));
+const level = Effect.map(Progress, (progress) => progress.level);
+
+const Build = Action.define("game/Build", Layout);
+const Next = Action.define("game/Next");
+
+// A level replaces the one before it.
+const build = Action.handler(Build, function* ({ walls }) {
+  const commands = yield* Commands.spawns(Wall);
+  (yield* Query.all(Wall)).each((_, wall) => commands.despawn(wall));
+  for (const at of walls) {
+    commands.spawn(Wall.of({ at }));
   }
 });
+
+const Game = Plugin.make("game/Game", {
+  plugins: [Assets.onReady(Levels, level, build, ({ layout }) => layout)],
+  handlers: [
+    Action.handler(Next, function* () {
+      (yield* Progress.writes).level += 1;
+    }),
+  ],
+  systems: [Assets.during(level, Levels)],
+});
 ```
+
+- `Levels.of(3)` is the bundle of the third level, named `"game/Level(3)"`, and the same bundle each time it is asked for.
+- `Assets.during(level, Levels)` keeps the bundle of the level the game is at loaded. When `Progress.level` changes, it lets go of the bundle before and loads the next one.
+- `Assets.onReady(Levels, level, build, payload)` hands the bundle of the level the game is at to the rules once it is loaded. The world records the level it was last handed, so going from level 1 to 2 and back hands each over as the game comes to it, and `payload` is given the level as its second argument.
+- The level's entities are the game's: here, the walls, which `build` despawns before it spawns the next level's. A level is a number in the world, so neither a state nor a bundle names it.
 
 ## Choose an asset type
 

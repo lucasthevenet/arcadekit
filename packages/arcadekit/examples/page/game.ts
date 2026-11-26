@@ -133,6 +133,8 @@ const handlers = [
     if (phase.is("title")) {
       phase.set("playing");
       (yield* Started.emits).emit({});
+      // A new game is handed the level's file again.
+      yield* Assets.forget(Level);
     }
   }),
   Action.handler(Quit, function* () {
@@ -155,7 +157,12 @@ const handlers = [
       phase.set(phase.is("playing") ? "paused" : "playing");
     }
   }),
-  Action.handler(Scatter, function* ({ fastest, slowest, stars }) {
+] as const;
+
+// The sky the level's file says, handed to the rules once it is loaded.
+const scatter = Action.handler(
+  Scatter,
+  function* ({ fastest, slowest, stars }) {
     const commands = yield* Commands.spawns(Star);
     const random = yield* Random;
     for (let i = 0; i < stars; i++) {
@@ -167,8 +174,8 @@ const handlers = [
         })
       );
     }
-  }),
-] as const;
+  }
+);
 
 const Controls = Input.bind(
   "page/Controls",
@@ -188,14 +195,9 @@ const Level = Assets.bundle("page/Level", {
 });
 const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 
-// A system of the input stage: once the level's file is there, and the sky
-// is still empty, it issues the action that fills it.
-const Begin = System.input("Begin", function* () {
-  const level = yield* Level;
-  if (level._tag === "Ready" && (yield* Stars).count() === 0) {
-    (yield* Action.Actions).enqueue(Scatter, level.assets.layout);
-  }
-}).pipe(System.runIf(State.is(Phase, "playing")));
+// Once the level's file is loaded, the sky is filled with what it says: the
+// world records that it was, and a new game forgets it, in Start.
+const Begin = Assets.onReady(Level, scatter, ({ layout }) => layout);
 
 // --- drawing: the frame stage ----------------------------------------------------
 // What a frame system keeps from one frame to the next is in a service of
@@ -287,13 +289,12 @@ const ShowHud = View.publish(Hud, function* () {
 });
 
 export const Game = Plugin.make("Game", {
-  plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin],
+  plugins: [Input.plugin, Assets.plugin, View.plugin, Sound.plugin, Begin],
   handlers,
   systems: [
     Steer,
     Fall,
     Controls,
-    Begin,
     LevelAssets,
     Draw,
     Cues,

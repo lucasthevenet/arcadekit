@@ -28,8 +28,9 @@
  * Loading takes real time, so it isn't part of the simulation. Nothing in a
  * tick waits for an asset or can tell whether one is loaded. What the game
  * itself needs from a file, such as where the walls are, enters as an action.
- * An input-stage system issues the action once the asset is ready, and the
- * log holds it from then on.
+ * `Assets.onReady` issues it once the bundle is loaded, the world records
+ * what it was handed, and the log holds it from then on. A game whose levels are files gives them a
+ * bundle each with `Assets.family`.
  */
 import {
   Cause,
@@ -48,11 +49,22 @@ import {
 } from "effect";
 
 import * as Action from "./Action.ts";
+import * as Event from "./Event.ts";
+import * as Field from "./Field.ts";
 import * as Input from "./Input.ts";
 import { fetching } from "./internal/fetching.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
-import { Commands, Events, Frame, Random, Time, World } from "./Services.ts";
+import {
+  Commands,
+  Events,
+  Frame,
+  Random,
+  Sim,
+  Time,
+  World,
+} from "./Services.ts";
+import * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
 
 /**
@@ -317,6 +329,69 @@ export class Bundle<B extends Entries> extends Effectable.Class<
 export const bundle = <B extends Entries>(name: string, assets: B): Bundle<B> =>
   new Bundle(name, assets);
 
+/**
+ * What names one bundle of a family: a level's number, or its name.
+ *
+ * @category Models
+ */
+export type Key = string | number;
+
+/**
+ * A bundle for each key, such as a level's files for each level's number.
+ * `Assets.family` makes one.
+ *
+ * @typeParam K the keys, such as `number`
+ * @typeParam B the assets of each bundle, under their names
+ *
+ * @category Models
+ */
+export interface Family<K extends Key, B extends Entries> {
+  /** Its name, which each bundle's name starts with: `"game/Level(3)"` for key 3. */
+  readonly name: string;
+  /** Returns the bundle of a key, the same bundle each time it is given the same key. */
+  of(key: K): Bundle<B>;
+  /** The bundles it has made so far, by key. */
+  readonly made: ReadonlyMap<K, Bundle<B>>;
+}
+
+/**
+ * Makes a family of bundles: for each key, the bundle of what `assets` names
+ * for it.
+ *
+ *   const Levels = Assets.family("game/Level", (level: number) => ({
+ *     layout: Assets.json(`/levels/${level}.json`, Layout),
+ *   }))
+ *
+ *   Levels.of(3)        // the bundle of /levels/3.json, named "game/Level(3)"
+ *
+ * **When to use**
+ *
+ * Use for levels that are data: a game adds a level by adding its files,
+ * with no bundle of its own to write. `Assets.during(key, family)` keeps the
+ * bundle of the key the game is at loaded, and `Assets.onReady` hands each
+ * loaded bundle to the rules. For one set of files, use `Assets.bundle`.
+ *
+ * @category Constructors
+ */
+export const family = <K extends Key, B extends Entries>(
+  name: string,
+  assets: (key: K) => B
+): Family<K, B> => {
+  const made = new Map<K, Bundle<B>>();
+  return {
+    name,
+    made,
+    of: (key) => {
+      let one = made.get(key);
+      if (one === undefined) {
+        one = bundle(`${name}(${key})`, assets(key));
+        made.set(key, one);
+      }
+      return one;
+    },
+  };
+};
+
 // Loads each asset of a bundle with `get`, in parallel, under its name.
 const loadEach = (
   bundle: Bundle<Entries>,
@@ -574,19 +649,319 @@ export const plugin = Plugin.make("arcadekit/Assets", { layer: storeLayer });
  * per bundle. To keep a bundle loaded across several states, give a condition
  * that holds in each.
  *
+ * Given a family in place of a bundle, it takes a key in place of the
+ * condition, and keeps the bundle of that key loaded, such as the files of
+ * the level the game is at:
+ *
+ *   Assets.during(Effect.map(Progress, ({ level }) => level), Levels)
+ *
+ * When the key changes, it lets go of the bundle of the key before and holds
+ * the new one, from the next frame. A key of `undefined` holds none.
+ *
  * @category Systems
  */
-export const during = <E, R, B extends Entries>(
+export function during<E, R, B extends Entries>(
   condition: System.FrameOk<boolean, E, R>,
   bundle: Bundle<B>
-): System.System<E, R | Store, string, "preFrame"> => {
-  const name = `Assets.during(${bundle.name})`;
+): System.System<E, R | Store, string, "preFrame">;
+export function during<E, R, K extends Key, B extends Entries>(
+  key: System.FrameOk<K | undefined, E, R>,
+  family: Family<K, B>
+): System.System<E, R | Store, string, "preFrame">;
+export function during<E, R>(
+  condition: Effect.Effect<boolean | Key | undefined, E, R>,
+  held: Bundle<Entries> | Family<Key, Entries>
+): System.System<E, R | Store, string, "preFrame"> {
+  const name = `Assets.during(${held.name})`;
+  if (held instanceof Bundle) {
+    return makeSystem(name, "preFrame", function* () {
+      const store = yield* Store;
+      if (yield* condition) {
+        store.hold(held, name);
+      } else {
+        store.drop(held, name);
+      }
+    });
+  }
+  // The bundle each app's store holds for this system, by store.
+  const holding = new WeakMap<StoreShape, Bundle<Entries>>();
   return makeSystem(name, "preFrame", function* () {
     const store = yield* Store;
-    if (yield* condition) {
-      store.hold(bundle, name);
-    } else {
-      store.drop(bundle, name);
+    const key = yield* condition;
+    const next =
+      key === undefined || typeof key === "boolean" ? undefined : held.of(key);
+    const before = holding.get(store);
+    if (before === next) {
+      return;
+    }
+    if (before !== undefined) {
+      store.drop(before, name);
+      holding.delete(store);
+    }
+    if (next !== undefined) {
+      store.hold(next, name);
+      holding.set(store, next);
     }
   });
+}
+
+// --- handing a loaded file to the rules -------------------------------------------
+
+/**
+ * What the world was last handed of each source of `Assets.onReady`, by the
+ * source's name: the key of a family's bundle, or `null` for a bundle alone.
+ * It is the world's, so a save, a rewind and the hash hold it, and a handover
+ * is applied once however many peers issue it.
+ */
+const Handed = Singleton.define(
+  "arcadekit/Assets.Handed",
+  { by: Field.json<Readonly<Record<string, Key | null>>>() },
+  { by: {} }
+);
+
+/**
+ * The payload of a handover: which key's bundle, and what the rules are
+ * handed of it.
+ *
+ * @category Models
+ */
+export interface Handover<P> {
+  readonly key: Key | null;
+  readonly payload: P;
+}
+
+/**
+ * The plugin `Assets.onReady` makes: an input-stage system that issues a
+ * handover, and the handler that applies it once.
+ *
+ * @typeParam P what the rules are handed
+ * @typeParam A what the game's handler returns
+ * @typeParam E what the game's handler refuses with
+ * @typeParam R what the game's handler requires
+ *
+ * @category Type-level
+ */
+export type OnReady<P, A, E, R> = ReturnType<typeof handing<P, A, E, R>>;
+
+/** What `Sim` stands for, which a handler provides for itself. */
+const simulation = { "~arcadekit/Sim": true } as const;
+
+/** The rules' handler, run once for each key the world is handed. */
+const handover = <P, A, E, R>(
+  name: string,
+  rules: Action.Handler<string, P, A, E, R>
+) => {
+  const action = Action.define(
+    `arcadekit/Assets.onReady(${name})`,
+    Schema.Struct({
+      key: Schema.NullOr(Schema.Union([Schema.Number, Schema.String])),
+      payload: rules.action.codec,
+    })
+  );
+  const handler: Action.Handler<
+    `arcadekit/Assets.onReady(${string})`,
+    Handover<P>,
+    A | undefined,
+    E,
+    R | World
+  > = {
+    // Refused as the rules' own action is, and in the same words.
+    action: {
+      ...action,
+      error: rules.action.error,
+      rejected: Event.define(
+        `Action.Rejected(${action.name})`,
+        Schema.Struct({
+          payload: action.codec,
+          error: rules.action.error,
+          from: Schema.UndefinedOr(Schema.String),
+        })
+      ),
+    },
+    handle: ({ key, payload }, origin) =>
+      Effect.provideService(
+        Effect.flatMap(Handed.writes, (handed) => {
+          // Handed already, by another peer or before a save was made.
+          if (Object.hasOwn(handed.by, name) && handed.by[name] === key) {
+            return Effect.succeed(undefined);
+          }
+          handed.by = { ...handed.by, [name]: key };
+          return rules.handle(payload, origin);
+        }),
+        Sim,
+        simulation
+      ),
+  };
+  return handler;
 };
+
+/** For each load in an app, whether its handover was issued or the world has it. */
+type Seen = "issued" | "handed";
+
+const handing = <P, A, E, R, K extends Key | null = Key | null>(
+  name: string,
+  rules: Action.Handler<string, P, A, E, R>,
+  key: Effect.Effect<K | undefined, never, World>,
+  bundleOf: (key: K) => Bundle<Entries>,
+  payload: (assets: Loaded<Entries>, key: K) => P
+) => {
+  const handler = handover(name, rules);
+  // Each load's ready status is an object of its own app's store.
+  const seen = new WeakMap<object, Seen>();
+  const issue = makeSystem(`Assets.onReady(${name})`, "input", function* () {
+    const at = yield* key;
+    if (at === undefined) {
+      return;
+    }
+    const status = (yield* Store).status(bundleOf(at));
+    if (status._tag !== "Ready") {
+      return;
+    }
+    const { by } = yield* Handed;
+    if (Object.hasOwn(by, name) && by[name] === at) {
+      seen.set(status, "handed");
+      return;
+    }
+    // Issued and not applied yet: once it is, the world has it.
+    if (seen.get(status) === "issued") {
+      return;
+    }
+    seen.set(status, "issued");
+    (yield* Action.Actions).enqueue(handler.action, {
+      key: at,
+      payload: payload(status.assets, at),
+    });
+  });
+  return Plugin.make(`arcadekit/Assets.onReady(${name})`, {
+    plugins: [plugin],
+    systems: [issue],
+    handlers: [handler],
+  });
+};
+
+/**
+ * Makes a plugin that hands a bundle's assets to the rules once it is loaded:
+ * an input-stage system issues an action whose payload is made from the
+ * assets, and `rules`, a handler of the game's, applies it. The moment a
+ * level's file is loaded becomes one action of the log.
+ *
+ *   const Build = Action.define("game/Build", Layout)
+ *   const build = Action.handler(Build, function* (layout) { ... })
+ *
+ *   const LevelReady = Assets.onReady(Levels, level, build, ({ layout }) => layout)
+ *   const Game = Plugin.make("game/Game", { plugins: [LevelReady], ... })
+ *
+ * Given a family, it takes the key the game is at, an Effect that reads the
+ * world, such as `Effect.map(Progress, ({ level }) => level)`, the same as
+ * `Assets.during` keeps loaded, and hands over that key's bundle, with the
+ * key.
+ *
+ * **When to use**
+ *
+ * Use when the rules need what a file holds, such as where a level's walls
+ * are. The action is in the log, so a replay or a server has the file's
+ * contents without loading it. List the plugin in the game's `plugins`, and
+ * `rules` nowhere else.
+ *
+ * **Details**
+ *
+ * - The world records what it was handed: for a family, the key, and for a
+ *   bundle alone, that it was. `rules` runs once for each key the world is
+ *   handed, and a handover of what the world has already is applied and does
+ *   nothing. So a level whose file spawns nothing is handed over once, an
+ *   app made from a save doesn't hand its level over again, and going from
+ *   level 1 to level 2 and back hands each over when the game comes to it.
+ * - A save, the hash and a rewind hold the record. A rewind to before a
+ *   handover hands it over again, once.
+ * - In a session, every peer whose bundle loads issues the handover, and the
+ *   first one applied is the one that counts, on every peer. A peer whose
+ *   bundle fails to load issues nothing and holds nobody up, and its bundle
+ *   is `Failed`, as any bundle that fails.
+ * - `Assets.forget` makes the world forget a handover, so that the bundle is
+ *   handed over again, such as when a new run starts at a level the game was
+ *   handed before.
+ *
+ * @category Plugins
+ */
+export function onReady<N extends string, P, A, E, R, B extends Entries>(
+  bundle: Bundle<B>,
+  rules: Action.Handler<N, P, A, E, R>,
+  payload: (assets: Loaded<B>) => P
+): OnReady<P, A, E, R>;
+export function onReady<
+  N extends string,
+  P,
+  A,
+  E,
+  R,
+  K extends Key,
+  B extends Entries,
+>(
+  family: Family<K, B>,
+  key: Effect.Effect<K | undefined, never, World>,
+  rules: Action.Handler<N, P, A, E, R>,
+  payload: (assets: Loaded<B>, key: K) => P
+): OnReady<P, A, E, R>;
+export function onReady<P, A, E, R>(
+  source: Bundle<Entries> | Family<Key, Entries>,
+  ...rest:
+    | readonly [
+        Action.Handler<string, P, A, E, R>,
+        (assets: Loaded<Entries>) => P,
+      ]
+    | readonly [
+        Effect.Effect<Key | undefined, never, World>,
+        Action.Handler<string, P, A, E, R>,
+        (assets: Loaded<Entries>, key: Key) => P,
+      ]
+): OnReady<P, A, E, R> {
+  if (rest.length === 2) {
+    if (!(source instanceof Bundle)) {
+      throw new Error(
+        `Assets.onReady was given the family "${source.name}" and no key. A family's bundle is the one of the key the game is at: Assets.onReady(family, key, rules, payload).`
+      );
+    }
+    const [rules, payload] = rest;
+    return handing<P, A, E, R, null>(
+      source.name,
+      rules,
+      Effect.succeed(null),
+      () => source,
+      (assets) => payload(assets)
+    );
+  }
+  if (source instanceof Bundle) {
+    throw new Error(
+      `Assets.onReady was given the bundle "${source.name}" and a key. A bundle alone has no key: Assets.onReady(bundle, rules, payload).`
+    );
+  }
+  const [key, rules, payload] = rest;
+  return handing<P, A, E, R, Key>(
+    source.name,
+    rules,
+    key,
+    (at) => source.of(at),
+    payload
+  );
+}
+
+/**
+ * Makes the world forget what `Assets.onReady` handed it of a bundle or a
+ * family, so that it is handed over again once the bundle is ready. It is code
+ * of the tick, for an action's handler or a hook.
+ *
+ *   Action.handler(NewRun, function* () {
+ *     yield* Assets.forget(Level)    // the level's file is handed over again
+ *   })
+ *
+ * @category Utilities
+ */
+export const forget = (
+  source: Bundle<Entries> | Family<Key, Entries>
+): Effect.Effect<void, never, World | Sim> =>
+  Effect.map(Handed.writes, (handed) => {
+    if (Object.hasOwn(handed.by, source.name)) {
+      const { [source.name]: _gone, ...rest } = handed.by;
+      handed.by = rest;
+    }
+  });
