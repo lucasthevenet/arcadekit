@@ -1,8 +1,9 @@
 /**
  * What an app's stages cost when they have little to do: a tick of ten
  * systems that do no work, with and without a condition, a frame of ten, and
- * the input stage, a view, cues, music and a game at rest. These are the
- * fixed costs a game pays every tick or frame, whatever its world holds.
+ * the input stage, a view, cues, music and a game at rest, and the message a
+ * peer writes for each tick. These are the fixed costs a game pays every tick
+ * or frame, whatever its world holds.
  *
  * `bench/accessors.ts` reports these with the rest of the package's, and
  * `bench/compare.ts --suite app` runs them for two builds, turn and turn
@@ -36,6 +37,7 @@ import {
   Time,
   View,
 } from "../src/index.ts";
+import { Message } from "../src/net/index.ts";
 import { Position, Velocity, sizes } from "./core.ts";
 import type { Variant } from "./core.ts";
 
@@ -382,6 +384,22 @@ const drawingIdle = (): number =>
     })
   );
 
+/** Median milliseconds of writing a peer's message for a tick as bytes, as a transport does to send it. */
+const encoding = (): number => {
+  const message: Message.Message = {
+    from: "ada",
+    tick: 120,
+    actions: [{ name: "bench/Move", payload: { dx: 1, dy: 0 } }],
+    checkpoints: [{ tick: 119, hash: 2_654_435_761 }],
+    heard: 118,
+    at: 120,
+    lead: 1,
+  };
+  return Effect.runSync(
+    measureEffect(() => Message.encode(message), 50_000, 20_000)
+  );
+};
+
 export const variants: Record<string, Variant> = {
   idle: {
     // The fixed cost Effect adds: ten systems that each fetch a query and the
@@ -494,6 +512,13 @@ export const variants: Record<string, Variant> = {
     unit: "matches",
     label: "a frame of a game at rest: devices, a view, no tick",
     run: () => atRest(),
+  },
+
+  // A peer writes one message for every tick, and its transport sends it.
+  messageEncode: {
+    unit: "matches",
+    label: "Message.encode: a tick's message, one action and a hash check",
+    run: encoding,
   },
 };
 
