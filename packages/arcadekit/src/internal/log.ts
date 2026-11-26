@@ -1,6 +1,7 @@
 import { Brand } from "effect";
 
 import type * as Action from "../Action.ts";
+import { add, finish } from "../ecs/hash.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
 import type { Origin, Recording } from "../Replay.ts";
@@ -17,6 +18,23 @@ export const tickOf = (save: Save.Save): number => {
   return typeof tick === "number" ? tick : 0;
 };
 
+/**
+ * A save as what it holds: its version, and its world's length and hash. A
+ * copy read back from its bytes is the same save.
+ */
+const keyOf = ({ version, world }: Save.Save): string => {
+  const view = new DataView(world.buffer, world.byteOffset, world.byteLength);
+  const words = world.length >>> 2;
+  let hash = 0;
+  for (let i = 0; i < words; i++) {
+    hash = add(hash, view.getInt32(i * 4, true));
+  }
+  for (let i = words * 4; i < world.length; i++) {
+    hash = add(hash, world[i]!);
+  }
+  return `${version} ${world.length} ${finish(hash)}`;
+};
+
 /** An entry of the log, with what became of it once it was applied. */
 interface Fated {
   refused?: string;
@@ -24,10 +42,11 @@ interface Fated {
 
 /**
  * One change of a log: an entry logged, what became of an entry once it was
- * applied, with what it was before, or a run of deltas begun. Each points at
- * the change before it, so that the log of every moment a game was at is a
- * path back from its last change: a rewind undoes the changes back to where
- * the two paths meet, and does again those of the moment's own.
+ * applied, with what it was before, a run of deltas begun, or a save of its
+ * game taken where the log had `at` entries. Each points at the change
+ * before it, so that the log of every moment a game was at is a path back
+ * from its last change: a rewind undoes the changes back to where the two
+ * paths meet, and does again those of the moment's own.
  */
 interface Change {
   readonly step:
@@ -38,6 +57,7 @@ interface Change {
         readonly was: string | undefined;
       }
     | { readonly run: { readonly tick: number; readonly delta: number } }
+    | { readonly saved: string; readonly at: number }
     | undefined;
   readonly before: Change | undefined;
   /** How many changes lead to it. */
@@ -64,7 +84,8 @@ export interface Since {
 
 /**
  * The log an app keeps of its game: what entered it from outside, the
- * hash checks of its world's hash, and how long each tick was. It is about
+ * hash checks of its world's hash, how long each tick was, and where each
+ * save of the game was taken, to record what came since. It is about
  * the run and not the game, so no snapshot holds it and the hash doesn't
  * cover it. It is a store of the app's world all the same, for one thing: a
  * rewind takes it back to the length it had, with the world.
@@ -88,17 +109,21 @@ export class Log implements Store<Since> {
   private readonly hashEvery: number;
   /** How the game began when its app was made, or last loaded a save. */
   private origin: Origin;
+  /** Where in the log each save of its game was taken, by `keyOf` the save. */
+  private readonly saves = new Map<string, number>();
   /**
    * How many saves the app has loaded in place. A moment of its game holds
    * it: one taken before a load is of a game the log no longer follows.
    */
   loads = 0;
 
+  /** `given` is the save the app was made from, before its migrations. */
   constructor(
     world: World,
     time: { readonly tick: number },
     hashEvery: number,
-    origin: Origin
+    origin: Origin,
+    given?: Save.Save
   ) {
     if (!Number.isSafeInteger(hashEvery) || hashEvery < 0) {
       throw new Error(
@@ -110,19 +135,41 @@ export class Log implements Store<Since> {
     this.began = time.tick;
     this.hashEvery = hashEvery;
     this.origin = origin;
+    this.startsFrom(given);
+  }
+
+  /** Holds that the log begins at the save it began from, given or loaded. */
+  private startsFrom(given: Save.Save | undefined): void {
+    this.saves.clear();
+    for (const save of [given, this.origin.save]) {
+      if (save !== undefined) {
+        this.saves.set(keyOf(save), 0);
+      }
+    }
   }
 
   /**
    * Starts the log over at a save the app has just loaded in place, as the log
    * of an app made from it would start.
    */
-  restart(save: Save.Save): void {
+  restart(loaded: Save.Save, given: Save.Save): void {
     this.last = begun();
     this.entries.length = 0;
     this.deltas.length = 0;
     this.began = this.time.tick;
-    this.origin = { save };
+    this.origin = { save: loaded };
+    this.startsFrom(given);
     this.loads++;
+  }
+
+  /** Holds where a save of its game was taken: here. */
+  saved(save: Save.Save): void {
+    const key = keyOf(save);
+    if (!this.saves.has(key)) {
+      const at = this.entries.length;
+      this.saves.set(key, at);
+      this.change({ saved: key, at });
+    }
   }
 
   /** Makes a change, the last from now on. */
@@ -257,7 +304,7 @@ export class Log implements Store<Since> {
    * it yet.
    */
   rewind(since: Since): void {
-    const { deltas, entries } = this;
+    const { deltas, entries, saves } = this;
     let from = this.last;
     let to = since.last;
     const again: Change[] = [];
@@ -270,6 +317,8 @@ export class Log implements Store<Since> {
         entries.pop();
       } else if ("run" in step) {
         deltas.pop();
+      } else if ("saved" in step) {
+        saves.delete(step.saved);
       } else if (step.was === undefined) {
         delete step.fated.refused;
       } else {
@@ -298,6 +347,8 @@ export class Log implements Store<Since> {
         entries.push(step.entry);
       } else if ("run" in step) {
         deltas.push(step.run);
+      } else if ("saved" in step) {
+        saves.set(step.saved, step.at);
       } else {
         step.fated.refused = step.refused;
       }
@@ -318,31 +369,23 @@ export class Log implements Store<Since> {
     return undefined;
   }
 
-  /** The game as it was played: all of it, or what came since a save. */
-  record(
-    since: { readonly save: Save.Save; readonly logLength: number } | undefined
-  ): Recording {
+  /** The game as it was played: all of it, or what came since a save of it. */
+  record(since: Save.Save | undefined): Recording {
     const { began, deltas, entries, time } = this;
-    const start = since === undefined ? began : tickOf(since.save);
-    const from = since?.logLength ?? 0;
-    if (
-      start < began ||
-      start > time.tick ||
-      from > entries.length ||
-      (entries[from - 1]?.tick ?? start) > start ||
-      (entries[from]?.tick ?? start) < start
-    ) {
+    const from = since === undefined ? 0 : this.saves.get(keyOf(since));
+    if (from === undefined) {
       throw new Error(
-        `Replay.record() was given a save of tick ${start} that this app's log no longer reaches there: the game went back to before it, or a save was loaded since. Record since a save it made later, or record all of it.`
+        "Replay.record() was given a save that this app didn't make, or that its log no longer reaches: the app loaded a save since, or the game went back to before it. Record since a save it made or began from, as Save.make gave it or read back from its bytes, or record all of it."
       );
     }
+    const start = since === undefined ? began : tickOf(since);
     // The run that was under way at the start begins there.
     let first = 0;
     while (first + 1 < deltas.length && deltas[first + 1]!.tick <= start) {
       first++;
     }
     return recorded({
-      ...(since === undefined ? this.origin : { save: since.save }),
+      ...(since === undefined ? this.origin : { save: since }),
       start,
       end: time.tick,
       endHash: this.world._fullHash(),

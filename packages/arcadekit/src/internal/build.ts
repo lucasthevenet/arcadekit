@@ -223,7 +223,8 @@ const assemble = <
       world,
       time,
       start.hashEvery ?? 60,
-      save === undefined ? { seed: seed ?? 0 } : { save }
+      save === undefined ? { seed: seed ?? 0 } : { save },
+      given
     );
     world._attach(log);
     // What systems and handlers issue goes through the inbox, made below
@@ -343,13 +344,6 @@ const assemble = <
     const input = (): Effect.Effect<void, TickError<S, P>> =>
       Effect.suspend(() => loop.input() as Ran);
     const after: Parts["after"] = new Set();
-    // Where in the log each save this app made, or started from, was taken,
-    // for a recording since it.
-    const made = new WeakMap<Save.Save, number>();
-    if (given !== undefined && save !== undefined) {
-      made.set(given, 0);
-      made.set(save, 0);
-    }
     const parts: Parts = {
       world,
       commands,
@@ -366,7 +360,7 @@ const assemble = <
               `Save.make() was called during a ${busy}. A game is saved between ticks.`
           );
           return Exit.map(takeSave(world, commands, version), (taken) => {
-            made.set(taken, log.entries.length);
+            log.saved(taken);
             return taken;
           });
         }),
@@ -393,9 +387,7 @@ const assemble = <
           prepare(world, schedule.hooked, true);
           events.restarted(time.tick);
           undrawn.restarted(time.tick);
-          log.restart(loaded.value);
-          made.set(loading, 0);
-          made.set(loaded.value, 0);
+          log.restart(loaded.value, loading);
           return then(Exit.void);
         }),
       record: (since) =>
@@ -404,16 +396,7 @@ const assemble = <
             (busy) =>
               `Replay.record() was called during a ${busy}. A game is recorded between ticks.`
           );
-          if (since === undefined) {
-            return log.record(undefined);
-          }
-          const at = made.get(since);
-          if (at === undefined) {
-            throw new Error(
-              "Replay.record() was given a save that this app didn't make, or didn't start from: its log doesn't say where the save is in it. Record since a save of this app, as Save.make made it, or record all of it."
-            );
-          }
-          return log.record({ save: since, logLength: at });
+          return log.record(since);
         }),
       hashCheck: () =>
         Effect.sync(() => {

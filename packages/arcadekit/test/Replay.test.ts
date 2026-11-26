@@ -1573,6 +1573,68 @@ describe("a recording", () => {
       })
     )
   );
+
+  it.effect(
+    "begins at a copy of a save read back from its bytes, as one from a slot is",
+    () =>
+      withApp(walking, (app, world) =>
+        Effect.gen(function* () {
+          yield* app.tick(1 / 60);
+          yield* app.dispatch(Drop, { value: 1 });
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          const copy = yield* Save.decode(Save.encode(save));
+          expect(copy).not.toBe(save);
+          yield* app.tick(1 / 30);
+          yield* app.dispatch(Drop, { value: 2 });
+          yield* app.tick(1 / 60);
+          const tail = yield* Replay.record(app, copy);
+          expect(tail.save).toBe(copy);
+          expect(tail).toMatchObject({ start: 1, end: 3 });
+          expect(moves(tail.log).map((entry) => entry.payload)).toEqual([
+            { value: 2 },
+          ]);
+          const present = yield* withApp(replayWalking(tail), (_, replayed) =>
+            Effect.succeed(replayed.hash())
+          );
+          expect(present).toBe(world.hash());
+        })
+      )
+  );
+
+  it.effect(
+    "records no save its log no longer reaches: one of a future a rewind gave up, or from before a load",
+    () =>
+      withApp(App.make(Walking, { hashEvery: 0 }), (app) =>
+        Effect.gen(function* () {
+          // Two coins dropped at tick 1, then a tick: whichever coins they
+          // are, the log is as long, and its ticks the same.
+          const play = Effect.fnUntraced(function* (first: number) {
+            yield* app.dispatch(Drop, { value: first });
+            yield* app.dispatch(Drop, { value: first + 1 });
+            yield* app.tick(1 / 60);
+          });
+          const unreached =
+            /Replay\.record\(\) was given a save that this app didn't make, or that its log no longer reaches/;
+          yield* app.tick(1 / 60);
+          const before = unwrap(yield* Effect.exit(Save.make(app)));
+          const moment = unwrap(yield* Effect.exit(Timeline.capture(app)));
+          yield* play(1);
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          const ahead = unwrap(yield* Effect.exit(Timeline.capture(app)));
+
+          yield* Timeline.rewind(app, moment);
+          yield* play(3);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+          yield* Timeline.rewind(app, ahead);
+          expect((yield* Replay.record(app, save)).start).toBe(2);
+
+          yield* Save.load(app, before);
+          yield* play(5);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+          expect((yield* Replay.record(app, before)).start).toBe(1);
+        })
+      )
+  );
 });
 
 describe("how a recorded game began", () => {
