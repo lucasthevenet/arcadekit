@@ -35,24 +35,20 @@ const MenuBar = ({ ui }: { readonly ui: View.Bridge<Requests> }): ReactNode => {
     "nav",
     null,
     phase === "title"
-      ? h(
-          "button",
-          { type: "button", onClick: () => ui.send(Start, {}) },
-          "Start"
-        )
+      ? h("button", { type: "button", onClick: () => ui.send(Start) }, "Start")
       : [
           h(
             "button",
             {
               key: "pause",
               type: "button",
-              onClick: () => ui.send(TogglePause, {}),
+              onClick: () => ui.send(TogglePause),
             },
             phase === "paused" ? "Resume" : "Pause"
           ),
           h(
             "button",
-            { key: "quit", type: "button", onClick: () => ui.send(Quit, {}) },
+            { key: "quit", type: "button", onClick: () => ui.send(Quit) },
             "Quit"
           ),
         ]

@@ -126,7 +126,7 @@ type Tagged = Schema.Codec<
  * inferred from the schema, and every payload is validated against it:
  * `Action.define("duel/Strike", Schema.Struct({ ... }))`. An action with no
  * payload takes only its name, `Action.define("duel/Pass")`, and is issued
- * with `undefined`.
+ * with none, `app.dispatch(Pass)`.
  *
  * The third argument declares the schema of the error its handler refuses
  * the action with, as `Rpc.make` does: `{ error: NotYourTurn }`, or

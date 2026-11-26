@@ -117,7 +117,7 @@ game/
     index.ts        rendering, which the rules never import
 ```
 
-- A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions other plugins build on. Other plugins import only that file, `import * as Physics from "../physics/index"`, and list `Physics.plugin` in their `plugins`.
+- A plugin's `index.ts` exports `plugin`, and the components, queries, systems, events and actions other plugins build on. Other plugins import only that file, `import * as Physics from "../physics/index.ts"`, and list `Physics.plugin` in their `plugins`.
 - Put a plugin's raw loops, the bodies of its `eachChunk` calls, in their own `loops.ts`. Each is a plain function of a range of rows, columns and numbers, with no imports and no closures, so it can be tested and run on its own. Such a loop doesn't read fields that hold objects, and uses sparse components only as filters, not as data. A plugin without such loops has no `loops.ts`.
 - Rendering, sound and UI are plugins of their own, which the rules never import, so a server or a replay runs the rules alone.
 
@@ -140,7 +140,7 @@ export const fall = (
 ```ts title="physics/index.ts"
 import { Component, Field, Plugin, Query, System, Time } from "arcadekit";
 
-import { fall } from "./loops";
+import { fall } from "./loops.ts";
 
 export const Position = Component.define("physics/Position", { y: Field.f32 });
 export const Velocity = Component.define("physics/Velocity", { y: Field.f32 });

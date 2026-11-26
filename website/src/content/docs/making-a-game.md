@@ -128,7 +128,7 @@ A player changes the game in one other way, through actions. An action has a nam
 ```ts title="rules.ts"
 export class NotOver extends Schema.TaggedError<NotOver>()("NotOver", {}) {}
 
-export const Restart = Action.define("catch/Restart", Schema.Struct({}), {
+export const Restart = Action.define("catch/Restart", Schema.Void, {
   error: NotOver,
 });
 
@@ -141,6 +141,8 @@ const restart = Action.handler(Restart, function* () {
   basket.lives = 3;
 });
 ```
+
+`Restart` carries nothing, so its payload is `Schema.Void`, and it is issued with none, `app.dispatch(Restart)`. An action with no payload and no refusal takes only its name, `Action.define("catch/Pause")`.
 
 ## Coins that keep coming
 
@@ -181,7 +183,7 @@ import { expect, it } from "@effect/vitest";
 import { App, Commands, Plugin, Replay, Test, World } from "arcadekit";
 import { Effect, Exit } from "effect";
 
-import { Basket, Fall, Position, Restart, Rules } from "./rules";
+import { Basket, Fall, Position, Restart, Rules } from "./rules.ts";
 
 const Catch = App.define({ plugins: [Rules] });
 
@@ -215,10 +217,10 @@ it.effect("catches a coin that lands in the basket", () =>
 it.effect("refuses a restart while the game goes on", () =>
   Effect.gen(function* () {
     const app = yield* App.make(Catch);
-    const restarted = yield* Effect.exit(app.dispatch(Restart, {}));
+    const restarted = yield* Effect.exit(app.dispatch(Restart));
     expect(Exit.isFailure(restarted)).toBe(true);
     const over = yield* App.make(App.define({ plugins: [Rules, Over] }));
-    yield* over.dispatch(Restart, {});
+    yield* over.dispatch(Restart);
     expect((yield* over.read(Basket)).lives).toBe(3);
   })
 );
@@ -272,7 +274,7 @@ import { Action, App, Driver, Input, Plugin, Query, System } from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Context, Effect, Layer } from "effect";
 
-import { Basket, Fall, Position, Restart, Rules } from "./rules";
+import { Basket, Fall, Position, Restart, Rules } from "./rules.ts";
 
 const canvas = document.querySelector("canvas")!;
 
@@ -280,7 +282,7 @@ const Again = Input.button("catch/Again", ["Enter", Input.padButton(0, 9)]);
 
 const Keys = System.input("catch/Keys", function* () {
   if ((yield* Again).pressed) {
-    (yield* Action.Actions).enqueue(Restart, {});
+    (yield* Action.Actions).enqueue(Restart);
   }
 });
 

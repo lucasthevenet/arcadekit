@@ -58,7 +58,7 @@ const Caught = Event.define(
   "page/Caught",
   Schema.Struct({ stars: Schema.Int })
 );
-const Started = Event.define("page/Started", Schema.Struct({}));
+const Started = Event.define("page/Started");
 const playing = System.runIf(State.is(Phase, "playing"));
 
 // What the player does, and the keys and buttons it is bound to. The rules
@@ -147,7 +147,7 @@ const handlers = [
     const phase = yield* Phase.sets;
     if (phase.is("title")) {
       phase.set("playing");
-      (yield* Started.emits).emit({});
+      (yield* Started.emits).emit();
       // A new game is handed the level's file again.
       yield* Assets.forget(Level);
     }
@@ -197,13 +197,13 @@ const scatter = Action.handler(
 const Keys = System.input("page/Keys", function* () {
   const actions = yield* Action.Actions;
   if ((yield* Go).pressed) {
-    actions.enqueue(Start, {});
+    actions.enqueue(Start);
   }
   if ((yield* Leave).pressed) {
-    actions.enqueue(Quit, {});
+    actions.enqueue(Quit);
   }
   if ((yield* Pause).pressed) {
-    actions.enqueue(TogglePause, {});
+    actions.enqueue(TogglePause);
   }
 });
 

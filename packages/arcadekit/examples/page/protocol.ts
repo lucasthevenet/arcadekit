@@ -3,8 +3,6 @@
  * UI imports this module and nothing else of the game: no component, no
  * system, no world.
  */
-import { Schema } from "effect";
-
 // In a game of your own these are "arcadekit/Action" and "arcadekit/View".
 import * as Action from "../../src/Action.ts";
 import * as View from "../../src/View.ts";
@@ -26,9 +24,9 @@ export const Hud = View.define("page/Hud", {
 // --- what the UI may ask for -------------------------------------------------------
 // The same actions the keys are bound to: a button is one more way to send one.
 
-export const Start = Action.define("page/Start", Schema.Struct({}));
-export const Quit = Action.define("page/Quit", Schema.Struct({}));
-export const TogglePause = Action.define("page/TogglePause", Schema.Struct({}));
+export const Start = Action.define("page/Start");
+export const Quit = Action.define("page/Quit");
+export const TogglePause = Action.define("page/TogglePause");
 
 /**
  * Every action the UI may ask for. The UI takes a `View.Bridge<Requests>`,

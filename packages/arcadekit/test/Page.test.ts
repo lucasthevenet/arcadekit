@@ -344,7 +344,6 @@ describe("the page's UI", () => {
     expect(imported("protocol.ts")).toEqual([
       "../../src/Action.ts",
       "../../src/View.ts",
-      "effect",
     ]);
   });
 });

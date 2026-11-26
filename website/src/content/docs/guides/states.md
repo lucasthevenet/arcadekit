@@ -27,7 +27,7 @@ const StartLevel = State.onEnter(
 );
 
 class NotPaused extends Schema.TaggedError<NotPaused>()("NotPaused", {}) {}
-const Resume = Action.define("game/Resume", Schema.Struct({}), {
+const Resume = Action.define("game/Resume", Schema.Void, {
   error: NotPaused,
 });
 
@@ -123,7 +123,7 @@ import { expect, it } from "@effect/vitest";
 import { App, Query, Test } from "arcadekit";
 import { Effect } from "effect";
 
-import { Go, Hero, Rules } from "./run";
+import { Go, Hero, Rules } from "./run.ts";
 
 it.effect("starts a run, keeps it through a pause, and starts another", () =>
   Effect.gen(function* () {

@@ -185,7 +185,7 @@ describe.runIf(built)("a module's page", () => {
       "main"
     );
     expect(session).toContain(
-      'import * as Session from "arcadekit/net/Session"'
+      'import { Session } from "arcadekit/net"\n// or\nimport * as Session from "arcadekit/net/Session"'
     );
     expect(page).toContain("## Constructors\n\n### clip");
   });

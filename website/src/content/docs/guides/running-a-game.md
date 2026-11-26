@@ -10,9 +10,9 @@ description: "Start a game with Driver.run and your platform's runMain. Learn ho
 ```ts
 import { Action, App, Driver, Plugin } from "arcadekit";
 import { Browser } from "arcadekit/browser";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
-const NewGame = Action.define("game/NewGame", Schema.Struct({}));
+const NewGame = Action.define("game/NewGame");
 const newGame = Action.handler(NewGame, function* () {});
 const Game = Plugin.make("game/Game", { handlers: [newGame] });
 
@@ -27,7 +27,7 @@ Browser.runMain(
       Effect.gen(function* () {
         // A click comes from outside any Effect: it runs what it asks for.
         const runFork = Effect.runForkWith(yield* Effect.context());
-        button.onclick = () => runFork(app.enqueue(NewGame, {}));
+        button.onclick = () => runFork(app.enqueue(NewGame));
       }),
   }),
   { target: canvas, preventDefault: ["Space", "ArrowUp", "ArrowDown"] }

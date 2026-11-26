@@ -6,7 +6,7 @@
 // - A block is a program of its own: it imports what it uses.
 // - A block with a title, ` ```ts title="rules.ts" `, is that file of its page. Starlight shows the
 //   title over the block. Another block of the page can import it (`import { Coin } from
-//   "./rules"`), and a later block with the same title adds to the end of it.
+//   "./rules.ts"`), and a later block with the same title adds to the end of it.
 // - A block fenced ` ```ts sketch ` is a sketch, with `/* … */` where a game's own code goes: it
 //   is highlighted as TypeScript and nothing compiles it.
 //
@@ -99,10 +99,9 @@ writeFileSync(
     {
       extends: "../../tsconfig.base.json",
       compilerOptions: {
-        // A page shows a game, which a bundler builds: its own files import each other without
-        // an extension, as `import { Coin } from "./rules"`.
-        module: "ESNext",
-        moduleResolution: "bundler",
+        // The repository's own resolution, NodeNext, which a game's tsconfig may have too: a
+        // page's files import each other by their whole name, as `import { Coin } from
+        // "./rules.ts"`, which a bundler takes as well.
         lib: ["ES2023", "DOM", "DOM.Iterable"],
         types: ["node"],
       },

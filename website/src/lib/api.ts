@@ -48,8 +48,11 @@ export interface Module {
   readonly name: string;
   /** The package's name: `arcadekit`. */
   readonly packageName: string;
-  /** Whether the package's own entry gives it too, as `import { Sound } from "arcadekit"`. */
-  readonly inRoot: boolean;
+  /**
+   * The entry that gives it too, as a namespace: the package's own, `import { Sound } from
+   * "arcadekit"`, or its folder's, `import { Browser } from "arcadekit/browser"`.
+   */
+  readonly givenBy: string | undefined;
   /** Its source file, relative to the repository's root. */
   readonly file: string;
   /** Its source file's first doc comment, as markdown, or `""`. */
@@ -601,14 +604,19 @@ export const readModule = (
     first?.groups === undefined
       ? ""
       : docMarkdown(`*${first.groups.value}`).body;
-  const index = path.join(root, folder, "src", "index.ts");
-  const inRoot =
+  const within = name.split("/").slice(0, -1).join("/");
+  const index = path.join(root, folder, "src", within, "index.ts");
+  const givenBy =
     existsSync(index) &&
-    readFileSync(index, "utf-8").includes(`export * as ${name} from`);
+    readFileSync(index, "utf-8").includes(
+      `export * as ${name.split("/").at(-1)} from`
+    )
+      ? [packageName, within].filter((part) => part !== "").join("/")
+      : undefined;
   return {
     name,
     packageName,
-    inRoot,
+    givenBy,
     file: sourceFile,
     comment,
     exports: exports
@@ -716,9 +724,12 @@ export const renderModule = (
     ...(module.comment === "" ? [] : [module.comment]),
     [
       "```ts",
-      ...(module.inRoot
-        ? [`import { ${module.name} } from "${module.packageName}"`, "// or"]
-        : []),
+      ...(module.givenBy === undefined
+        ? []
+        : [
+            `import { ${module.name.split("/").at(-1)} } from "${module.givenBy}"`,
+            "// or",
+          ]),
       // A module in a folder is imported by its own name: Session, of net/Session.
       `import * as ${module.name.split("/").at(-1)} from "${module.packageName}/${module.name}"`,
       "```",
