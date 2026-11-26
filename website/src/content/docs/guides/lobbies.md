@@ -61,7 +61,8 @@ Browser.runMain(program, { target: document.querySelector("canvas")! });
 
 The game begins on every peer with the same names, seed and settings, before its first tick, and the sessions check it as they check any game: peers with other names stop with `Drift.Unlike`, and peers with another seed or other settings with `Drift.Drifted` on the state they begin from. See [detecting drift](detecting-drift.md).
 
-- A peer that joins or leaves in the moment the last player says it is ready can see the lobby otherwise than the others. A peer that hears a player began takes that player's word for whom it began with.
+- A peer that joins or leaves in the moment the last player says it is ready can see the lobby otherwise than the others. A player says what it began with as it begins, and a peer that hears it begins with the same, or fails with `Lobby.Full` when it isn't among the players.
+- A player says it again whenever a peer speaks in the lobby or joins the room, for as long as its connection is open. A peer that lost the first saying, because its socket or the player's dropped, begins once the two hear each other again, and doesn't wait in the lobby for a game that began.
 - The lobby is outside the game. Nothing of it is in the world, a save or a replay: a game that uses its settings builds them into the world as it begins, from `start.settings`.
 
 ## Read more

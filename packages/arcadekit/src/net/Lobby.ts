@@ -63,6 +63,8 @@ const Word = Schema.Struct({
   ready: Schema.optionalKey(
     Schema.Struct({ key: Key, players: Schema.Array(Schema.String) })
   ),
+  /** Said once the peer has begun, with what it began with as `ready`. */
+  begun: Schema.optionalKey(Schema.Literal(true)),
 });
 type Word = typeof Word.Type;
 
@@ -186,9 +188,12 @@ const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
  *
  * - Peers that join or leave in the moment the last player says it is
  *   ready can see two lobbies. Every player that begins does so with the
- *   same names, seed and settings as the first: a peer that hears a player
- *   began takes that player's word for it. A peer the others began without
- *   fails with `Lobby.Full`.
+ *   same names, seed and settings as the first: a player says what it began
+ *   with as it begins, and a peer that hears it begins with the same, or
+ *   fails with `Lobby.Full` when it isn't among them. A player says it
+ *   again whenever a peer speaks in the lobby or joins the room, for as long
+ *   as its connection is open, so a peer that lost the first saying begins
+ *   on the next one: once the player hears it, and it hears the player.
  * - A second `Transport.connect` on the program's transport opens a second
  *   socket under this peer's name, which a relay refuses: connect with
  *   `lobby.connect`.
@@ -229,6 +234,12 @@ export const join = <
     let started: Start<S["Type"]> | undefined;
     // What the players' sessions sent before this one began, for its own.
     const held: Message.Message[] = [];
+    // What this peer began with, once it has.
+    let begun:
+      | { readonly key: Key; readonly players: readonly string[] }
+      | undefined;
+    // The players heard playing, and asked what they began with.
+    const asked = new Set<string>();
 
     const members = (): string[] => [me, ...heard.keys()].toSorted(byName);
 
@@ -253,6 +264,24 @@ export const join = <
       listener.send({ from: me, topic: TOPIC, body: word() })
     );
 
+    /** Says what this peer began with, for a peer that hasn't heard it. */
+    const sayBegun = Effect.suspend(() => {
+      if (begun === undefined) {
+        return Effect.void;
+      }
+      const { key, players: playing } = begun;
+      const body: Word = {
+        n: said++,
+        part,
+        ...(key.version === 0
+          ? {}
+          : { settings: { key, value: values.get(named(key)) } }),
+        ready: { key, players: playing },
+        begun: true,
+      };
+      return listener.send({ from: me, topic: TOPIC, body });
+    });
+
     const adopt = (key: Key, value: unknown): void => {
       values.set(named(key), value);
       if (later(key, current)) {
@@ -273,6 +302,7 @@ export const join = <
         h = add(addString(h, name), theirs);
       }
       h = addString(h, JSON.stringify(values.get(named(key)) ?? null));
+      begun = { key, players: names };
       return {
         me,
         others: names.filter((name) => name !== me),
@@ -284,8 +314,10 @@ export const join = <
     /** Reads what arrived, and returns the start once it is decided. */
     const poll = Effect.gen(function* () {
       let changed = false;
-      // The peers whose sessions have begun, by what their messages say.
-      const playing = new Set<string>();
+      // A player that says it began, the first by name.
+      let told:
+        | { readonly key: Key; readonly players: readonly string[] }
+        | undefined;
       for (const arrived of yield* listener.receive()) {
         if ("topic" in arrived) {
           if (arrived.topic !== TOPIC || arrived.from === me) {
@@ -295,23 +327,31 @@ export const join = <
           if (Exit.isFailure(read)) {
             continue;
           }
-          const told = read.value;
-          if (told.settings !== undefined) {
-            const value = Schema.decodeUnknownExit(codec)(told.settings.value);
+          const said = read.value;
+          if (said.settings !== undefined) {
+            const value = Schema.decodeUnknownExit(codec)(said.settings.value);
             if (Exit.isFailure(value)) {
               continue;
             }
-            adopt(told.settings.key, told.settings.value);
+            adopt(said.settings.key, said.settings.value);
+          }
+          if (said.begun === true && said.ready !== undefined) {
+            told ??= said.ready;
           }
           const before = heard.get(arrived.from);
-          if (before === undefined || told.n > before.n) {
-            heard.set(arrived.from, told);
+          if (before === undefined || said.n > before.n) {
+            heard.set(arrived.from, said);
           }
           // A peer heard for the first time hears this one's word.
           changed ||= before === undefined;
         } else if ("from" in arrived) {
           held.push(arrived);
-          playing.add(arrived.from);
+          // A player whose session plays, and that hasn't said with whom it
+          // began, says it once this peer speaks.
+          if (!asked.has(arrived.from)) {
+            asked.add(arrived.from);
+            changed = true;
+          }
         } else if ("joined" in arrived) {
           changed = true;
         } else if (heard.delete(arrived.left)) {
@@ -322,17 +362,11 @@ export const join = <
         // A newcomer hears this peer, and a ready word names who is here now.
         yield* say;
       }
-      // A peer that began did so with whom its last word says it was ready.
-      const begun = Array.from(playing).toSorted(byName);
-      if (begun.length > 0) {
-        const theirs = heard.get(begun[0]!)?.ready;
-        if (theirs === undefined) {
-          return yield* new Full({ players: begun });
+      if (told !== undefined) {
+        if (!told.players.includes(me)) {
+          return yield* new Full({ players: told.players });
         }
-        if (!theirs.players.includes(me)) {
-          return yield* new Full({ players: theirs.players });
-        }
-        return startWith(theirs.players, theirs.key);
+        return startWith(told.players, told.key);
       }
       const all = members();
       if (
@@ -362,6 +396,8 @@ export const join = <
         started = yield* poll;
         if (started === undefined) {
           yield* Effect.sleep("20 millis");
+        } else {
+          yield* sayBegun;
         }
       }
       return started;
@@ -437,12 +473,19 @@ export const join = <
           const handed: Transport.Listener = {
             send: listener.send,
             receive: () =>
-              Effect.map(listener.receive(), (arrived) => {
-                if (!first) {
-                  return arrived;
-                }
+              Effect.flatMap(listener.receive(), (arrived) => {
+                const given = first ? [...held, ...arrived] : arrived;
                 first = false;
-                return [...held, ...arrived];
+                // A peer that speaks in the lobby, or joins the room, may
+                // not have heard what this one began with.
+                const asked = arrived.some((one) =>
+                  "topic" in one
+                    ? one.topic === TOPIC && one.from !== me
+                    : "joined" in one
+                );
+                return asked
+                  ? Effect.as(sayBegun, given)
+                  : Effect.succeed(given);
               }),
           };
           return Transport.connect(session, connectOptions).pipe(

@@ -361,4 +361,87 @@ describe("a lobby", () => {
         })
       )
   );
+
+  it.effect(
+    "begins a peer that lost what a player began with, on the player's next word, and never leaves it waiting",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const hub = Transport.makeHub({ delay: 1 });
+          const ada = yield* joined(hub, "ada", 2);
+          const grace = yield* joined(hub, "grace", 2);
+          const graceStarts = yield* Effect.forkChild(grace.start);
+          yield* ada.set({ map: "dunes" });
+          yield* wait(hub, 3);
+          yield* grace.ready();
+          yield* wait(hub, 3);
+          // Ada is the last to say she is ready, and begins at once.
+          yield* ada.ready();
+          const begun = yield* ada.start;
+          // Her word that she is ready, what she began with and her
+          // session's first messages are lost on their way to grace.
+          hub.disconnect("ada");
+          const connected = yield* Effect.acquireRelease(
+            ada.connect(
+              yield* Session.make(CoinGame, {
+                ...begun,
+                hashEvery: 1,
+                hz: HZ,
+              })
+            ),
+            (made) => made.close
+          );
+          for (let i = 0; i < 5; i++) {
+            yield* connected.tick();
+            yield* wait(hub, 1);
+          }
+          expect(grace.members).toEqual(["grace"]);
+          expect(grace.waitingFor).toEqual([]);
+          // Ada comes back: as soon as her connection hears the room, she
+          // says what she began with, and grace begins with it.
+          hub.reconnect("ada");
+          yield* connected.tick();
+          yield* wait(hub, 1);
+          yield* connected.tick();
+          yield* wait(hub, 1);
+          const started = yield* Fiber.join(graceStarts);
+          expect(started).toEqual({
+            ...begun,
+            me: "grace",
+            others: ["ada"],
+          });
+          // And she plays the game ada plays, from what ada sent meanwhile.
+          const theirs = yield* grace.connect(
+            yield* Session.make(CoinGame, {
+              ...started,
+              hashEvery: 1,
+              hz: HZ,
+            })
+          );
+          for (let i = 0; i < 30; i++) {
+            hub.step();
+            yield* connected.tick();
+            yield* theirs.tick();
+          }
+          for (
+            let i = 0;
+            i < 20 && theirs.app.time.tick !== connected.app.time.tick;
+            i++
+          ) {
+            hub.step();
+            yield* (
+              theirs.app.time.tick < connected.app.time.tick
+                ? theirs
+                : connected
+            ).tick();
+          }
+          expect(theirs.app.time.tick).toBe(connected.app.time.tick);
+          expect(theirs.app.time.tick).toBeGreaterThan(20);
+          expect((yield* theirs.app.read(World)).hash()).toBe(
+            (yield* connected.app.read(World)).hash()
+          );
+          expect(theirs.drifted).toBeUndefined();
+        })
+      )
+  );
 });
