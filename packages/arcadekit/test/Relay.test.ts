@@ -1,7 +1,7 @@
-import { Cause, Effect, Exit, Result, Scope } from "effect";
+import { Cause, Effect, Exit, Option, Result, Scope } from "effect";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
-import { afterEach, assert, describe, expect, it } from "vitest";
+import { afterEach, assert, describe, expect, expectTypeOf, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index.ts";
@@ -165,6 +165,16 @@ describe("a peer that asks to come in", () => {
         status: 409,
         code: 1008,
       })
+    );
+  });
+
+  it("is refused with the error typed, so a host reads it without a cast", () => {
+    const refused = Exit.findErrorOption(
+      Relay.join("/blue?peer=ada", Relay.anyone, [ada])
+    );
+    expectTypeOf(refused).toEqualTypeOf<Option.Option<Relay.Refused>>();
+    expect(Option.map(refused, ({ reason }) => reason)).toEqual(
+      Option.some("name taken")
     );
   });
 

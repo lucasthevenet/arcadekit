@@ -11,7 +11,7 @@
  * of machines that trust each other. A relay open to strangers proves each
  * peer's name from the request and passes that name instead.
  */
-import { Cause, Exit } from "effect";
+import { Exit, Option } from "effect";
 import { WebSocketServer } from "ws";
 
 import { Relay } from "../src/net/index.ts";
@@ -25,9 +25,9 @@ server.on("connection", (socket, request) => {
     socket.send(data)
   );
   if (Exit.isFailure(connection)) {
-    const refused = Cause.squash(connection.cause) as Relay.Refused;
-    console.log(`refused: ${refused.message}`);
-    socket.close(refused.code, refused.reason);
+    const refused = Option.getOrUndefined(Exit.findErrorOption(connection));
+    console.log(`refused: ${refused?.message}`);
+    socket.close(refused?.code, refused?.reason);
     return;
   }
   const { member } = connection.value;
@@ -41,9 +41,9 @@ server.on("connection", (socket, request) => {
       isBinary ? bytes : new TextDecoder().decode(bytes)
     );
     if (Exit.isFailure(received)) {
-      const refused = Cause.squash(received.cause) as Relay.Refused;
-      console.log(`closed ${member.peer}: ${refused.message}`);
-      socket.close(refused.code, refused.reason);
+      const refused = Option.getOrUndefined(Exit.findErrorOption(received));
+      console.log(`closed ${member.peer}: ${refused?.message}`);
+      socket.close(refused?.code, refused?.reason);
     }
   });
   socket.on("close", () => {
