@@ -10,11 +10,7 @@ import type { PatchOf, RelationDef } from "../ecs/relation.ts";
 import { placed } from "../ecs/spawned.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World as EcsWorld } from "../ecs/world.ts";
-import type {
-  Event as EventDef,
-  Reader as EventReader,
-  ReadingEvents,
-} from "../Event.ts";
+import type { Event, Reader, ReadingEvents } from "../Event.ts";
 import type { ReadingWorld, Spawning, WritingWorld } from "../Services.ts";
 import type * as Singleton from "../Singleton.ts";
 import type { EventBus } from "./eventBus.ts";
@@ -182,7 +178,7 @@ class Heard implements ReadingEvents {
     this.#bus = bus;
   }
 
-  handle<P>(def: EventDef<P>): EventReader<P> {
+  handle<P>(def: Event<P>): Reader<P> {
     const handle = this.#bus.handle(def);
     return { read: () => handle.read() };
   }
