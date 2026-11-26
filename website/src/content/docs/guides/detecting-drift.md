@@ -7,7 +7,7 @@ A session reports **drift** when its peers hold different games: `Drift.Unlike` 
 
 ## Read why peers were not made alike
 
-A peer's first message says what the peer was made with: a hash of what its game simulates, its `delta`, the names of every peer, and the tick its game begins at. A peer that hears of another made otherwise stops with `Drift.Unlike` before it runs a tick it is sure of, and so does every peer that hears from it. `session.tick()` throws the report, and `session.tickExit()` fails with it, on that tick and every later one. `session.drifted` keeps it.
+A peer's first message says what the peer was made with: a hash of what its game simulates, its `delta`, the names of every peer, and the tick its game begins at. A peer that hears of another made otherwise stops with `Drift.Unlike` before it runs a tick it is sure of, and so does every peer that hears from it. `session.tick()` fails with the report, on that tick and every later one. `session.drifted` keeps it.
 
 - The report names both peers, what each was made with, and `differ`, the parts that differ: `"game"`, `"delta"`, `"peers"` or `"start"`. Its message says what to give every peer.
 - What is compared of a game is what it simulates: the systems of the tick in the order they run, the hooks of its states, the actions it handles, and its version, all by name. Frame and input systems are left out, so a peer that draws the game plays with one that doesn't.
@@ -17,7 +17,7 @@ A peer's first message says what the peer was made with: a hash of what its game
 
 ## Read where peers drifted apart
 
-Each peer sends the others the [checkpoints](replays.md#verify-a-replay-with-checkpoints) its log records, each the world's hash at a tick, inside the messages it sends anyway. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. `session.tick()` throws it, and the throw stops a driver. `session.tickExit()` fails with it, on that tick and every later one. `session.drifted` keeps it for a UI to show.
+Each peer sends the others the [checkpoints](replays.md#verify-a-replay-with-checkpoints) its log records, each the world's hash at a tick, inside the messages it sends anyway. When every peer has reported its hash for a tick and the hashes differ, every session stops with `Drift.Drifted`. `session.tick()` fails with it, and the failure stops a driver, on that tick and every later one. `session.drifted` keeps it for a UI to show.
 
 - The report holds the tick, every peer's hash by name, and `agreedAt`, the last tick the hashes matched. With three or more peers, the hashes show which peer is the odd one out. With a checkpoint every tick, `agreedAt` is the tick before they diverged.
 - A peer that stops sends its hash first, so the others stop with the same report instead of waiting for it.

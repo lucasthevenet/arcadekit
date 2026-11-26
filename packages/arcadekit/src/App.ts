@@ -46,7 +46,7 @@
  * provides `Tracer.MinimumTraceLevel` as "Info". A span reads the real clock
  * and draws its ids from `Math.random`, so tracing doesn't change the game.
  */
-import { Data, Effect, Exit } from "effect";
+import { Data, Effect } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action.ts";
@@ -153,6 +153,11 @@ type ResultFor<HU, N extends string> =
   >
     ? A
     : never;
+/** What the game's handlers refuse an action with, of every action. `HU` is a union of handlers. */
+type Refusals<HU> =
+  HU extends Action.Handler<string, infer _P, unknown, infer E, unknown>
+    ? E
+    : never;
 type FailureFor<HU, N extends string> =
   HandlerFor<HU, N> extends Action.Handler<
     string,
@@ -198,11 +203,21 @@ export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
 
 /**
  * The part of an app that doesn't depend on its systems or handlers, which
- * every app satisfies.
+ * every app satisfies. Each of its methods returns an Effect, and the rest
+ * are values to read.
+ *
+ *   yield* app.tick(1 / 60)
+ *   const save = yield* app.save()
  *
  * **When to use**
  *
  * Use for code that works with any app.
+ *
+ * **Details**
+ *
+ * A call made where it may not be, such as `app.tick` from inside a tick,
+ * dies with a message that says where it was made. Nothing is to handle
+ * there: it is a bug in the code that made it.
  *
  * @category Models
  */
@@ -221,8 +236,8 @@ export interface Any {
    * or `dispatch`, which the log holds and a replay repeats. So `effect` can
    * require nothing that writes. A query with `Query.writes`, `Commands`,
    * `World.writes`, an event, `State.sets` or `Singleton.writes` doesn't
-   * compile, and the error says why. Call it only between ticks, since it
-   * throws anywhere else.
+   * compile, and the error says why. Run it only between ticks, since it
+   * dies anywhere else.
    */
   readonly read: <A, E, R>(
     effect: Effect.Effect<A, E, R> & Readable<R>
@@ -238,23 +253,27 @@ export interface Any {
   /**
    * What the app is running right now. A game is stepped, saved, captured,
    * put back, recorded, checkpointed and inspected only in `"idle"`. Each of
-   * those throws in any other phase, which includes a handler that
-   * `dispatch` runs, since a refusal takes back that handler's work.
+   * those dies in any other phase, which includes a handler that `dispatch`
+   * runs, since a refusal takes back that handler's work.
    */
   readonly phase: Phase;
   /**
-   * Runs one tick. It throws if a system fails, if the handler of a queued
-   * action dies or fails with an error its action doesn't declare, or if a
-   * fiber started during
-   * the tick is still running when the tick ends: one forked with
-   * `Effect.forkDetach`, `Effect.forkIn` or into a scope of its own, which
-   * would change the game at a moment no replay repeats.
+   * Runs one tick. It fails with what a system fails with. It dies if the
+   * handler of a queued action dies or fails with an error its action
+   * doesn't declare, or if a fiber started during the tick is still running
+   * when the tick ends: one forked with `Effect.forkDetach`, `Effect.forkIn`
+   * or into a scope of its own, which would change the game at a moment no
+   * replay repeats.
    *
    * A tick reads no device. The input stage, `input`, reads them, and a
-   * driver runs it before each tick. Code that steps its app by hand calls
+   * driver runs it before each tick. Code that steps its app by hand runs
    * `app.input()` before each tick that is to hear the devices.
+   *
+   *   yield* app.input()
+   *   yield* app.tick(1 / 60)
+   *   const ticked = yield* Effect.exit(app.tick(1 / 60))   // the outcome, as a value
    */
-  readonly tick: (delta: number) => void;
+  readonly tick: (delta: number) => Effect.Effect<void, unknown>;
   /**
    * Whether the game is at rest, which means its last tick changed nothing
    * but its time and a tick now would find no pending work. It is false
@@ -291,11 +310,14 @@ export interface Any {
    * tick.
    *
    * The world is frozen while the stage runs, and anything that would change
-   * the game throws. It throws if a system fails or leaves a fiber running,
-   * as `tick` does. Call it only between ticks, since it throws anywhere
-   * else.
+   * the game throws. It fails with what a system fails with, and dies when
+   * one leaves a fiber running, as `tick` does. Run it only between ticks,
+   * since it dies anywhere else.
    */
-  readonly frame: (alpha?: number, delta?: number) => void;
+  readonly frame: (
+    alpha?: number,
+    delta?: number
+  ) => Effect.Effect<void, unknown>;
   /**
    * Runs the input stage once, the systems made with `System.input`, which
    * turn the devices' state into actions. It reads the devices once, and the
@@ -305,11 +327,11 @@ export interface Any {
    * doesn't call it. A replay doesn't call it either, since its log holds the
    * actions.
    *
-   * The world is frozen while the stage runs, as for `frame`. It throws if a
-   * system fails or leaves a fiber running, as `tick` does. Call it only
-   * between ticks, since it throws anywhere else.
+   * The world is frozen while the stage runs, as for `frame`. It fails with
+   * what a system fails with, and dies when one leaves a fiber running, as
+   * `tick` does. Run it only between ticks, since it dies anywhere else.
    */
-  readonly input: () => void;
+  readonly input: () => Effect.Effect<void, unknown>;
   /**
    * Like `dispatch`, for actions that arrive as data, such as network
    * messages, saved games and replays. It takes the payload in its JSON form
@@ -322,16 +344,16 @@ export interface Any {
     name: string,
     payload: unknown,
     from?: string
-  ) => Exit.Exit<unknown, unknown>;
+  ) => Effect.Effect<unknown, unknown>;
   /**
-   * Like `enqueue`, for actions that arrive as data. Where it is called
+   * Like `enqueue`, for actions that arrive as data. Where it is run
    * decides whether the action is logged, as for `enqueue`. An unknown name
    * or an invalid payload becomes an `Action.Rejected` event when the action
    * is applied.
    *
    * `from` names the issuer, for code that brings actions in on someone
    * else's behalf, such as a server for its clients. The handler receives it,
-   * and the log records it. Giving `from` throws on an app that a session has
+   * and the log records it. Giving `from` dies on an app that a session has
    * taken over, where each peer's actions are stamped with that peer's own
    * name, and from the simulation, whose actions nobody issued.
    */
@@ -339,7 +361,7 @@ export interface Any {
     name: string,
     payload: unknown,
     from?: string
-  ) => void;
+  ) => Effect.Effect<void>;
   /**
    * Every action that entered the game from outside, in arrival order, with
    * checkpoints of the world's hash among them. It holds every dispatched
@@ -355,33 +377,33 @@ export interface Any {
    * begins and ends at, and the world's hash where it ends. The recording
    * begins where this app began, from its seed or from the save it was made
    * from. With `since`, a save this app made, it begins at that save and
-   * holds it, and replaying it returns to the present from that save. Call it
-   * only between ticks, since it throws anywhere else.
+   * holds it, and replaying it returns to the present from that save. Run it
+   * only between ticks, since it dies anywhere else.
    *
    * An app made from a save keeps that save for as long as it lives, to
    * record from.
    */
-  readonly record: (since?: Save.Save) => Journal.Recording;
+  readonly record: (since?: Save.Save) => Effect.Effect<Journal.Recording>;
   /**
    * Saves the game as it is, to load later with `App.make(game, { save })`.
    * The save holds the world and the length of the log. The world holds the
    * time, the actions queued for the next tick, the events waiting to be
-   * read, and what the change queries haven't visited yet. Call it only
-   * between ticks, since it throws anywhere else.
+   * read, and what the change queries haven't visited yet. Run it only
+   * between ticks, since it dies anywhere else.
    *
    * It fails with `Save.SaveRefused`, which names what is in the way: a
    * queued action or a waiting event whose payload its schema doesn't take, a
    * field that holds a value that can't be saved, or commands queued but not
    * applied.
    */
-  readonly save: () => Exit.Exit<Save.Save, Save.SaveRefused>;
+  readonly save: () => Effect.Effect<Save.Save, Save.SaveRefused>;
   /**
    * Records the world's hash in the action log now, and returns it. Use it for
    * points the game wants verified beyond the ones `checkpointEvery` records,
-   * such as when it is saved. Call it only between ticks, since it throws
+   * such as when it is saved. Run it only between ticks, since it dies
    * anywhere else.
    */
-  readonly checkpoint: () => number;
+  readonly checkpoint: () => Effect.Effect<number>;
   /**
    * Copies what the game holds and what it did last as plain data, to read in
    * a debugger or the console, or to show in a game's own UI. The copy, an
@@ -391,15 +413,15 @@ export interface Any {
    *
    * **Gotchas**
    *
-   * - It copies the whole world, so call it when you look rather than every
+   * - It copies the whole world, so run it when you look rather than every
    *   frame.
-   * - It throws during a tick or a frame, so call it between ticks.
+   * - It dies during a tick or a frame, so run it between ticks.
    */
-  readonly inspect: () => Inspection;
+  readonly inspect: () => Effect.Effect<Inspection>;
 }
 
 /**
- * What a game holds and what it did last, as `app.inspect()` copies it. Every
+ * What a game holds and what it did last, as `app.inspect()` gives it. Every
  * value is a plain object or array, a copy, which can be kept, logged or shown
  * without changing the game.
  *
@@ -461,37 +483,50 @@ export interface Inspection {
  * @category Models
  */
 export interface App<E = never, HU = never> extends Any {
+  /** Runs one tick, as `App.Any`'s `tick` does, and fails with what the game's systems fail with. */
+  readonly tick: (delta: number) => Effect.Effect<void, E>;
+  /** Runs the frame stage, as `App.Any`'s `frame` does, and fails with what a system fails with. */
+  readonly frame: (alpha?: number, delta?: number) => Effect.Effect<void, E>;
+  /** Runs the input stage, as `App.Any`'s `input` does, and fails with what a system fails with. */
+  readonly input: () => Effect.Effect<void, E>;
   /**
-   * Runs one tick and returns the outcome, with system failures as a typed
-   * `Exit`.
-   */
-  readonly tickExit: (delta: number) => Exit.Exit<void, E>;
-  /** Like `frame`, but returns the outcome, with a system's failure typed. */
-  readonly frameExit: (alpha?: number, delta?: number) => Exit.Exit<void, E>;
-  /** Like `input`, but returns the outcome, with a system's failure typed. */
-  readonly inputExit: () => Exit.Exit<void, E>;
-  /**
-   * Applies an action now and returns the outcome. A refusal comes back as a
-   * typed failure and leaves the game unchanged. The log holds an accepted
-   * action and leaves out a refused one.
+   * Applies an action now, and succeeds with what its handler returns. A
+   * refusal is a typed failure, and leaves the game unchanged. The log holds
+   * an accepted action and leaves out a refused one.
    *
-   * It is for code outside the simulation, between ticks. It throws during a
-   * tick, during the frame or input stage, and from a handler. It also throws
+   *   const moved = yield* Effect.exit(app.dispatch(Move, { dx: 1 }))
+   *
+   * It is for code outside the simulation, between ticks. It dies during a
+   * tick, during the frame or input stage, and from a handler. It also dies
    * on an app that a session has taken over, where it would advance this
-   * machine's game alone, so use `enqueue` there. It throws, with the
+   * machine's game alone, so use `enqueue` there. It dies, with the
    * handler's changes undone, when the handler leaves a fiber running, as
    * `tick` does.
    */
   readonly dispatch: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
-  ) => Exit.Exit<Placed<ResultFor<HU, N>>, FailureFor<HU, N>>;
+  ) => Effect.Effect<Placed<ResultFor<HU, N>>, FailureFor<HU, N>>;
+  /**
+   * Applies an action that arrives as data, as `App.Any`'s `dispatchByName`
+   * does. It fails with what the game refuses an action with, with
+   * `Action.UnknownAction` for a name the game has no handler for, and with
+   * `Action.InvalidPayload` for a payload its schema doesn't take.
+   */
+  readonly dispatchByName: (
+    name: string,
+    payload: unknown,
+    from?: string
+  ) => Effect.Effect<
+    unknown,
+    Refusals<HU> | Action.UnknownAction | Action.InvalidPayload
+  >;
   /**
    * Queues an action for the start of the next tick. A refusal when it is
    * applied becomes an `Action.Rejected` event. It is the same as
-   * `Actions.enqueue`, and can be called from anywhere.
+   * `Actions.enqueue`, and can be run from anywhere.
    *
-   * Where it is called decides whether the action is logged. From outside
+   * Where it is run decides whether the action is logged. From outside
    * the simulation, between ticks, the action is input. The log holds it, a
    * refusal is marked on its log entry, and on an app that a session has
    * taken over it goes to every peer. From a system, a handler or a plugin's
@@ -505,7 +540,7 @@ export interface App<E = never, HU = never> extends Any {
   readonly enqueue: <N extends ActionNames<HU>>(
     action: Action.ActionDef<N, PayloadFor<HU, N>>,
     payload: PayloadFor<HU, N>
-  ) => Exit.Exit<void, Action.InvalidPayload>;
+  ) => Effect.Effect<void, Action.InvalidPayload>;
   /**
    * Closes the app. It lets go of everything the app opened when it was
    * made: its plugins' layers, the devices it listens to, and the output it
@@ -522,8 +557,8 @@ export interface App<E = never, HU = never> extends Any {
 /**
  * An app that something else steps, such as a session, which runs a tick
  * when every peer may, or a sync test. It is the app without what would move
- * this machine's game alone: `tick`, `tickExit`, `dispatch` and
- * `dispatchByName`. It has no `close` either, because whatever steps it
+ * this machine's game alone: `tick`, `dispatch` and `dispatchByName`. It has
+ * no `close` either, because whatever steps it
  * closes it. Its world, time, frame and input stages, log, saves and
  * recordings are an app's. An action given to `enqueue` is applied when
  * whatever steps the app says. Its `enqueueByName` takes no `from`, since
@@ -537,15 +572,13 @@ export interface App<E = never, HU = never> extends Any {
  */
 export type Steered<E = never, HU = never> = Omit<
   App<E, HU>,
-  | "close"
-  | "dispatch"
-  | "dispatchByName"
-  | "tick"
-  | "tickExit"
-  | "enqueueByName"
+  "close" | "dispatch" | "dispatchByName" | "tick" | "enqueueByName"
 > & {
   /** Like `App.enqueueByName`. A session stamps who issued it. */
-  readonly enqueueByName: (name: string, payload: unknown) => void;
+  readonly enqueueByName: (
+    name: string,
+    payload: unknown
+  ) => Effect.Effect<void>;
 };
 
 /**

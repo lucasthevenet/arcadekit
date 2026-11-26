@@ -1,5 +1,5 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import { entityIndex } from "../src/ecs/component.ts";
 import {
@@ -848,132 +848,134 @@ const orchard = Effect.gen(function* () {
 });
 
 describe("relations in an app", () => {
-  it("are handed to a system with a target it reads, and its other fields to write", () => {
-    const Accrue = System.tick("rl/Accrue", function* () {
-      const world = yield* World.writes(Owes);
-      const commands = yield* Commands.spawns(Body, Owes);
-      (yield* Query.all(Owes).pipe(Query.writes(Owes))).each((owes, debtor) => {
-        owes.amount += 1;
-        if (owes.amount < 0) {
-          // Never run: it is the compiler that refuses each of these.
-          // @ts-expect-error a relation's target is read-only in a loop that writes
-          owes.target = debtor;
-          world.set(debtor, Owes, {
-            // @ts-expect-error a relation's target is not set like a field
-            target: debtor,
-          });
-          commands.spawn(
-            Body,
-            // @ts-expect-error a relation needs a target
-            Owes
-          );
-          commands.add(
-            debtor,
-            // @ts-expect-error a relation needs a target
-            Owes
-          );
-          world.sources(
-            debtor,
-            // @ts-expect-error only a relation has sources
-            Body
-          );
-        }
-      });
-      const lender = commands.spawn(Body);
-      commands.spawn(Body, Owes.of({ target: lender, amount: 0 }));
-    });
-    Effect.runSync(
+  it.effect(
+    "are handed to a system with a target it reads, and its other fields to write",
+    () =>
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ systems: [Accrue] }));
-        const world = yield* app.read(World);
-        app.tick(1);
-        app.tick(1);
-        const lenders = (yield* app.read(
-          Query.all(Body).pipe(Query.without(Owes))
-        )).entities();
-        expect(
-          lenders.map((lender) => world.sources(lender, Owes).length)
-        ).toEqual([1, 1]);
-        const [first] = lenders;
-        assert(first !== undefined);
-        const [debtor] = world.sources(first, Owes);
-        assert(debtor !== undefined);
-        expect(world.get(debtor, Owes)).toEqual({ target: first, amount: 1 });
+        const Accrue = System.tick("rl/Accrue", function* () {
+          const world = yield* World.writes(Owes);
+          const commands = yield* Commands.spawns(Body, Owes);
+          (yield* Query.all(Owes).pipe(Query.writes(Owes))).each(
+            (owes, debtor) => {
+              owes.amount += 1;
+              if (owes.amount < 0) {
+                // Never run: it is the compiler that refuses each of these.
+                // @ts-expect-error a relation's target is read-only in a loop that writes
+                owes.target = debtor;
+                world.set(debtor, Owes, {
+                  // @ts-expect-error a relation's target is not set like a field
+                  target: debtor,
+                });
+                commands.spawn(
+                  Body,
+                  // @ts-expect-error a relation needs a target
+                  Owes
+                );
+                commands.add(
+                  debtor,
+                  // @ts-expect-error a relation needs a target
+                  Owes
+                );
+                world.sources(
+                  debtor,
+                  // @ts-expect-error only a relation has sources
+                  Body
+                );
+              }
+            }
+          );
+          const lender = commands.spawn(Body);
+          commands.spawn(Body, Owes.of({ target: lender, amount: 0 }));
+        });
+        {
+          const app = yield* App.make(App.define({ systems: [Accrue] }));
+          const world = yield* app.read(World);
+          yield* app.tick(1);
+          yield* app.tick(1);
+          const lenders = (yield* app.read(
+            Query.all(Body).pipe(Query.without(Owes))
+          )).entities();
+          expect(
+            lenders.map((lender) => world.sources(lender, Owes).length)
+          ).toEqual([1, 1]);
+          const [first] = lenders;
+          assert(first !== undefined);
+          const [debtor] = world.sources(first, Owes);
+          assert(debtor !== undefined);
+          expect(world.get(debtor, Owes)).toEqual({ target: first, amount: 1 });
+        }
       })
-    );
-  });
+  );
 
-  it("are kept through actions and systems, and a game with them replays", () => {
-    Effect.runSync(
+  it.effect(
+    "are kept through actions and systems, and a game with them replays",
+    () =>
       Effect.gen(function* () {
         const {
           app,
           world,
           trees: [first, second],
         } = yield* orchard;
-        app.tick(1);
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(world.sources(first, ChildOf).length).toBe(3);
         const [branch] = world.sources(first, ChildOf);
         assert(branch !== undefined);
         // A handler changes who points at whom through Commands.
-        expect(app.dispatch(Graft, { branch, onto: second })).toEqual(
-          Exit.succeed(3)
-        );
+        expect(
+          yield* Effect.exit(app.dispatch(Graft, { branch, onto: second }))
+        ).toEqual(Exit.succeed(3));
         expect(world.sources(second, ChildOf).length).toBe(4);
-        app.dispatch(Fell, { tree: first });
+        yield* app.dispatch(Fell, { tree: first });
         expect(world.isAlive(first)).toBe(false);
         expect(world.isAlive(branch)).toBe(true);
         expect(world.sources(first, ChildOf)).toEqual([]);
-        app.enqueue(Fell, { tree: second });
-        app.tick(1);
+        yield* app.enqueue(Fell, { tree: second });
+        yield* app.tick(1);
         expect(world.isAlive(branch)).toBe(false);
         // One tree is left, with the branches of three ticks and its first.
         expect(world.entityCount).toBe(5);
 
-        const played = app.record();
+        const played = yield* app.record();
         const again = yield* Journal.replay(played, Orchard, {
           checkpointEvery: 1,
         });
         expect((yield* again.read(World)).hash()).toBe(world.hash());
       })
-    );
-  });
+  );
 
-  it("are saved with a game, and the loaded game goes on the same", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const {
-          app,
-          world,
-          trees: [first, , third],
-        } = yield* orchard;
-        app.tick(1);
-        const save = app.save();
-        if (Exit.isFailure(save)) {
-          throw new Error("the save was refused");
-        }
-        const read = Save.decode(Save.encode(save.value));
-        if (Exit.isFailure(read)) {
-          throw new Error("the save did not decode");
-        }
-        const loaded = yield* App.make(
-          App.define({ systems: [Grow], handlers: [fell, graft] }),
-          { save: read.value, checkpointEvery: 1 }
-        );
-        for (const each of [app, loaded]) {
-          each.dispatch(Fell, { tree: third });
-          each.tick(1);
-          each.tick(1);
-        }
-        const loadedWorld = yield* loaded.read(World);
-        expect(loadedWorld.hash()).toBe(world.hash());
-        expect(loadedWorld.sources(first, ChildOf)).toEqual(
-          world.sources(first, ChildOf)
-        );
-        // Two trees are left, each with its first branch and three more.
-        expect(loadedWorld.entityCount).toBe(10);
-      })
-    );
-  });
+  it.effect("are saved with a game, and the loaded game goes on the same", () =>
+    Effect.gen(function* () {
+      const {
+        app,
+        world,
+        trees: [first, , third],
+      } = yield* orchard;
+      yield* app.tick(1);
+      const save = yield* Effect.exit(app.save());
+      if (Exit.isFailure(save)) {
+        throw new Error("the save was refused");
+      }
+      const read = Save.decode(Save.encode(save.value));
+      if (Exit.isFailure(read)) {
+        throw new Error("the save did not decode");
+      }
+      const loaded = yield* App.make(
+        App.define({ systems: [Grow], handlers: [fell, graft] }),
+        { save: read.value, checkpointEvery: 1 }
+      );
+      for (const each of [app, loaded]) {
+        yield* each.dispatch(Fell, { tree: third });
+        yield* each.tick(1);
+        yield* each.tick(1);
+      }
+      const loadedWorld = yield* loaded.read(World);
+      expect(loadedWorld.hash()).toBe(world.hash());
+      expect(loadedWorld.sources(first, ChildOf)).toEqual(
+        world.sources(first, ChildOf)
+      );
+      // Two trees are left, each with its first branch and three more.
+      expect(loadedWorld.entityCount).toBe(10);
+    })
+  );
 });

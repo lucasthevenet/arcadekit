@@ -1,12 +1,20 @@
+import {
+  afterEach,
+  assert,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "@effect/vitest";
 import { Cause, Effect, Exit, Option, Result, Scope } from "effect";
 import { Socket } from "effect/socket";
 import { TestClock } from "effect/testing";
-import { afterEach, assert, describe, expect, expectTypeOf, it } from "vitest";
 import { WebSocketServer } from "ws";
 
 import { Input, World } from "../src/index.ts";
 import { Message, Relay, Session, Transport } from "../src/net/index.ts";
-import { CoinGame, DELTA, Lying, moves, players, purseOf } from "./peers.ts";
+import { thrown } from "./checks.ts";
+import { CoinGame, DELTA, moves, players, purseOf } from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
@@ -29,7 +37,9 @@ const messagesIn = (
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
-  readonly connected: Transport.Connected;
+  readonly connected: Transport.Connected<
+    Effect.Error<ReturnType<Peer["session"]["tick"]>>
+  >;
 }
 
 /** A peer of the game, joined to the room "match" of the relay at `url`. */
@@ -53,16 +63,10 @@ const seatAt = (url: string, name: string) =>
       ),
       (made) => made.close
     );
-    const services = yield* Effect.context();
     const seat: Seat = {
       name,
       app: session.app,
       world: yield* session.app.read(World),
-      // Read again each time: a rollback restores the world, and a view
-      // does not outlive that.
-      get coins() {
-        return Effect.runSyncWith(services)(session.app.read(Lying));
-      },
       session,
       hashes: [],
       source,
@@ -610,6 +614,21 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
   throw new Error(`timed out waiting until ${what}`);
 };
 
+/** Waits, a few milliseconds at a time, until what `holds` runs says it does. */
+const waitUntil = <E>(
+  holds: Effect.Effect<boolean, E>,
+  what: string
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 400; i++) {
+      if (yield* Effect.orDie(holds)) {
+        return;
+      }
+      yield* Effect.promise(() => later(5));
+    }
+    return yield* Effect.die(new Error(`timed out waiting until ${what}`));
+  });
+
 describe("the transport between machines, a WebSocket to a relay", () => {
   let stop: (() => Promise<void>) | undefined;
   afterEach(async () => {
@@ -623,270 +642,286 @@ describe("the transport between machines, a WebSocket to a relay", () => {
       Effect.provide(Transport.layerWebSocket(url, options))
     );
 
-  it("carries a message to the other peers of the room, and what was sent before it opened", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const one = yield* listenOn(Relay.address(served.url, ada));
-          const two = yield* listenOn(Relay.address(served.url, grace));
-          const elsewhere = yield* listenOn(Relay.address(served.url, linus));
-          // Sent at once, before either socket has had the time to open.
-          one.send(message("ada", 0, 3));
-          one.send(message("ada", 1));
-          two.send(message("grace", 0));
-          const heard: Record<string, Message.Message[]> = {
-            ada: [],
-            grace: [],
-            linus: [],
-          };
-          yield* Effect.promise(() =>
-            until(() => {
-              heard.ada!.push(...messagesIn(one.receive()));
-              heard.grace!.push(...messagesIn(two.receive()));
-              heard.linus!.push(...messagesIn(elsewhere.receive()));
-              return heard.grace!.length === 2 && heard.ada!.length === 1;
-            }, "the messages arrived")
-          );
-          expect(heard).toEqual({
-            ada: [message("grace", 0)],
-            grace: [message("ada", 0, 3), message("ada", 1)],
-            linus: [],
-          });
-          expect(served.relay.members("blue")).toEqual([ada, grace]);
-        })
-      )
-    );
-    // Their scope closed, and their sockets with it: the room is empty.
-    await until(() => served.relay.rooms === 0, "the relay saw them leave");
-  });
-
-  it("keeps two peers the same game, and tells each handler who the relay let in", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const seats: Seat[] = [];
-          for (const name of ["ada", "grace"]) {
-            seats.push(yield* seatAt(served.url, name));
-          }
-          const act = players(31);
-          const [one, two] = seats as [Seat, Seat];
-          for (let i = 0; i < 60; i++) {
-            for (const seat of seats) {
-              if (i < 40) {
-                act(seat);
-              }
-              seat.connected.tick();
-              yield* Effect.promise(() => later(1));
-            }
-          }
-          for (
-            let i = 0;
-            i < 300 &&
-            (one.app.time.tick !== two.app.time.tick ||
-              one.session.confirmed < one.app.time.tick - 1);
-            i++
-          ) {
-            yield* Effect.promise(() => later(2));
-            (one.app.time.tick <= two.app.time.tick
-              ? one
-              : two
-            ).connected.tick();
-          }
-          expect(one.app.time.tick).toBe(two.app.time.tick);
-          expect(one.app.time.tick).toBeGreaterThan(40);
-          expect(one.world.hash()).toBe(two.world.hash());
-          expect(one.app.actionLog).toEqual(two.app.actionLog);
-          expect(one.session.drifted).toBeUndefined();
-          // Tips went to whoever issued them, by the name the relay knows.
-          const tips = moves(one.app.actionLog).filter(
-            (entry) => entry.name === "ls/Tip"
-          );
-          expect(tips.length).toBeGreaterThan(4);
-          expect(
-            tips
-              .map((entry) => entry.from)
-              .toSorted((a, b) => (a ?? "").localeCompare(b ?? ""))
-          ).toEqual([
-            ...tips.filter((entry) => entry.from === "ada").map(() => "ada"),
-            ...tips
-              .filter((entry) => entry.from === "grace")
-              .map(() => "grace"),
-          ]);
-          expect(tips.some((entry) => entry.from === "ada")).toBe(true);
-          expect(tips.some((entry) => entry.from === "grace")).toBe(true);
-          expect(tips.every((entry) => entry.refused === undefined)).toBe(true);
-          expect(purseOf(two.world)).toEqual(purseOf(one.world));
-        })
-      )
-    );
-  });
-
-  it("connects again when its socket drops, and the peers play on to the same game", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const seats: Seat[] = [];
-          for (const name of ["ada", "grace"]) {
-            seats.push(yield* seatAt(served.url, name));
-          }
-          const act = players(41);
-          const [one, two] = seats as [Seat, Seat];
-          const play = (rounds: number) =>
-            Effect.gen(function* () {
-              for (let i = 0; i < rounds; i++) {
-                for (const seat of seats) {
-                  act(seat);
-                  seat.connected.tick();
-                  yield* Effect.promise(() => later(1));
-                }
-              }
+  it.effect(
+    "carries a message to the other peers of the room, and what was sent before it opened",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const one = yield* listenOn(Relay.address(served.url, ada));
+            const two = yield* listenOn(Relay.address(served.url, grace));
+            const elsewhere = yield* listenOn(Relay.address(served.url, linus));
+            // Sent at once, before either socket has had the time to open.
+            one.send(message("ada", 0, 3));
+            one.send(message("ada", 1));
+            two.send(message("grace", 0));
+            const heard: Record<string, Message.Message[]> = {
+              ada: [],
+              grace: [],
+              linus: [],
+            };
+            yield* Effect.promise(() =>
+              until(() => {
+                heard.ada!.push(...messagesIn(one.receive()));
+                heard.grace!.push(...messagesIn(two.receive()));
+                heard.linus!.push(...messagesIn(elsewhere.receive()));
+                return heard.grace!.length === 2 && heard.ada!.length === 1;
+              }, "the messages arrived")
+            );
+            expect(heard).toEqual({
+              ada: [message("grace", 0)],
+              grace: [message("ada", 0, 3), message("ada", 1)],
+              linus: [],
             });
-          yield* play(30);
-          // Grace's socket goes, with whatever was on its way, then ada's.
-          served.drop("grace");
-          yield* play(30);
-          served.drop("ada");
-          yield* play(30);
-          for (
-            let i = 0;
-            i < 400 &&
-            (one.app.time.tick !== two.app.time.tick ||
-              one.session.confirmed < one.app.time.tick - 1 ||
-              one.app.time.tick < 80);
-            i++
-          ) {
-            yield* Effect.promise(() => later(2));
-            (one.app.time.tick <= two.app.time.tick
-              ? one
-              : two
-            ).connected.tick();
-          }
-          expect(one.app.time.tick).toBe(two.app.time.tick);
-          expect(one.app.time.tick).toBeGreaterThanOrEqual(80);
-          expect(one.world.hash()).toBe(two.world.hash());
-          expect(one.app.actionLog).toEqual(two.app.actionLog);
-          expect(moves(one.app.actionLog).length).toBeGreaterThan(20);
-          expect(one.session.drifted).toBeUndefined();
-          expect(one.connected.away).toEqual([]);
-          expect(two.connected.away).toEqual([]);
-          // What both have heard is let go of.
-          expect(one.session.unheard).toBeLessThan(20);
-        })
-      )
-    );
-  });
+            expect(served.relay.members("blue")).toEqual([ada, grace]);
+          })
+        );
+        // Their scope closed, and their sockets with it: the room is empty.
+        yield* Effect.promise(() =>
+          until(() => served.relay.rooms === 0, "the relay saw them leave")
+        );
+      })
+  );
 
-  it("tells the others when a peer has left for good, and keeps what it sent for when it comes back", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const session = yield* Session.make(CoinGame, {
-            seed: 5,
-            me: "ada",
-            others: ["grace"],
-            delta: DELTA,
-            ahead: 0,
-          });
-          const connected = yield* Effect.acquireRelease(
-            Transport.connect(session).pipe(
-              Effect.provide(
-                Transport.layerWebSocket(Relay.address(served.url, ada))
-              )
-            ),
-            (made) => made.close
-          );
-          // Grace comes, and goes for good: her transport gives up at once.
-          yield* Effect.scoped(
-            Effect.gen(function* () {
-              const visitor = yield* listenOn(
-                Relay.address(served.url, grace),
-                {
-                  reconnectFor: 0,
+  it.effect(
+    "keeps two peers the same game, and tells each handler who the relay let in",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const seats: Seat[] = [];
+            for (const name of ["ada", "grace"]) {
+              seats.push(yield* seatAt(served.url, name));
+            }
+            const act = players(31);
+            const [one, two] = seats as [Seat, Seat];
+            for (let i = 0; i < 60; i++) {
+              for (const seat of seats) {
+                if (i < 40) {
+                  yield* act(seat);
                 }
-              );
-              yield* Effect.promise(() =>
-                until(() => {
-                  connected.tick();
-                  return served.relay.members("blue").length === 2;
-                }, "grace is in")
-              );
-              served.drop("grace");
-              yield* Effect.promise(() =>
-                until(
-                  () => Result.isFailure(Result.try(() => visitor.receive())),
-                  "grace gave up"
+                yield* seat.connected.tick();
+                yield* Effect.promise(() => later(1));
+              }
+            }
+            for (
+              let i = 0;
+              i < 300 &&
+              (one.app.time.tick !== two.app.time.tick ||
+                one.session.confirmed < one.app.time.tick - 1);
+              i++
+            ) {
+              yield* Effect.promise(() => later(2));
+              yield* (
+                one.app.time.tick <= two.app.time.tick ? one : two
+              ).connected.tick();
+            }
+            expect(one.app.time.tick).toBe(two.app.time.tick);
+            expect(one.app.time.tick).toBeGreaterThan(40);
+            expect(one.world.hash()).toBe(two.world.hash());
+            expect(one.app.actionLog).toEqual(two.app.actionLog);
+            expect(one.session.drifted).toBeUndefined();
+            // Tips went to whoever issued them, by the name the relay knows.
+            const tips = moves(one.app.actionLog).filter(
+              (entry) => entry.name === "ls/Tip"
+            );
+            expect(tips.length).toBeGreaterThan(4);
+            expect(
+              tips
+                .map((entry) => entry.from)
+                .toSorted((a, b) => (a ?? "").localeCompare(b ?? ""))
+            ).toEqual([
+              ...tips.filter((entry) => entry.from === "ada").map(() => "ada"),
+              ...tips
+                .filter((entry) => entry.from === "grace")
+                .map(() => "grace"),
+            ]);
+            expect(tips.some((entry) => entry.from === "ada")).toBe(true);
+            expect(tips.some((entry) => entry.from === "grace")).toBe(true);
+            expect(tips.every((entry) => entry.refused === undefined)).toBe(
+              true
+            );
+            expect(purseOf(two.world)).toEqual(purseOf(one.world));
+          })
+        );
+      })
+  );
+
+  it.live(
+    "connects again when its socket drops, and the peers play on to the same game",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const seats: Seat[] = [];
+            for (const name of ["ada", "grace"]) {
+              seats.push(yield* seatAt(served.url, name));
+            }
+            const act = players(41);
+            const [one, two] = seats as [Seat, Seat];
+            const play = (rounds: number) =>
+              Effect.gen(function* () {
+                for (let i = 0; i < rounds; i++) {
+                  for (const seat of seats) {
+                    yield* act(seat);
+                    yield* seat.connected.tick();
+                    yield* Effect.promise(() => later(1));
+                  }
+                }
+              });
+            yield* play(30);
+            // Grace's socket goes, with whatever was on its way, then ada's.
+            served.drop("grace");
+            yield* play(30);
+            served.drop("ada");
+            yield* play(30);
+            for (
+              let i = 0;
+              i < 400 &&
+              (one.app.time.tick !== two.app.time.tick ||
+                one.session.confirmed < one.app.time.tick - 1 ||
+                one.app.time.tick < 80);
+              i++
+            ) {
+              yield* Effect.promise(() => later(2));
+              yield* (
+                one.app.time.tick <= two.app.time.tick ? one : two
+              ).connected.tick();
+            }
+            expect(one.app.time.tick).toBe(two.app.time.tick);
+            expect(one.app.time.tick).toBeGreaterThanOrEqual(80);
+            expect(one.world.hash()).toBe(two.world.hash());
+            expect(one.app.actionLog).toEqual(two.app.actionLog);
+            expect(moves(one.app.actionLog).length).toBeGreaterThan(20);
+            expect(one.session.drifted).toBeUndefined();
+            expect(one.connected.away).toEqual([]);
+            expect(two.connected.away).toEqual([]);
+            // What both have heard is let go of.
+            expect(one.session.unheard).toBeLessThan(20);
+          })
+        );
+      })
+  );
+
+  it.effect(
+    "tells the others when a peer has left for good, and keeps what it sent for when it comes back",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const session = yield* Session.make(CoinGame, {
+              seed: 5,
+              me: "ada",
+              others: ["grace"],
+              delta: DELTA,
+              ahead: 0,
+            });
+            const connected = yield* Effect.acquireRelease(
+              Transport.connect(session).pipe(
+                Effect.provide(
+                  Transport.layerWebSocket(Relay.address(served.url, ada))
                 )
-              );
-            })
-          );
-          yield* Effect.promise(() =>
-            until(() => {
-              connected.tick();
-              return connected.away.length === 1;
-            }, "ada was told")
-          );
-          expect(connected.away).toEqual(["grace"]);
-          // Ada waits for her, with what she has to say kept.
-          expect(session.waitingFor).toEqual(["grace"]);
-          expect(session.unheard).toBeGreaterThan(0);
-        })
-      )
-    );
-  });
+              ),
+              (made) => made.close
+            );
+            // Grace comes, and goes for good: her transport gives up at once.
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const visitor = yield* listenOn(
+                  Relay.address(served.url, grace),
+                  {
+                    reconnectFor: 0,
+                  }
+                );
+                yield* waitUntil(
+                  Effect.gen(function* () {
+                    yield* connected.tick();
+                    return served.relay.members("blue").length === 2;
+                  }),
+                  "grace is in"
+                );
+                served.drop("grace");
+                yield* Effect.promise(() =>
+                  until(
+                    () => Result.isFailure(Result.try(() => visitor.receive())),
+                    "grace gave up"
+                  )
+                );
+              })
+            );
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* connected.tick();
+                return connected.away.length === 1;
+              }),
+              "ada was told"
+            );
+            expect(connected.away).toEqual(["grace"]);
+            // Ada waits for her, with what she has to say kept.
+            expect(session.waitingFor).toEqual(["grace"]);
+            expect(session.unheard).toBeGreaterThan(0);
+          })
+        );
+      })
+  );
 
-  it("has the relay close a peer that speaks for another, and pass nothing on", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const honest = yield* listenOn(Relay.address(served.url, grace));
-          const liar = yield* listenOn(Relay.address(served.url, ada));
-          liar.send(message("ada", 0));
-          // In grace's name.
-          liar.send(message("grace", 0, 99));
-          yield* Effect.promise(() =>
-            until(() => served.closes.length === 1, "the relay refused it")
-          );
-          expect(served.closes).toEqual([{ peer: "ada", code: 1008 }]);
-          yield* Effect.promise(() => later(20));
-          // The message it sent as itself came through, and the other did
-          // not. Once the relay closed it, it is gone from the room.
-          expect(honest.receive()).toEqual([
-            { joined: "ada" },
-            message("ada", 0),
-            { left: "ada" },
-          ]);
-          // Its own transport says what became of it.
-          const received = Result.try(() => liar.receive());
-          expect(
-            Result.isFailure(received) ? received.failure : "it did not throw"
-          ).toEqual(
-            new Transport.Closed({
-              url: Relay.address(served.url, ada),
-              code: 1008,
-              reason: "speaks for another",
-            })
-          );
-          expect(() => liar.send(message("ada", 1))).toThrow(Transport.Closed);
-        })
-      )
-    );
-  });
+  it.effect(
+    "has the relay close a peer that speaks for another, and pass nothing on",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const honest = yield* listenOn(Relay.address(served.url, grace));
+            const liar = yield* listenOn(Relay.address(served.url, ada));
+            liar.send(message("ada", 0));
+            // In grace's name.
+            liar.send(message("grace", 0, 99));
+            yield* Effect.promise(() =>
+              until(() => served.closes.length === 1, "the relay refused it")
+            );
+            expect(served.closes).toEqual([{ peer: "ada", code: 1008 }]);
+            yield* Effect.promise(() => later(20));
+            // The message it sent as itself came through, and the other did
+            // not. Once the relay closed it, it is gone from the room.
+            expect(honest.receive()).toEqual([
+              { joined: "ada" },
+              message("ada", 0),
+              { left: "ada" },
+            ]);
+            // Its own transport says what became of it.
+            const received = Result.try(() => liar.receive());
+            expect(
+              Result.isFailure(received) ? received.failure : "it did not throw"
+            ).toEqual(
+              new Transport.Closed({
+                url: Relay.address(served.url, ada),
+                code: 1008,
+                reason: "speaks for another",
+              })
+            );
+            expect(() => liar.send(message("ada", 1))).toThrow(
+              Transport.Closed
+            );
+          })
+        );
+      })
+  );
 
-  it("says why when the relay would not let it in", async () => {
-    const served = await serve();
-    stop = served.stop;
-    await Effect.runPromise(
-      Effect.scoped(
+  it.effect("says why when the relay would not let it in", () =>
+    Effect.gen(function* () {
+      const served = yield* Effect.promise(() => serve());
+      stop = served.stop;
+      yield* Effect.scoped(
         Effect.gen(function* () {
           const first = yield* listenOn(Relay.address(served.url, ada));
           yield* Effect.promise(() =>
@@ -912,103 +947,109 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           // The first is none the worse.
           expect(first.receive()).toEqual([]);
         })
-      )
-    );
-  });
+      );
+    })
+  );
 
-  it("is told why in the few words a close frame has room for, however long the names", async () => {
-    const served = await serve();
-    stop = served.stop;
-    // Every reason fits: a close frame carries 123 bytes at most, and a
-    // server that is handed more throws.
-    const reasons: Relay.Refused["reason"][] = [
-      "not an address",
-      "not your name",
-      "name taken",
-      "room full",
-      "not a peer",
-      "not a message",
-      "speaks for another",
-      "too long",
-    ];
-    for (const reason of reasons) {
-      expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
-    }
-    const long = { room: "r".repeat(64), peer: "p".repeat(64) };
-    expect(
-      refusal(Relay.join(Relay.address("/rooms", long), Relay.anyone, [long]))
-        .message.length
-    ).toBeGreaterThan(123);
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* listenOn(Relay.address(served.url, long));
-          yield* Effect.promise(() =>
-            until(() => served.relay.rooms === 1, "the first is in")
+  it.effect(
+    "is told why in the few words a close frame has room for, however long the names",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        // Every reason fits: a close frame carries 123 bytes at most, and a
+        // server that is handed more throws.
+        const reasons: Relay.Refused["reason"][] = [
+          "not an address",
+          "not your name",
+          "name taken",
+          "room full",
+          "not a peer",
+          "not a message",
+          "speaks for another",
+          "too long",
+        ];
+        for (const reason of reasons) {
+          expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(
+            123
           );
-          const taken = yield* listenOn(Relay.address(served.url, long));
-          const nowhere = yield* listenOn(`${served.url}/blue`);
-          const closedWith = (transport: Transport.Listener) =>
-            Effect.promise(async () => {
-              let thrown: unknown;
-              await until(() => {
-                try {
-                  transport.receive();
-                  return false;
-                } catch (error) {
-                  thrown = error;
-                  return true;
-                }
-              }, "it was closed");
-              return thrown as Transport.Closed;
-            });
-          expect((yield* closedWith(taken)).reason).toBe("name taken");
-          expect((yield* closedWith(nowhere)).reason).toBe("not an address");
-          // The server is still there for whoever comes next.
-          const next = yield* listenOn(Relay.address(served.url, ada));
-          yield* Effect.promise(() =>
-            until(() => served.relay.rooms === 2, "the next is in")
-          );
-          expect(next.receive()).toEqual([]);
-        })
-      )
-    );
-  });
-
-  it("says so when it is used after its connection was closed, or the scope it was listened on in", async () => {
-    const served = await serve();
-    stop = served.stop;
-    const url = Relay.address(served.url, ada);
-    const session = Effect.runSync(
-      Session.make(CoinGame, {
-        seed: 5,
-        me: "ada",
-        others: ["grace"],
-        delta: DELTA,
+        }
+        const long = { room: "r".repeat(64), peer: "p".repeat(64) };
+        expect(
+          refusal(
+            Relay.join(Relay.address("/rooms", long), Relay.anyone, [long])
+          ).message.length
+        ).toBeGreaterThan(123);
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* listenOn(Relay.address(served.url, long));
+            yield* Effect.promise(() =>
+              until(() => served.relay.rooms === 1, "the first is in")
+            );
+            const taken = yield* listenOn(Relay.address(served.url, long));
+            const nowhere = yield* listenOn(`${served.url}/blue`);
+            const closedWith = (transport: Transport.Listener) =>
+              Effect.promise(async () => {
+                let thrown: unknown;
+                await until(() => {
+                  try {
+                    transport.receive();
+                    return false;
+                  } catch (error) {
+                    thrown = error;
+                    return true;
+                  }
+                }, "it was closed");
+                return thrown as Transport.Closed;
+              });
+            expect((yield* closedWith(taken)).reason).toBe("name taken");
+            expect((yield* closedWith(nowhere)).reason).toBe("not an address");
+            // The server is still there for whoever comes next.
+            const next = yield* listenOn(Relay.address(served.url, ada));
+            yield* Effect.promise(() =>
+              until(() => served.relay.rooms === 2, "the next is in")
+            );
+            expect(next.receive()).toEqual([]);
+          })
+        );
       })
-    );
-    const connected = await Effect.runPromise(
-      Transport.connect(session).pipe(
-        Effect.provide(Transport.layerWebSocket(url))
-      )
-    );
-    await until(() => served.relay.members("blue").length === 1, "ada is in");
-    await Effect.runPromise(connected.close);
-    await until(
-      () => served.relay.members("blue").length === 0,
-      "ada has left"
-    );
-    expect(() => connected.tick()).toThrow(
-      new RegExp(
-        `The transport to ${url.replaceAll(/[.?]/gu, "\\$&")} was used after it was let go, and its socket closed: the connection Transport\\.connect made was closed`,
-        "u"
-      )
-    );
-    const kept = await Effect.runPromise(Effect.scoped(listenOn(url)));
-    expect(() => kept.send(message("ada", 0))).toThrow(
-      /or the scope Transport\.listen ran in had ended/u
-    );
-  });
+  );
+
+  it.effect(
+    "says so when it is used after its connection was closed, or the scope it was listened on in",
+    () =>
+      Effect.gen(function* () {
+        const served = yield* Effect.promise(() => serve());
+        stop = served.stop;
+        const url = Relay.address(served.url, ada);
+        const session = yield* Session.make(CoinGame, {
+          seed: 5,
+          me: "ada",
+          others: ["grace"],
+          delta: DELTA,
+        });
+        const connected = yield* Transport.connect(session).pipe(
+          Effect.provide(Transport.layerWebSocket(url))
+        );
+        yield* Effect.promise(() =>
+          until(() => served.relay.members("blue").length === 1, "ada is in")
+        );
+        yield* connected.close;
+        yield* Effect.promise(() =>
+          until(() => served.relay.members("blue").length === 0, "ada has left")
+        );
+        expect(yield* thrown(connected.tick())).toThrow(
+          new RegExp(
+            `The transport to ${url.replaceAll(/[.?]/gu, "\\$&")} was used after it was let go, and its socket closed: the connection Transport\\.connect made was closed`,
+            "u"
+          )
+        );
+        const kept = yield* Effect.scoped(listenOn(url));
+        expect(() => kept.send(message("ada", 0))).toThrow(
+          /or the scope Transport\.listen ran in had ended/u
+        );
+      })
+  );
 });
 
 /** A WebSocket that a test opens, speaks through and drops by hand. */
@@ -1081,9 +1122,7 @@ describe("the transport between machines, when its socket drops", () => {
   };
 
   const run = (program: Effect.Effect<void, never, Scope.Scope>) =>
-    Effect.runPromise(
-      Effect.scoped(program).pipe(Effect.provide(TestClock.layer()))
-    );
+    Effect.scoped(program).pipe(Effect.provide(TestClock.layer()));
 
   /** What the transport throws, or nothing while it is open. */
   const closedOf = (transport: Transport.Listener): unknown => {
@@ -1091,93 +1130,102 @@ describe("the transport between machines, when its socket drops", () => {
     return Result.isFailure(received) ? received.failure : undefined;
   };
 
-  it("connects again, waiting longer each time up to two seconds, and sends what was sent meanwhile once it does", () =>
-    run(
-      Effect.gen(function* () {
-        const { relay, listen, last } = stubbed();
-        const transport = yield* listen;
-        transport.send(message("ada", 0));
-        yield* TestClock.adjust(0);
-        const first = last();
-        first.open();
-        yield* TestClock.adjust(0);
-        expect(first.sent).toEqual([bytes("ada", 0)]);
-        first.say(notice({ joined: "grace" }));
-        first.drop();
-        relay.down = true;
-        transport.send(message("ada", 1));
-        const dialedAt = [50, 150, 350, 750, 1550, 3150, 5150, 7150];
-        let now = 0;
-        for (const [i, at] of dialedAt.entries()) {
-          yield* TestClock.adjust(at - 1 - now);
-          expect(relay.dialed.length).toBe(i + 1);
-          yield* TestClock.adjust(1);
-          expect(relay.dialed.length).toBe(i + 2);
-          now = at;
-        }
-        relay.down = false;
-        yield* TestClock.adjust(2000);
-        const again = last();
-        again.open();
-        yield* TestClock.adjust(0);
-        expect(again.sent).toEqual([bytes("ada", 1)]);
-        expect(transport.receive()).toEqual([{ joined: "grace" }]);
-        expect(first.closedWith).toEqual([1000]);
-      })
-    ));
+  it.effect(
+    "connects again, waiting longer each time up to two seconds, and sends what was sent meanwhile once it does",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { relay, listen, last } = stubbed();
+          const transport = yield* listen;
+          transport.send(message("ada", 0));
+          yield* TestClock.adjust(0);
+          const first = last();
+          first.open();
+          yield* TestClock.adjust(0);
+          expect(first.sent).toEqual([bytes("ada", 0)]);
+          first.say(notice({ joined: "grace" }));
+          first.drop();
+          relay.down = true;
+          transport.send(message("ada", 1));
+          const dialedAt = [50, 150, 350, 750, 1550, 3150, 5150, 7150];
+          let now = 0;
+          for (const [i, at] of dialedAt.entries()) {
+            yield* TestClock.adjust(at - 1 - now);
+            expect(relay.dialed.length).toBe(i + 1);
+            yield* TestClock.adjust(1);
+            expect(relay.dialed.length).toBe(i + 2);
+            now = at;
+          }
+          relay.down = false;
+          yield* TestClock.adjust(2000);
+          const again = last();
+          again.open();
+          yield* TestClock.adjust(0);
+          expect(again.sent).toEqual([bytes("ada", 1)]);
+          expect(transport.receive()).toEqual([{ joined: "grace" }]);
+          expect(first.closedWith).toEqual([1000]);
+        })
+      )
+  );
 
-  it("starts again from the shortest wait, and the whole of reconnectFor, once it has heard from the relay", () =>
-    run(
-      Effect.gen(function* () {
-        const { relay, listen, last } = stubbed({ reconnectFor: 1000 });
-        const transport = yield* listen;
-        yield* TestClock.adjust(0);
-        for (let drops = 0; drops < 3; drops++) {
+  it.effect(
+    "starts again from the shortest wait, and the whole of reconnectFor, once it has heard from the relay",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { relay, listen, last } = stubbed({ reconnectFor: 1000 });
+          const transport = yield* listen;
+          yield* TestClock.adjust(0);
+          for (let drops = 0; drops < 3; drops++) {
+            last().open();
+            yield* TestClock.adjust(0);
+            last().say(notice({ joined: "grace" }));
+            last().drop();
+            relay.down = true;
+            const dialed = relay.dialed.length;
+            yield* TestClock.adjust(49);
+            expect(relay.dialed.length).toBe(dialed);
+            yield* TestClock.adjust(1);
+            expect(relay.dialed.length).toBe(dialed + 1);
+            yield* TestClock.adjust(950);
+            expect(transport.receive()).toEqual([{ joined: "grace" }]);
+            // The relay is back for the next try, 1,550 ms after the drop.
+            relay.down = false;
+            yield* TestClock.adjust(550);
+          }
+        })
+      )
+  );
+
+  it.effect(
+    "gives up and says so when it cannot connect again within reconnectFor",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { relay, listen, last } = stubbed({ reconnectFor: 1000 });
+          const transport = yield* listen;
+          yield* TestClock.adjust(0);
           last().open();
           yield* TestClock.adjust(0);
-          last().say(notice({ joined: "grace" }));
           last().drop();
           relay.down = true;
+          yield* TestClock.adjust(1000);
+          expect(closedOf(transport)).toBeUndefined();
+          yield* TestClock.adjust(1000);
+          expect(closedOf(transport)).toEqual(
+            new Transport.Closed({ url, code: 1006, reason: "" })
+          );
+          expect(() => transport.send(message("ada", 0))).toThrow(
+            Transport.Closed
+          );
           const dialed = relay.dialed.length;
-          yield* TestClock.adjust(49);
+          yield* TestClock.adjust(10_000);
           expect(relay.dialed.length).toBe(dialed);
-          yield* TestClock.adjust(1);
-          expect(relay.dialed.length).toBe(dialed + 1);
-          yield* TestClock.adjust(950);
-          expect(transport.receive()).toEqual([{ joined: "grace" }]);
-          // The relay is back for the next try, 1,550 ms after the drop.
-          relay.down = false;
-          yield* TestClock.adjust(550);
-        }
-      })
-    ));
+        })
+      )
+  );
 
-  it("gives up and says so when it cannot connect again within reconnectFor", () =>
-    run(
-      Effect.gen(function* () {
-        const { relay, listen, last } = stubbed({ reconnectFor: 1000 });
-        const transport = yield* listen;
-        yield* TestClock.adjust(0);
-        last().open();
-        yield* TestClock.adjust(0);
-        last().drop();
-        relay.down = true;
-        yield* TestClock.adjust(1000);
-        expect(closedOf(transport)).toBeUndefined();
-        yield* TestClock.adjust(1000);
-        expect(closedOf(transport)).toEqual(
-          new Transport.Closed({ url, code: 1006, reason: "" })
-        );
-        expect(() => transport.send(message("ada", 0))).toThrow(
-          Transport.Closed
-        );
-        const dialed = relay.dialed.length;
-        yield* TestClock.adjust(10_000);
-        expect(relay.dialed.length).toBe(dialed);
-      })
-    ));
-
-  it("never connects again with a reconnectFor of 0", () =>
+  it.effect("never connects again with a reconnectFor of 0", () =>
     run(
       Effect.gen(function* () {
         const { relay, listen, last } = stubbed({ reconnectFor: 0 });
@@ -1194,9 +1242,10 @@ describe("the transport between machines, when its socket drops", () => {
         yield* TestClock.adjust(10_000);
         expect(relay.dialed.length).toBe(1);
       })
-    ));
+    )
+  );
 
-  it("gives up at once on a relay it never reached", () =>
+  it.effect("gives up at once on a relay it never reached", () =>
     run(
       Effect.gen(function* () {
         const { relay, listen } = stubbed();
@@ -1209,55 +1258,59 @@ describe("the transport between machines, when its socket drops", () => {
         yield* TestClock.adjust(60_000);
         expect(relay.dialed.length).toBe(1);
       })
-    ));
+    )
+  );
 
-  it("tries a taken name again while it connects again, since the relay may not have seen its old socket close, and not the first time", () =>
-    run(
-      Effect.gen(function* () {
-        const { relay, listen, last } = stubbed();
-        const transport = yield* listen;
-        yield* TestClock.adjust(0);
-        last().open();
-        yield* TestClock.adjust(0);
-        last().say(notice({ joined: "grace" }));
-        last().drop();
-        yield* TestClock.adjust(50);
-        last().open();
-        yield* TestClock.adjust(0);
-        last().drop(1008, "name taken");
-        yield* TestClock.adjust(100);
-        expect(relay.dialed.length).toBe(3);
-        last().open();
-        yield* TestClock.adjust(0);
-        last().say(notice({ joined: "grace" }));
-        yield* TestClock.adjust(0);
-        expect(transport.receive()).toEqual([
-          { joined: "grace" },
-          { joined: "grace" },
-        ]);
-        // Refused for any other reason, it gives up.
-        last().drop(1008, "speaks for another");
-        yield* TestClock.adjust(0);
-        expect(closedOf(transport)).toEqual(
-          new Transport.Closed({
-            url,
-            code: 1008,
-            reason: "speaks for another",
-          })
-        );
+  it.effect(
+    "tries a taken name again while it connects again, since the relay may not have seen its old socket close, and not the first time",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { relay, listen, last } = stubbed();
+          const transport = yield* listen;
+          yield* TestClock.adjust(0);
+          last().open();
+          yield* TestClock.adjust(0);
+          last().say(notice({ joined: "grace" }));
+          last().drop();
+          yield* TestClock.adjust(50);
+          last().open();
+          yield* TestClock.adjust(0);
+          last().drop(1008, "name taken");
+          yield* TestClock.adjust(100);
+          expect(relay.dialed.length).toBe(3);
+          last().open();
+          yield* TestClock.adjust(0);
+          last().say(notice({ joined: "grace" }));
+          yield* TestClock.adjust(0);
+          expect(transport.receive()).toEqual([
+            { joined: "grace" },
+            { joined: "grace" },
+          ]);
+          // Refused for any other reason, it gives up.
+          last().drop(1008, "speaks for another");
+          yield* TestClock.adjust(0);
+          expect(closedOf(transport)).toEqual(
+            new Transport.Closed({
+              url,
+              code: 1008,
+              reason: "speaks for another",
+            })
+          );
 
-        const second = stubbed();
-        const taken = yield* second.listen;
-        yield* TestClock.adjust(0);
-        second.last().open();
-        yield* TestClock.adjust(0);
-        second.last().drop(1008, "name taken");
-        yield* TestClock.adjust(0);
-        expect(closedOf(taken)).toEqual(
-          new Transport.Closed({ url, code: 1008, reason: "name taken" })
-        );
-        yield* TestClock.adjust(10_000);
-        expect(second.relay.dialed.length).toBe(1);
-      })
-    ));
+          const second = stubbed();
+          const taken = yield* second.listen;
+          yield* TestClock.adjust(0);
+          second.last().open();
+          yield* TestClock.adjust(0);
+          second.last().drop(1008, "name taken");
+          yield* TestClock.adjust(0);
+          expect(closedOf(taken)).toEqual(
+            new Transport.Closed({ url, code: 1008, reason: "name taken" })
+          );
+          yield* TestClock.adjust(10_000);
+          expect(second.relay.dialed.length).toBe(1);
+        })
+      )
+  );
 });

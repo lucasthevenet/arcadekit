@@ -3,7 +3,7 @@
  * checkpoints of its world's hash, the recording made of it, and the replay
  * that plays a recording again.
  *
- *   const recording = app.record()                 // the game so far
+ *   const recording = yield* app.record()          // the game so far
  *   const bytes = Journal.encode(recording)        // for a file or the network
  *
  *   // The same game, begun the same way, and checked as it is played.
@@ -518,12 +518,14 @@ export class ReplayDiverged<
 
 /**
  * Applies a recording to the app made from how it began, tick by tick, and
- * returns `ReplayDiverged` at the first entry that doesn't match.
+ * returns `ReplayDiverged` at the first entry that doesn't match. It fails
+ * with what a tick fails with.
  */
-const play = <A extends App.Any>(
-  app: A,
+const play = Effect.fnUntraced(function* <E, HU>(
+  app: App.App<E, HU>,
   recording: Recording
-): ReplayDiverged<A> | undefined => {
+) {
+  type A = App.App<E, HU>;
   const { deltas, end, endHash, log, start } = recording;
   const diverged = (index: number, entry: Action.LogEntry, reason: unknown) =>
     new ReplayDiverged({ index, entry, reason, app });
@@ -556,7 +558,7 @@ const play = <A extends App.Any>(
     readonly entry: Action.Logged;
     readonly mine: Action.Logged;
   }[] = [];
-  const applyDue = (): ReplayDiverged<A> | undefined => {
+  const applyDue = Effect.fnUntraced(function* () {
     for (
       let entry = log[next];
       entry !== undefined && entry.tick === app.time.tick;
@@ -570,14 +572,16 @@ const play = <A extends App.Any>(
       } else if (entry.queued === true) {
         // Enqueued again at the point it arrived, so that it takes its turn
         // among the actions the replay's own simulation issues.
-        app.enqueueByName(entry.name, entry.payload, entry.from);
+        yield* app.enqueueByName(entry.name, entry.payload, entry.from);
         waiting.push({
           index: next,
           entry,
           mine: app.actionLog.at(-1) as Action.Logged,
         });
       } else {
-        const exit = app.dispatchByName(entry.name, entry.payload, entry.from);
+        const exit = yield* Effect.exit(
+          app.dispatchByName(entry.name, entry.payload, entry.from)
+        );
         if (Exit.isFailure(exit)) {
           return diverged(next, entry, Cause.squash(exit.cause));
         }
@@ -585,7 +589,7 @@ const play = <A extends App.Any>(
       next++;
     }
     return undefined;
-  };
+  });
   // The tick that has just run applied every action enqueued before it. Each
   // must have met the fate the log records for it.
   const checkQueued = (): ReplayDiverged<A> | undefined => {
@@ -610,18 +614,20 @@ const play = <A extends App.Any>(
       run++;
     }
     const { delta } = deltas[run]!;
-    const due = applyDue();
+    const due = yield* applyDue();
     if (due !== undefined) {
       return due;
     }
-    app.tick(delta);
+    yield* app.tick(delta);
     const queued = checkQueued();
     if (queued !== undefined) {
       return queued;
     }
   }
-  return applyDue() ?? checkHash(log.length, { tick: end, hash: endHash });
-};
+  return (
+    (yield* applyDue()) ?? checkHash(log.length, { tick: end, hash: endHash })
+  );
+});
 
 /**
  * The options of `App.make` that `Journal.replay` gives its app: all of them
@@ -677,7 +683,8 @@ export interface ReplayOptions extends Omit<App.StartOptions, "seed" | "save"> {
  *
  * It also fails as `App.make` does: with the error of a plugin's layer or
  * setup, or with `Save.LoadRefused` when a recording made since a save holds
- * a save this game can't load.
+ * a save this game can't load. And it fails with what a tick fails with,
+ * which the game's systems say.
  *
  * **Gotchas**
  *
@@ -701,7 +708,8 @@ export const replay = <
   App.App<App.TickError<S, P>, App.AllHandlers<H, P>>,
   | Plugin.ErrorOf<P[number]>
   | Save.LoadRefused
-  | ReplayDiverged<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>>,
+  | ReplayDiverged<App.App<App.TickError<S, P>, App.AllHandlers<H, P>>>
+  | App.TickError<S, P>,
   App.External<S, H, P>
 > => {
   const origin: Origin =
@@ -710,12 +718,9 @@ export const replay = <
       : { save: recording.save };
   return Effect.flatMap(App.make(game, { ...options, ...origin }), (made) =>
     Effect.onError(
-      Effect.suspend(() => {
-        const diverged = play(made, recording);
-        return diverged === undefined
-          ? Effect.succeed(made)
-          : Effect.fail(diverged);
-      }),
+      Effect.flatMap(play(made, recording), (diverged) =>
+        diverged === undefined ? Effect.succeed(made) : Effect.fail(diverged)
+      ),
       () => made.close
     )
   );

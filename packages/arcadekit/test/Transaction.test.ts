@@ -1,5 +1,5 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component.ts";
 import type { JsonValue, Spawned } from "../src/index.ts";
@@ -640,10 +640,10 @@ const Hear = System.tick("Hear", function* () {
   }
 });
 
-const withApp = <T, A, E = never>(
+const withApp = <T, A, E = never, E2 = never>(
   make: Effect.Effect<T, E>,
-  use: (app: T) => A
-): A => Effect.runSync(Effect.map(make, use));
+  use: (app: T) => Effect.Effect<A, E2>
+) => Effect.flatMap(make, use);
 
 /** What the game begins with: bodies of every shape, and two freed slots. */
 const Scene = Plugin.make("tx/Scene", {
@@ -686,17 +686,21 @@ const game = (checkpointEvery = 1) =>
   });
 
 /** The hash of the game after `ticks` ticks with no action: the time is in it. */
-const untouched = (ticks: number): number =>
-  withApp(game(), ({ app, world }) => {
-    for (let tick = 0; tick < ticks; tick++) {
-      app.tick(1);
-    }
-    return world.hash();
-  });
+const untouched = Effect.fnUntraced(function* (ticks: number) {
+  return yield* withApp(game(), ({ app, world }) =>
+    Effect.gen(function* () {
+      for (let tick = 0; tick < ticks; tick++) {
+        yield* app.tick(1);
+      }
+      return world.hash();
+    })
+  );
+});
 
 /** The names of the events waiting to be read, as `app.inspect()` has them. */
-const waiting = (app: App.Any): string[] =>
-  Object.keys(app.inspect().stores[Event.STORE] ?? {});
+const waiting = Effect.fnUntraced(function* (app: App.Any) {
+  return Object.keys((yield* app.inspect()).stores[Event.STORE] ?? {});
+});
 
 /** A game that begins with a body at each place, and the ids they are given. */
 const bodiesAt = (...places: { x: number; y: number }[]) => {
@@ -730,255 +734,362 @@ const everyStep: Steps = [
 
 describe("an action that is refused", () => {
   for (const step of everyStep) {
-    it(`leaves nothing behind after "${step}"`, () => {
-      withApp(game(), ({ app, world, entities }) => {
-        echoes.length = 0;
-        notes.length = 0;
-        app.tick(1);
-        const before = world.hash();
-        const log = app.actionLog.length;
-        const exit = app.dispatch(Act, {
-          target: entities[0]!,
-          steps: [step],
-          refuse: true,
-        });
-        expect(exit).toEqual(Exit.fail(Refused.make({})));
-        expect(world.hash()).toBe(before);
-        expect(waiting(app)).not.toContain(Noted.name);
-        expect(app.actionLog.length).toBe(log);
-        // Nor does it show up later: no queued action or command, no event,
-        // no entity.
-        app.tick(1);
-        expect(echoes).toEqual([]);
-        expect(notes).toEqual([]);
-        expect(world.hash()).toBe(untouched(2));
+    it.effect(`leaves nothing behind after "${step}"`, () =>
+      withApp(game(), ({ app, world, entities }) =>
+        Effect.gen(function* () {
+          echoes.length = 0;
+          notes.length = 0;
+          yield* app.tick(1);
+          const before = world.hash();
+          const log = app.actionLog.length;
+          const exit = yield* Effect.exit(
+            app.dispatch(Act, {
+              target: entities[0]!,
+              steps: [step],
+              refuse: true,
+            })
+          );
+          expect(exit).toEqual(Exit.fail(Refused.make({})));
+          expect(world.hash()).toBe(before);
+          expect(yield* waiting(app)).not.toContain(Noted.name);
+          expect(app.actionLog.length).toBe(log);
+          // Nor does it show up later: no queued action or command, no event,
+          // no entity.
+          yield* app.tick(1);
+          expect(echoes).toEqual([]);
+          expect(notes).toEqual([]);
+          expect(world.hash()).toBe(yield* untouched(2));
 
-        // The same steps in an action that is accepted do change the game.
-        const accepted = app.dispatch(Act, {
-          target: entities[0]!,
-          steps: [step],
-          refuse: false,
-        });
-        expect(accepted).toEqual(Exit.succeed(1));
-        app.tick(1);
-        app.tick(1);
-        const changed =
-          world.hash() !== untouched(4) ||
-          notes.length > 0 ||
-          echoes.length > 0;
-        expect(changed).toBe(true);
-      });
-    });
+          // The same steps in an action that is accepted do change the game.
+          const accepted = yield* Effect.exit(
+            app.dispatch(Act, {
+              target: entities[0]!,
+              steps: [step],
+              refuse: false,
+            })
+          );
+          expect(accepted).toEqual(Exit.succeed(1));
+          yield* app.tick(1);
+          yield* app.tick(1);
+          const changed =
+            world.hash() !== (yield* untouched(4)) ||
+            notes.length > 0 ||
+            echoes.length > 0;
+          expect(changed).toBe(true);
+        })
+      )
+    );
   }
 
-  it("leaves nothing behind when its handler dies of a bug half-way", () => {
-    const set = { steps: ["set" as const], refuse: false };
-    const plain = withApp(game(), ({ app, world, entities }) => {
-      app.dispatch(Act, { ...set, target: entities[0]! });
-      app.tick(1);
-      return world.hash();
-    });
-    withApp(game(), ({ app, world, entities }) => {
-      const before = world.hash();
-      const exit = app.dispatch(Act, {
-        target: entities[0]!,
-        steps: [...everyStep, "bug"],
-        refuse: false,
-      });
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(world.hash()).toBe(before);
-      expect(waiting(app)).not.toContain(Noted.name);
-      // And the app goes on: the next action runs in a transaction of its own,
-      // with no command or event of the one that died.
-      expect(app.dispatch(Act, { ...set, target: entities[0]! })).toEqual(
-        Exit.succeed(1)
-      );
-      app.tick(1);
-      expect(world.hash()).toBe(plain);
-    });
-  });
-
-  it("leaves nothing behind when it was queued and is refused at the start of a tick", () => {
-    withApp(game(), ({ app, world, entities }) => {
-      echoes.length = 0;
-      const before = world.hash();
-      // Three queued actions: the refused one in the middle enqueues another
-      // and dirties everything, and neither of its neighbours is disturbed.
-      app.enqueue(Echo, { by: 2 });
-      app.enqueue(Act, {
-        target: entities[0]!,
-        steps: everyStep,
-        refuse: true,
-      });
-      app.enqueue(Echo, { by: 3 });
-      app.tick(1);
-      expect(echoes).toEqual([2, 3]);
-      const after = world.hash();
-      expect(after).not.toBe(before);
-      app.tick(1);
-      expect(echoes).toEqual([2, 3]);
-
-      // The same two actions with nothing between them give the same world.
-      const plain = withApp(game(), (other) => {
-        other.app.enqueue(Echo, { by: 2 });
-        other.app.enqueue(Echo, { by: 3 });
-        other.app.tick(1);
-        const first = other.world.hash();
-        other.app.tick(1);
-        return [first, other.world.hash()];
-      });
-      expect([after, world.hash()]).toEqual(plain);
-    });
-  });
-
-  it("has not read the events its handler read: the next action hears them", () => {
-    const heardBy = (attempts: readonly ("refused" | "queued")[]) =>
-      withApp(game(), ({ app, world, entities }) => {
-        const target = entities[0]!;
-        const y = (): number => world.get(target, Body)!.y;
-        const before = y();
-        app.tick(1);
-        const dispatched: Exit.Exit<unknown, unknown>[] = [];
-        for (const attempt of attempts) {
-          const payload = { target, steps: ["read" as const], refuse: true };
-          if (attempt === "refused") {
-            dispatched.push(app.dispatch(Act, payload));
-          } else {
-            // Refused when its turn comes, at the start of the next tick.
-            app.enqueue(Act, payload);
-            app.tick(1);
-          }
-          expect(y()).toBe(before);
-        }
-        expect(dispatched).toEqual(
-          attempts
-            .filter((attempt) => attempt === "refused")
-            .map(() => Exit.fail(Refused.make({})))
+  it.effect(
+    "leaves nothing behind when its handler dies of a bug half-way",
+    () =>
+      Effect.gen(function* () {
+        const set = { steps: ["set" as const], refuse: false };
+        const plain = yield* withApp(game(), ({ app, world, entities }) =>
+          Effect.gen(function* () {
+            yield* app.dispatch(Act, { ...set, target: entities[0]! });
+            yield* app.tick(1);
+            return world.hash();
+          })
         );
-        app.dispatch(Act, { target, steps: ["read"], refuse: false });
-        const heard = y() - before;
-        // And what was read by an action that was accepted stays read.
-        app.dispatch(Act, { target, steps: ["read"], refuse: false });
-        expect(y() - before).toBe(heard);
-        return heard;
-      });
-    // The event of tick 1, whether or not anything was refused before.
-    expect(heardBy([])).toBe(101);
-    expect(heardBy(["refused"])).toBe(101);
-    expect(heardBy(["refused", "refused", "refused"])).toBe(101);
-    // After a refusal that took a tick: the events of ticks 1 and 2.
-    const afterATick = withApp(game(), ({ app, world, entities }) => {
-      const target = entities[0]!;
-      const before = world.get(target, Body)!.y;
-      app.tick(1);
-      app.tick(1);
-      app.dispatch(Act, { target, steps: ["read"], refuse: false });
-      return world.get(target, Body)!.y - before;
-    });
-    expect(heardBy(["queued"])).toBe(afterATick);
-  });
+        yield* withApp(game(), ({ app, world, entities }) =>
+          Effect.gen(function* () {
+            const before = world.hash();
+            const exit = yield* Effect.exit(
+              app.dispatch(Act, {
+                target: entities[0]!,
+                steps: [...everyStep, "bug"],
+                refuse: false,
+              })
+            );
+            expect(Exit.isFailure(exit)).toBe(true);
+            expect(world.hash()).toBe(before);
+            expect(yield* waiting(app)).not.toContain(Noted.name);
+            // And the app goes on: the next action runs in a transaction of its own,
+            // with no command or event of the one that died.
+            expect(
+              yield* Effect.exit(
+                app.dispatch(Act, { ...set, target: entities[0]! })
+              )
+            ).toEqual(Exit.succeed(1));
+            yield* app.tick(1);
+            expect(world.hash()).toBe(plain);
+          })
+        );
+      })
+  );
 
-  it("unreads only what its own handler read, however often it read", () => {
-    withApp(game(), ({ app, world, entities }) => {
-      const target = entities[0]!;
-      const y = (): number => world.get(target, Body)!.y;
-      const act = (steps: Steps, refuse: boolean): void => {
-        app.dispatch(Act, { target, steps, refuse });
-      };
-      rings.length = 0;
-      app.tick(1);
-      const before = y();
-      // Reads, rings and reads again, and is refused: both reads are undone.
-      act(["read", "ring", "read"], true);
-      expect(y()).toBe(before);
-      act(["read"], false);
-      expect(y() - before).toBe(101);
-      // What an accepted action read stays read through a later refusal.
-      act(["set"], true);
-      act(["read"], true);
-      act(["read"], false);
-      expect(y() - before).toBe(101);
-      // And a system's reads are no action's to take back: it hears each
-      // ring once, with refusals and acceptances between its ticks.
-      app.tick(1);
-      act(["read"], true);
-      app.tick(1);
-      act(["read"], false);
-      act(["emit"], true);
-      app.tick(1);
-      app.enqueue(Act, { target, steps: ["read"], refuse: true });
-      app.tick(1);
-      expect(rings).toEqual([1, 2, 3, 4, 5]);
-    });
-  });
-
-  it("replays when the refused action had read events, as if it had not", () => {
-    const { hash, recording } = withApp(game(), ({ app, world, entities }) => {
-      const target = entities[0]!;
-      app.tick(1);
-      app.dispatch(Act, { target, steps: ["read"], refuse: true });
-      app.dispatch(Act, { target, steps: ["read"], refuse: false });
-      app.tick(1);
-      app.dispatch(Act, { target, steps: ["emit", "read"], refuse: true });
-      app.enqueue(Act, { target, steps: ["read"], refuse: true });
-      app.enqueue(Act, { target, steps: ["read"], refuse: false });
-      app.tick(1);
-      return { recording: app.record(), hash: world.hash() };
-    });
-    const replayed = withApp(
-      Journal.replay(recording, Game, { checkpointEvery: 1 }).pipe(
-        Effect.flatMap((app) => app.read(World))
-      ),
-      (world) => world.hash()
-    );
-    expect(replayed).toBe(hash);
-  });
-
-  it("gives the same ids afterwards as if it had never been dispatched", () => {
-    const next = (dirty: boolean) =>
-      withApp(game(), ({ app, bodies, entities }) => {
-        if (dirty) {
-          app.dispatch(Act, {
+  it.effect(
+    "leaves nothing behind when it was queued and is refused at the start of a tick",
+    () =>
+      withApp(game(), ({ app, world, entities }) =>
+        Effect.gen(function* () {
+          echoes.length = 0;
+          const before = world.hash();
+          // Three queued actions: the refused one in the middle enqueues another
+          // and dirties everything, and neither of its neighbours is disturbed.
+          yield* app.enqueue(Echo, { by: 2 });
+          yield* app.enqueue(Act, {
             target: entities[0]!,
-            steps: ["spawn", "spawn", "spawn", "despawn"],
+            steps: everyStep,
             refuse: true,
           });
-        }
-        app.dispatch(Act, {
-          target: entities[0]!,
-          steps: ["spawn", "spawn", "spawn"],
-          refuse: false,
+          yield* app.enqueue(Echo, { by: 3 });
+          yield* app.tick(1);
+          expect(echoes).toEqual([2, 3]);
+          const after = world.hash();
+          expect(after).not.toBe(before);
+          yield* app.tick(1);
+          expect(echoes).toEqual([2, 3]);
+
+          // The same two actions with nothing between them give the same world.
+          const plain = yield* withApp(game(), (other) =>
+            Effect.gen(function* () {
+              yield* other.app.enqueue(Echo, { by: 2 });
+              yield* other.app.enqueue(Echo, { by: 3 });
+              yield* other.app.tick(1);
+              const first = other.world.hash();
+              yield* other.app.tick(1);
+              return [first, other.world.hash()];
+            })
+          );
+          expect([after, world.hash()]).toEqual(plain);
+        })
+      )
+  );
+
+  it.effect(
+    "has not read the events its handler read: the next action hears them",
+    () =>
+      Effect.gen(function* () {
+        const heardBy = Effect.fnUntraced(function* (
+          attempts: readonly ("refused" | "queued")[]
+        ) {
+          return yield* withApp(game(), ({ app, world, entities }) =>
+            Effect.gen(function* () {
+              const target = entities[0]!;
+              const y = (): number => world.get(target, Body)!.y;
+              const before = y();
+              yield* app.tick(1);
+              const dispatched: Exit.Exit<unknown, unknown>[] = [];
+              for (const attempt of attempts) {
+                const payload = {
+                  target,
+                  steps: ["read" as const],
+                  refuse: true,
+                };
+                if (attempt === "refused") {
+                  dispatched.push(
+                    yield* Effect.exit(app.dispatch(Act, payload))
+                  );
+                } else {
+                  // Refused when its turn comes, at the start of the next tick.
+                  yield* app.enqueue(Act, payload);
+                  yield* app.tick(1);
+                }
+                expect(y()).toBe(before);
+              }
+              expect(dispatched).toEqual(
+                attempts
+                  .filter((attempt) => attempt === "refused")
+                  .map(() => Exit.fail(Refused.make({})))
+              );
+              yield* app.dispatch(Act, {
+                target,
+                steps: ["read"],
+                refuse: false,
+              });
+              const heard = y() - before;
+              // And what was read by an action that was accepted stays read.
+              yield* app.dispatch(Act, {
+                target,
+                steps: ["read"],
+                refuse: false,
+              });
+              expect(y() - before).toBe(heard);
+              return heard;
+            })
+          );
         });
-        return bodies.entities().filter((entity) => !entities.includes(entity));
-      });
-    expect(next(false)).toHaveLength(3);
-    expect(next(true)).toEqual(next(false));
-  });
+        // The event of tick 1, whether or not anything was refused before.
+        expect(yield* heardBy([])).toBe(101);
+        expect(yield* heardBy(["refused"])).toBe(101);
+        expect(yield* heardBy(["refused", "refused", "refused"])).toBe(101);
+        // After a refusal that took a tick: the events of ticks 1 and 2.
+        const afterATick = yield* withApp(game(), ({ app, world, entities }) =>
+          Effect.gen(function* () {
+            const target = entities[0]!;
+            const before = world.get(target, Body)!.y;
+            yield* app.tick(1);
+            yield* app.tick(1);
+            yield* app.dispatch(Act, {
+              target,
+              steps: ["read"],
+              refuse: false,
+            });
+            return world.get(target, Body)!.y - before;
+          })
+        );
+        expect(yield* heardBy(["queued"])).toBe(afterATick);
+      })
+  );
+
+  it.effect(
+    "unreads only what its own handler read, however often it read",
+    () =>
+      withApp(game(), ({ app, world, entities }) =>
+        Effect.gen(function* () {
+          const target = entities[0]!;
+          const y = (): number => world.get(target, Body)!.y;
+          const act = Effect.fnUntraced(function* (
+            steps: Steps,
+            refuse: boolean
+          ) {
+            yield* Effect.exit(app.dispatch(Act, { target, steps, refuse }));
+          });
+          rings.length = 0;
+          yield* app.tick(1);
+          const before = y();
+          // Reads, rings and reads again, and is refused: both reads are undone.
+          yield* act(["read", "ring", "read"], true);
+          expect(y()).toBe(before);
+          yield* act(["read"], false);
+          expect(y() - before).toBe(101);
+          // What an accepted action read stays read through a later refusal.
+          yield* act(["set"], true);
+          yield* act(["read"], true);
+          yield* act(["read"], false);
+          expect(y() - before).toBe(101);
+          // And a system's reads are no action's to take back: it hears each
+          // ring once, with refusals and acceptances between its ticks.
+          yield* app.tick(1);
+          yield* act(["read"], true);
+          yield* app.tick(1);
+          yield* act(["read"], false);
+          yield* act(["emit"], true);
+          yield* app.tick(1);
+          yield* app.enqueue(Act, { target, steps: ["read"], refuse: true });
+          yield* app.tick(1);
+          expect(rings).toEqual([1, 2, 3, 4, 5]);
+        })
+      )
+  );
+
+  it.effect(
+    "replays when the refused action had read events, as if it had not",
+    () =>
+      Effect.gen(function* () {
+        const { hash, recording } = yield* withApp(
+          game(),
+          ({ app, world, entities }) =>
+            Effect.gen(function* () {
+              const target = entities[0]!;
+              yield* app.tick(1);
+              yield* Effect.exit(
+                app.dispatch(Act, {
+                  target,
+                  steps: ["read"],
+                  refuse: true,
+                })
+              );
+              yield* Effect.exit(
+                app.dispatch(Act, {
+                  target,
+                  steps: ["read"],
+                  refuse: false,
+                })
+              );
+              yield* app.tick(1);
+              yield* Effect.exit(
+                app.dispatch(Act, {
+                  target,
+                  steps: ["emit", "read"],
+                  refuse: true,
+                })
+              );
+              yield* app.enqueue(Act, {
+                target,
+                steps: ["read"],
+                refuse: true,
+              });
+              yield* app.enqueue(Act, {
+                target,
+                steps: ["read"],
+                refuse: false,
+              });
+              yield* app.tick(1);
+              return { recording: yield* app.record(), hash: world.hash() };
+            })
+        );
+        const replayed = yield* withApp(
+          Journal.replay(recording, Game, { checkpointEvery: 1 }).pipe(
+            Effect.flatMap((app) => app.read(World))
+          ),
+          (world) => Effect.sync(() => world.hash())
+        );
+        expect(replayed).toBe(hash);
+      })
+  );
+
+  it.effect(
+    "gives the same ids afterwards as if it had never been dispatched",
+    () =>
+      Effect.gen(function* () {
+        const next = Effect.fnUntraced(function* (dirty: boolean) {
+          return yield* withApp(game(), ({ app, bodies, entities }) =>
+            Effect.gen(function* () {
+              if (dirty) {
+                yield* Effect.exit(
+                  app.dispatch(Act, {
+                    target: entities[0]!,
+                    steps: ["spawn", "spawn", "spawn", "despawn"],
+                    refuse: true,
+                  })
+                );
+              }
+              yield* Effect.exit(
+                app.dispatch(Act, {
+                  target: entities[0]!,
+                  steps: ["spawn", "spawn", "spawn"],
+                  refuse: false,
+                })
+              );
+              return bodies
+                .entities()
+                .filter((entity) => !entities.includes(entity));
+            })
+          );
+        });
+        expect(yield* next(false)).toHaveLength(3);
+        expect(yield* next(true)).toEqual(yield* next(false));
+      })
+  );
 });
 
 describe("an action that is accepted", () => {
-  it("keeps what it wrote, and reads its own writes while it runs", () => {
-    const Twice = Action.define(
-      "tx/Twice",
-      Schema.Struct({ target: EntityId })
-    );
-    const twice = Action.handler(Twice, function* ({ target }) {
-      const world = yield* World.writes(Body);
-      world.set(target, Body, { x: 10 });
-      const seen = world.get(target, Body)!.x;
-      world.set(target, Body, { x: seen * 2 });
-      let total = 0;
-      (yield* Bodies).each((body) => {
-        body.y = 1;
+  it.effect("keeps what it wrote, and reads its own writes while it runs", () =>
+    Effect.gen(function* () {
+      const Twice = Action.define(
+        "tx/Twice",
+        Schema.Struct({ target: EntityId })
+      );
+      const twice = Action.handler(Twice, function* ({ target }) {
+        const world = yield* World.writes(Body);
+        world.set(target, Body, { x: 10 });
+        const seen = world.get(target, Body)!.x;
+        world.set(target, Body, { x: seen * 2 });
+        let total = 0;
+        (yield* Bodies).each((body) => {
+          body.y = 1;
+        });
+        (yield* Bodies).each((body) => {
+          total += body.y;
+        });
+        return [world.get(target, Body)!.x, total] as const;
       });
-      (yield* Bodies).each((body) => {
-        total += body.y;
-      });
-      return [world.get(target, Body)!.x, total] as const;
-    });
-    const { ids, plugin } = bodiesAt({ x: 1, y: 5 }, { x: 1, y: 5 });
-    Effect.runSync(
-      Effect.gen(function* () {
+      const { ids, plugin } = bodiesAt({ x: 1, y: 5 }, { x: 1, y: 5 });
+      {
         const app = yield* App.make(
           App.define({ plugins: [plugin], handlers: [twice] })
         );
@@ -986,52 +1097,59 @@ describe("an action that is accepted", () => {
         const [id] = ids;
         assert(id !== undefined);
         const target = placedIn(world, id);
-        expect(app.dispatch(Twice, { target })).toEqual(Exit.succeed([20, 2]));
-        expect(world.get(target, Body)).toEqual({ x: 20, y: 1 });
-      })
-    );
-  });
-
-  it("changes which entities exist through Commands alone: its world has no despawn", () => {
-    const Direct = Action.define(
-      "tx/Direct",
-      Schema.Struct({ target: EntityId })
-    );
-    const direct = Action.handler(Direct, function* ({ target }) {
-      const world = yield* World.writes(Body);
-      world.set(target, Body, { x: 42 });
-      // @ts-expect-error the set of entities changes through Commands
-      void world.despawn;
-      (yield* Commands).despawn(target);
-    });
-    const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
-    Effect.runSync(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [plugin], handlers: [direct] })
+        expect(yield* Effect.exit(app.dispatch(Twice, { target }))).toEqual(
+          Exit.succeed([20, 2])
         );
-        const world = yield* app.read(World);
-        const [id] = ids;
-        assert(id !== undefined);
-        const target = placedIn(world, id);
-        expect(Exit.isSuccess(app.dispatch(Direct, { target }))).toBe(true);
-        expect(world.isAlive(target)).toBe(false);
-      })
-    );
-  });
+        expect(world.get(target, Body)).toEqual({ x: 20, y: 1 });
+      }
+    })
+  );
 
-  it("cannot dispatch another action from its handler, and is told what to do instead", () => {
-    const Outer = Action.define("tx/Outer", Schema.Struct({}));
-    let app: App.Any | undefined;
-    const outer = Action.handler(Outer, function* () {
-      (yield* Bodies).each((body) => {
-        body.x = 7;
-      });
-      app!.dispatchByName("tx/Echo", { by: 1 });
-    });
-    const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
-    Effect.runSync(
+  it.effect(
+    "changes which entities exist through Commands alone: its world has no despawn",
+    () =>
       Effect.gen(function* () {
+        const Direct = Action.define(
+          "tx/Direct",
+          Schema.Struct({ target: EntityId })
+        );
+        const direct = Action.handler(Direct, function* ({ target }) {
+          const world = yield* World.writes(Body);
+          world.set(target, Body, { x: 42 });
+          // @ts-expect-error the set of entities changes through Commands
+          void world.despawn;
+          (yield* Commands).despawn(target);
+        });
+        const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
+        {
+          const app = yield* App.make(
+            App.define({ plugins: [plugin], handlers: [direct] })
+          );
+          const world = yield* app.read(World);
+          const [id] = ids;
+          assert(id !== undefined);
+          const target = placedIn(world, id);
+          expect(
+            Exit.isSuccess(yield* Effect.exit(app.dispatch(Direct, { target })))
+          ).toBe(true);
+          expect(world.isAlive(target)).toBe(false);
+        }
+      })
+  );
+
+  it.effect(
+    "cannot dispatch another action from its handler, and is told what to do instead",
+    () =>
+      Effect.gen(function* () {
+        const Outer = Action.define("tx/Outer", Schema.Struct({}));
+        let app: App.App | undefined;
+        const outer = Action.handler(Outer, function* () {
+          (yield* Bodies).each((body) => {
+            body.x = 7;
+          });
+          yield* Effect.orDie(app!.dispatchByName("tx/Echo", { by: 1 }));
+        });
+        const { ids, plugin } = bodiesAt({ x: 1, y: 1 });
         const made = yield* App.make(
           App.define({ plugins: [plugin], handlers: [outer, echo] })
         );
@@ -1040,65 +1158,72 @@ describe("an action that is accepted", () => {
         const [id] = ids;
         assert(id !== undefined);
         const entity = placedIn(world, id);
-        const exit = made.dispatch(Outer, {});
+        const exit = yield* Effect.exit(made.dispatch(Outer, {}));
         expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
           /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/
         );
         expect(world.get(entity, Body)).toEqual({ x: 1, y: 1 });
         // The world is out of its transaction: the next dispatch works.
-        expect(Exit.isSuccess(made.dispatchByName("tx/Echo", { by: 1 }))).toBe(
-          true
-        );
+        expect(
+          Exit.isSuccess(
+            yield* Effect.exit(made.dispatchByName("tx/Echo", { by: 1 }))
+          )
+        ).toBe(true);
       })
-    );
-  });
+  );
 });
 
 describe("a game full of refused actions", () => {
-  it("replays from its log, checkpoint by checkpoint, as if they had never been tried", () => {
-    // Refused actions are not in the log, so a replay never runs them. If one
-    // of them left anything in the world, the replay's hash would differ at
-    // the next checkpoint. Random steps, random targets, half of them refused.
-    const steps = everyStep;
-    for (const seed of [1, 2, 3]) {
-      const recorded = withApp(game(), ({ app, world, entities }) => {
-        const dice = new EcsWorld({ seed }).random;
-        let refusedCount = 0;
-        for (let tick = 0; tick < 60; tick++) {
-          for (let n = dice.int(0, 3); n > 0; n--) {
-            const chosen = Array.from({ length: dice.int(1, 6) }, () =>
-              dice.pick(steps)
-            );
-            const refuse = dice.int(0, 1) === 1;
-            const payload = {
-              target: dice.pick(entities),
-              steps: chosen,
-              refuse,
-            };
-            if (dice.int(0, 2) === 0) {
-              app.enqueue(Act, payload);
-            } else {
-              app.dispatch(Act, payload);
-            }
-            refusedCount += refuse ? 1 : 0;
-          }
-          app.tick(1 / 60);
-        }
-        return {
-          recording: app.record(),
-          refusedCount,
-          hash: world.hash(),
-        };
-      });
-      expect(recorded.refusedCount).toBeGreaterThan(20);
+  it.effect(
+    "replays from its log, checkpoint by checkpoint, as if they had never been tried",
+    () =>
+      Effect.gen(function* () {
+        // Refused actions are not in the log, so a replay never runs them. If one
+        // of them left anything in the world, the replay's hash would differ at
+        // the next checkpoint. Random steps, random targets, half of them refused.
+        const steps = everyStep;
+        for (const seed of [1, 2, 3]) {
+          const recorded = yield* withApp(game(), ({ app, world, entities }) =>
+            Effect.gen(function* () {
+              const dice = new EcsWorld({ seed }).random;
+              let refusedCount = 0;
+              for (let tick = 0; tick < 60; tick++) {
+                for (let n = dice.int(0, 3); n > 0; n--) {
+                  const chosen = Array.from({ length: dice.int(1, 6) }, () =>
+                    dice.pick(steps)
+                  );
+                  const refuse = dice.int(0, 1) === 1;
+                  const payload = {
+                    target: dice.pick(entities),
+                    steps: chosen,
+                    refuse,
+                  };
+                  if (dice.int(0, 2) === 0) {
+                    yield* app.enqueue(Act, payload);
+                  } else {
+                    yield* Effect.exit(app.dispatch(Act, payload));
+                  }
+                  refusedCount += refuse ? 1 : 0;
+                }
+                yield* app.tick(1 / 60);
+              }
+              return {
+                recording: yield* app.record(),
+                refusedCount,
+                hash: world.hash(),
+              };
+            })
+          );
+          expect(recorded.refusedCount).toBeGreaterThan(20);
 
-      const replayed = withApp(
-        Journal.replay(recorded.recording, Game, { checkpointEvery: 1 }).pipe(
-          Effect.flatMap((app) => app.read(World))
-        ),
-        (world) => world.hash()
-      );
-      expect(replayed).toBe(recorded.hash);
-    }
-  });
+          const replayed = yield* withApp(
+            Journal.replay(recorded.recording, Game, {
+              checkpointEvery: 1,
+            }).pipe(Effect.flatMap((app) => app.read(World))),
+            (world) => Effect.sync(() => world.hash())
+          );
+          expect(replayed).toBe(recorded.hash);
+        }
+      })
+  );
 });

@@ -11,7 +11,7 @@ Along the way you use most of arcadekit: components, a singleton, systems, an ac
 
 ```sh
 pnpm add arcadekit effect @effect/platform-browser
-pnpm add -D vitest
+pnpm add -D vitest @effect/vitest
 ```
 
 arcadekit is built on [Effect](https://effect.website) 4. `@effect/platform-browser` runs your game in a page. Running under Node, in a test or on a server, needs nothing more.
@@ -167,10 +167,12 @@ Systems run in the order they are listed.
 
 A test creates an app and steps it by hand, one tick at a time, to play the game under Node, without a page. `App.define` says what the game is, and `App.make` starts one run of it. A test sets the scene with a plugin of its own, whose `setup` runs when the app is made. It reads the game with `app.read`.
 
+Each method of an app returns an Effect, so a test is an Effect too: `it.effect` from `@effect/vitest` runs it, and the test yields each step with `yield*`.
+
 ```ts title="rules.test.ts"
+import { expect, it } from "@effect/vitest";
 import { App, Commands, Journal, Plugin, World } from "arcadekit";
 import { Effect, Exit } from "effect";
-import { expect, it } from "vitest";
 
 import { Basket, Fall, Move, Position, Rules } from "./rules";
 
@@ -193,48 +195,45 @@ const Over = Plugin.make("catch/Over", {
   }),
 });
 
-it("catches a coin that lands in the basket", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const app = yield* App.make(App.define({ plugins: [Rules, OneCoin] }));
-      for (let i = 0; i < 60; i++) {
-        app.tick(1 / 60);
-      }
-      expect((yield* app.read(Basket)).caught).toBe(1);
-    })
-  ));
+it.effect("catches a coin that lands in the basket", () =>
+  Effect.gen(function* () {
+    const app = yield* App.make(App.define({ plugins: [Rules, OneCoin] }));
+    for (let i = 0; i < 60; i++) {
+      yield* app.tick(1 / 60);
+    }
+    expect((yield* app.read(Basket)).caught).toBe(1);
+  })
+);
 
-it("refuses a move once the game is over", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const app = yield* App.make(App.define({ plugins: [Rules, Over] }));
-      const moved = app.dispatch(Move, { dx: 1 });
-      expect(Exit.isFailure(moved)).toBe(true);
-    })
-  ));
+it.effect("refuses a move once the game is over", () =>
+  Effect.gen(function* () {
+    const app = yield* App.make(App.define({ plugins: [Rules, Over] }));
+    const moved = yield* Effect.exit(app.dispatch(Move, { dx: 1 }));
+    expect(Exit.isFailure(moved)).toBe(true);
+  })
+);
 ```
 
-`app.dispatch` applies an action immediately and returns its outcome. `app.enqueue` instead queues the action for the start of the next tick, as a real-time game needs. Code outside the game has no other way to change it, because `app.read` takes nothing that writes.
+`app.dispatch` applies an action immediately, and fails with the action's refusal: `Effect.exit` turns that into a value to look at. `app.enqueue` instead queues the action for the start of the next tick, as a real-time game needs. Code outside the game has no other way to change it, because `app.read` takes nothing that writes.
 
-A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation. `app.record()` returns that log with the seed the game began with and how long each tick was. `Journal.replay` plays the recording in an app made from that seed, and checks the world's hash along the way:
+A game that changes only through its actions, its systems and its seed can be replayed. The app logs every action from outside the simulation. `app.record()` gives that log with the seed the game began with and how long each tick was. `Journal.replay` plays the recording in an app made from that seed, and checks the world's hash along the way:
 
 ```ts title="rules.test.ts"
-it("plays the same game again from its log", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const game = yield* App.make(Catch, { seed: 7 });
-      game.enqueue(Move, { dx: 1 });
-      for (let i = 0; i < 300; i++) {
-        game.tick(1 / 60);
-      }
+it.effect("plays the same game again from its log", () =>
+  Effect.gen(function* () {
+    const game = yield* App.make(Catch, { seed: 7 });
+    yield* game.enqueue(Move, { dx: 1 });
+    for (let i = 0; i < 300; i++) {
+      yield* game.tick(1 / 60);
+    }
 
-      const recording = game.record();
-      const again = yield* Journal.replay(recording, Catch);
-      const hash = (app: App.Any) =>
-        Effect.map(app.read(World), (world) => world.hash());
-      expect(yield* hash(again)).toBe(yield* hash(game));
-    })
-  ));
+    const recording = yield* game.record();
+    const again = yield* Journal.replay(recording, Catch);
+    const hash = (app: App.Any) =>
+      Effect.map(app.read(World), (world) => world.hash());
+    expect(yield* hash(again)).toBe(yield* hash(game));
+  })
+);
 ```
 
 Run `pnpm vitest run`, and the three tests pass.

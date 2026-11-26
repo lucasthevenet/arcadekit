@@ -1,6 +1,6 @@
 // The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import,
-// contain or export. oxlint.config.ts turns them on for packages/*/src, and no-outside-state for
-// the examples and benchmarks too.
+// contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state for
+// the examples and benchmarks too, and no-run-in-tests for the packages' tests.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
@@ -210,6 +210,44 @@ const noCodeFromText: Rule = {
       },
     };
   },
+};
+
+/** What runs an Effect by hand, as `Effect.<name>`. */
+const runsByHand = new Set([
+  "runSync",
+  "runSyncExit",
+  "runSyncWith",
+  "runSyncExitWith",
+  "runPromise",
+  "runPromiseExit",
+  "runPromiseWith",
+  "runPromiseExitWith",
+]);
+
+const noRunInTests: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "A test of a package is an Effect itself, with it.effect, and runs none by hand.",
+    },
+  },
+  create: (context) => ({
+    MemberExpression: (node) => {
+      if (
+        !node.computed &&
+        node.object.type === "Identifier" &&
+        node.object.name === "Effect" &&
+        node.property.type === "Identifier" &&
+        runsByHand.has(node.property.name)
+      ) {
+        context.report({
+          node,
+          message: `Effect.${node.property.name} runs an Effect by hand. A test is an Effect itself: write it with it.effect from @effect/vitest, or it.live where it waits in real time, and yield* the effect in it.`,
+        });
+      }
+    },
+  }),
 };
 
 /** A node as far as finding what encloses it needs. */
@@ -1080,6 +1118,7 @@ export default {
     "entry-imports": entryImports,
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
+    "no-run-in-tests": noRunInTests,
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,
     "id-casts": idCasts,

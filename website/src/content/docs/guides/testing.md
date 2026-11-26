@@ -5,14 +5,14 @@ description: "An arcadekit game runs under Node with nothing but its plugins, so
 
 An arcadekit game runs under Node with nothing but its plugins, so its **tests** need no browser. A test steps an app by hand, and gives it stand-ins for what a page provides: devices, sound, a display, files, a UI, a renderer and a network. The test drives each stand-in itself, so it controls when things happen and can inspect what the game asked for.
 
-The examples use [Vitest](https://vitest.dev), but any test runner works.
+The examples use [Vitest](https://vitest.dev) with [`@effect/vitest`](https://github.com/Effect-TS/effect/tree/main/packages/vitest), whose `it.effect` runs a test that is an Effect. Each method of an app returns an Effect, and a test yields each one.
 
 ## Step an app
 
 ```ts title="rules.test.ts"
+import { expect, it } from "@effect/vitest";
 import { Action, App, Field, Plugin, Singleton } from "arcadekit";
 import { Effect, Schema } from "effect";
-import { expect, it } from "vitest";
 
 const Score = Singleton.define(
   "game/Score",
@@ -27,23 +27,22 @@ export const Rules = Plugin.make("game/Rules", {
   handlers: [add],
 });
 
-it("adds points", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const app = yield* App.make(App.define({ plugins: [Rules] }));
-      app.enqueue(Add, { points: 3 });
-      app.tick(1 / 60);
-      expect((yield* app.read(Score)).points).toBe(3);
-    })
-  ));
+it.effect("adds points", () =>
+  Effect.gen(function* () {
+    const app = yield* App.make(App.define({ plugins: [Rules] }));
+    yield* app.enqueue(Add, { points: 3 });
+    yield* app.tick(1 / 60);
+    expect((yield* app.read(Score)).points).toBe(3);
+  })
+);
 ```
 
-The test makes an app, steps it with `tick`, and reads the game with `app.read`. `app.dispatch` returns an action's outcome at once, for testing a rule and its refusals.
+The test makes an app, steps it with `yield* app.tick`, and reads the game with `app.read`. `app.dispatch` applies an action at once, for testing a rule and its refusals: it fails with the refusal, and `yield* Effect.exit(app.dispatch(...))` gives the outcome as a value. A tick fails with what a system fails with, and a call made where it may not be, such as `app.tick` from inside a tick, dies with a message that says so.
 
 A test changes the game as a player does, with an action. It sets the scene with a plugin of its own, whose `setup` spawns what the test needs. `app.read` takes `World`, `Time`, a query that only reads, a singleton or a state, and nothing that writes.
 
 - An app has a scope of its own, so making one needs no `Effect.scoped`. It holds what it opened until `app.close`. The stand-ins below hold nothing. A test that opens something real, such as a page's devices or a socket, closes the app when it is done.
-- Game time is `Time`, and a test advances it by ticking. `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock` doesn't affect it.
+- Game time is `Time`, and a test advances it by ticking. `app.tick(1 / 60)` is a sixtieth of a second of game time, however long the test takes. Effect's `TestClock`, which `it.effect` provides, doesn't affect it. A test that waits in real time, on a socket or a timer of the page, is `it.live`.
 - Vitest's `toEqual` treats two `Data.TaggedError` errors that differ only in their `message` as equal, since `message` isn't enumerable. When a test compares a failure, compare the `message` too.
 
 ## Drive the devices
@@ -51,41 +50,39 @@ A test changes the game as a player does, with an action. It sets the scene with
 ```ts title="rules.test.ts"
 import { Input } from "arcadekit";
 
-it("hears a key", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const source = Input.makeManualSource();
-      const app = yield* App.make(
-        App.define({ plugins: [Rules, Input.plugin] })
-      ).pipe(Effect.provide(Input.layer(source)));
-      source.press("Space");
-      app.input(); // reads the devices
-      app.tick(1 / 60);
-    })
-  ));
+it.effect("hears a key", () =>
+  Effect.gen(function* () {
+    const source = Input.makeManualSource();
+    const app = yield* App.make(
+      App.define({ plugins: [Rules, Input.plugin] })
+    ).pipe(Effect.provide(Input.layer(source)));
+    source.press("Space");
+    yield* app.input(); // reads the devices
+    yield* app.tick(1 / 60);
+  })
+);
 ```
 
 By default, an app has no devices. A test provides a source it drives by hand. `source.press`, `release`, `tap` and `move` act as the devices. `app.input()` reads them, as a driver does in a page, and the next tick receives the input.
 
-To test what a game does with a key, you don't need a device. Dispatch the action the key is bound to, or `Input.Report`, the action that updates the device state. When a source is also provided, the next `app.input()` reads it and overrides a report made by hand. A tick reads no device, so a test that calls `app.tick(delta)` alone keeps the report.
+To test what a game does with a key, you don't need a device. Dispatch the action the key is bound to, or `Input.Report`, the action that updates the device state. When a source is also provided, the next `app.input()` reads it and overrides a report made by hand. A tick reads no device, so a test that runs `app.tick(delta)` alone keeps the report.
 
 ## Record the sound
 
 ```ts title="rules.test.ts"
 import { Sound } from "arcadekit";
 
-it("plays nothing when nothing happens", () =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const sound = Sound.makeRecorder();
-      const app = yield* App.make(
-        App.define({ plugins: [Rules, Sound.plugin] })
-      ).pipe(Effect.provide(Sound.layer(sound)));
-      app.tick(1 / 60);
-      app.frame();
-      expect(sound.played).toEqual([]);
-    })
-  ));
+it.effect("plays nothing when nothing happens", () =>
+  Effect.gen(function* () {
+    const sound = Sound.makeRecorder();
+    const app = yield* App.make(
+      App.define({ plugins: [Rules, Sound.plugin] })
+    ).pipe(Effect.provide(Sound.layer(sound)));
+    yield* app.tick(1 / 60);
+    yield* app.frame();
+    expect(sound.played).toEqual([]);
+  })
+);
 ```
 
 `Sound.makeRecorder()` is a speaker that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each channel is playing now in `playing`.
@@ -117,10 +114,12 @@ export const slowLoader: Assets.LoaderShape = {
 };
 
 /** A turn of the event loop, for what arrived to be decoded. */
-export const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+export const settle = Effect.promise(
+  () => new Promise((resolve) => setTimeout(resolve, 0))
+);
 ```
 
-Provide it with `Effect.provideService(Assets.Loader, slowLoader)`. The test steps the app while the files are in flight, calls `arrive.get("/forest.png")?.(bytes)`, and awaits `settle()` before it inspects the game. Such a test is asynchronous, so run it with `Effect.runPromise`.
+Provide it with `Effect.provideService(Assets.Loader, slowLoader)`. The test steps the app while the files are in flight, calls `arrive.get("/forest.png")?.(bytes)`, and yields `settle` before it inspects the game. Such a test waits in real time, so run it with `it.live`.
 
 To check that a level's assets are released when the level ends, give the level an asset made with `Assets.make`. Its `decode` records when the asset is created and, with `Effect.acquireRelease`, when it is released.
 
@@ -160,18 +159,18 @@ const grace =
   Transport.connect(graceSession).pipe(Effect.provide(hub.layer("grace")));
 for (let i = 0; i < 600; i++) {
   hub.step();
-  ada.tick();
-  grace.tick();
+  yield * ada.tick();
+  yield * grace.tick();
 }
 // No more input: let messages in flight arrive, then let the peer that is behind catch up.
 for (let i = 0; i < 30; i++) {
   hub.step();
-  ada.tick();
-  grace.tick();
+  yield * ada.tick();
+  yield * grace.tick();
 }
 while (adaApp.time.tick !== graceApp.time.tick) {
   hub.step();
-  (adaApp.time.tick < graceApp.time.tick ? ada : grace).tick();
+  yield * (adaApp.time.tick < graceApp.time.tick ? ada : grace).tick();
 }
 const adaWorld = yield * adaApp.read(World);
 const graceWorld = yield * graceApp.read(World);
@@ -190,7 +189,7 @@ Compare peers once the game has settled and both are at the same tick. Stop issu
 ```ts sketch
 const test = yield * Session.syncTest(Duel, { seed: 1 });
 for (let i = 0; i < 600; i++) {
-  test.tick(1 / 60);
+  yield * test.tick(1 / 60);
 }
 ```
 
@@ -198,7 +197,7 @@ A session that runs ahead runs a tick again after a rewind, and a game that keep
 
 - Each tick is run, rewound and run again from the same moment.
 - The world's hash is compared before the first system and after each one.
-- `tick` throws `Session.RewindDiverged`, which names the first system after which the hashes differ. A difference before any system is in a handler of an action queued for the tick, or in a state's hook.
+- `tick` fails with `Session.RewindDiverged`, which names the first system after which the hashes differ. A difference before any system is in a handler of an action queued for the tick, or in a state's hook.
 
 The rest of the game sees each tick once: the frame and input stages, the action log and the recording. An action enqueued from outside is queued for the next tick, as in an app nobody took over. Each tick costs a capture of the game, a second run and a hash per system, so use it in tests.
 

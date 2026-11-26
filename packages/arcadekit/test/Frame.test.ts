@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -7,7 +8,6 @@ import {
   Layer,
   Schema,
 } from "effect";
-import { describe, expect, it } from "vitest";
 
 import { entityIndex } from "../src/ecs/component.ts";
 import {
@@ -36,6 +36,7 @@ import {
 } from "../src/index.ts";
 import type { ComponentDef, Entity, Rng } from "../src/index.ts";
 import type { BuiltIn } from "../src/Services.ts";
+import { thrown } from "./checks.ts";
 
 const Ball = Component.define("fr/Ball", { x: Field.f32, vx: Field.f32 });
 const Glow = Component.define(
@@ -83,13 +84,13 @@ const racked = (...balls: readonly { x: number; vx: number }[]) =>
   });
 
 /** Each ball, where it is and how fast it rolls. */
-const ballsOf = (app: App.Any): { x: number; vx: number }[] => {
+const ballsOf = Effect.fnUntraced(function* (app: App.Any) {
   const found: { x: number; vx: number }[] = [];
-  Effect.runSync(app.read(Seen)).each(({ x, vx }) => {
+  (yield* app.read(Seen)).each(({ x, vx }) => {
     found.push({ x, vx });
   });
   return found;
-};
+});
 
 describe("a frozen world", () => {
   const populated = (): { world: EcsWorld; ball: Entity } => {
@@ -260,8 +261,9 @@ describe("a frozen world", () => {
 // --- in an app --------------------------------------------------------------------
 
 describe("the frame stage", () => {
-  it("runs its systems when a frame is asked for, and the tick's when a tick is", () => {
-    Effect.runSync(
+  it.effect(
+    "runs its systems when a frame is asked for, and the tick's when a tick is",
+    () =>
       Effect.gen(function* () {
         const ran: string[] = [];
         const noting = (
@@ -298,26 +300,26 @@ describe("the frame stage", () => {
         );
         expect(app.systemOrder).toEqual(["Tick"]);
         expect(app.frameOrder).toEqual(["Clear", "Draw", "Hud"]);
-        app.frame();
+        yield* app.frame();
         expect(ran).toEqual(["Clear", "Draw"]);
-        app.tick(1);
-        app.tick(1);
+        yield* app.tick(1);
+        yield* app.tick(1);
         expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
-        app.dispatch(Pause, {});
-        app.frame(0.5);
+        yield* app.dispatch(Pause, {});
+        yield* app.frame(0.5);
         // A state is entered by a tick, not by a frame.
         expect(ran).toEqual(["Clear", "Draw"]);
-        app.tick(1);
+        yield* app.tick(1);
         ran.length = 0;
-        app.frame(0.5);
+        yield* app.frame(0.5);
         expect(ran).toEqual(["Clear", "Draw", "Hud"]);
       })
-    );
-  });
+  );
 
-  it("has a stage before it and one after, as a tick has, and each runs whole before the next, however its systems are listed", () => {
-    Effect.runSync(
+  it.effect(
+    "has a stage before it and one after, as a tick has, and each runs whole before the next, however its systems are listed",
+    () =>
       Effect.gen(function* () {
         const ran: string[] = [];
         const drawing = (
@@ -356,7 +358,7 @@ describe("the frame stage", () => {
           "Show",
         ]);
         expect(app.systemOrder).toEqual(["Tick"]);
-        app.frame(0.25);
+        yield* app.frame(0.25);
         expect(ran).toEqual([
           "Load 0.25",
           "Clear 0.25",
@@ -377,8 +379,7 @@ describe("the frame stage", () => {
           )
         ).toEqual([false, false, false, false]);
       })
-    );
-  });
+  );
 
   it("is the frame stage in all three as far as what a system may do goes: none changes the game, and none is a hook", () => {
     System.frame(
@@ -397,43 +398,42 @@ describe("the frame stage", () => {
     expect([pre.stage, post.stage]).toEqual(["preFrame", "postFrame"]);
   });
 
-  it("is told how far the frame is between two ticks", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const frames: unknown[] = [];
-        const drawn: number[] = [];
-        const Draw = System.frame("Draw", function* () {
-          const frame = yield* Frame;
-          const { delta } = yield* Time;
-          frames.push({ ...frame });
-          // Where the ball is now: where the last tick left it, and on.
-          (yield* Seen).each((ball) => {
-            drawn.push(ball.x + ball.vx * delta * frame.alpha);
-          });
+  it.effect("is told how far the frame is between two ticks", () =>
+    Effect.gen(function* () {
+      const frames: unknown[] = [];
+      const drawn: number[] = [];
+      const Draw = System.frame("Draw", function* () {
+        const frame = yield* Frame;
+        const { delta } = yield* Time;
+        frames.push({ ...frame });
+        // Where the ball is now: where the last tick left it, and on.
+        (yield* Seen).each((ball) => {
+          drawn.push(ball.x + ball.vx * delta * frame.alpha);
         });
-        const app = yield* App.make(
-          App.define({
-            plugins: [racked({ x: 0, vx: 10 })],
-            systems: [Roll, Draw],
-          })
-        );
-        app.tick(0.5);
-        app.frame(0, 0.016);
-        app.frame(0.5, 0.008);
-        app.tick(0.5);
-        app.frame(0.25);
-        expect(frames).toEqual([
-          { alpha: 0, delta: 0.016, count: 1 },
-          { alpha: 0.5, delta: 0.008, count: 2 },
-          { alpha: 0.25, delta: 0, count: 3 },
-        ]);
-        expect(drawn).toEqual([5, 7.5, 11.25]);
-      })
-    );
-  });
+      });
+      const app = yield* App.make(
+        App.define({
+          plugins: [racked({ x: 0, vx: 10 })],
+          systems: [Roll, Draw],
+        })
+      );
+      yield* app.tick(0.5);
+      yield* app.frame(0, 0.016);
+      yield* app.frame(0.5, 0.008);
+      yield* app.tick(0.5);
+      yield* app.frame(0.25);
+      expect(frames).toEqual([
+        { alpha: 0, delta: 0.016, count: 1 },
+        { alpha: 0.5, delta: 0.008, count: 2 },
+        { alpha: 0.25, delta: 0, count: 3 },
+      ]);
+      expect(drawn).toEqual([5, 7.5, 11.25]);
+    })
+  );
 
-  it("is driven at the rate of frames while the simulation ticks at its own", () => {
-    Effect.runSync(
+  it.effect(
+    "is driven at the rate of frames while the simulation ticks at its own",
+    () =>
       Effect.gen(function* () {
         const alphas: number[] = [];
         const Draw = System.frame("Draw", function* () {
@@ -442,22 +442,23 @@ describe("the frame stage", () => {
         const app = yield* App.make(App.define({ systems: [Roll, Draw] }));
         const step = Driver.fixedStep(app, { hz: 10 });
         // Frames of 40 ms against ticks of 100 ms.
-        const ticks = [0, 1, 2, 3, 4, 5, 6].map(() => step(0.04));
+        const ticks = yield* Effect.forEach([0, 1, 2, 3, 4, 5, 6], () =>
+          step(0.04)
+        );
         expect(ticks).toEqual([0, 0, 1, 0, 1, 0, 0]);
         expect(alphas).toEqual([0.4, 0.8, 0.2, 0.6, 0, 0.4, 0.8]);
         expect(app.time.tick).toBe(2);
         // A long frame runs several ticks and then draws once.
-        expect(step(0.33)).toBe(4);
+        expect(yield* step(0.33)).toBe(4);
         expect(alphas.at(-1)).toBe(0.1);
         expect(alphas.length).toBe(8);
         // An app with no frame stage is driven as before.
         const plain = yield* App.make(App.define({ systems: [Roll] }));
-        expect(Driver.fixedStep(plain, { hz: 10 })(0.25)).toBe(2);
+        expect(yield* Driver.fixedStep(plain, { hz: 10 })(0.25)).toBe(2);
         expect(plain.frameOrder).toEqual([]);
-        plain.frame(0.5);
+        yield* plain.frame(0.5);
       })
-    );
-  });
+  );
 
   it("cannot change the game: the ways that would are refused where they are written", () => {
     const Pinged = Event.define("fr/Pinged", Schema.Struct({}));
@@ -520,8 +521,9 @@ describe("the frame stage", () => {
     expect(Bus.stage).toBe("frame");
   });
 
-  it("draws its random numbers from a generator of its own, not the world's", () => {
-    Effect.runSync(
+  it.effect(
+    "draws its random numbers from a generator of its own, not the world's",
+    () =>
       Effect.gen(function* () {
         const drawn: number[] = [];
         const Sparkle = System.frame("Sparkle", function* () {
@@ -532,8 +534,8 @@ describe("the frame stage", () => {
         });
         const world = yield* app.read(World);
         const before = world.hash();
-        app.frame();
-        app.frame();
+        yield* app.frame();
+        yield* app.frame();
         expect(new Set(drawn).size).toBe(4);
         // The hash holds the state of the world's generator.
         expect(world.hash()).toBe(before);
@@ -543,23 +545,23 @@ describe("the frame stage", () => {
           { seed: 5 }
         );
         drawn.length = 0;
-        again.frame();
-        again.frame();
+        yield* again.frame();
+        yield* again.frame();
         const first = [...drawn];
         drawn.length = 0;
         const third = yield* App.make(
           App.define({ systems: [Sparkle, Roll] }),
           { seed: 5 }
         );
-        third.frame();
-        third.frame();
+        yield* third.frame();
+        yield* third.frame();
         expect(drawn).toEqual(first);
       })
-    );
-  });
+  );
 
-  it("finds a draw from the world's generator when the frame ends, and takes it back", () => {
-    Effect.runSync(
+  it.effect(
+    "finds a draw from the world's generator when the frame ends, and takes it back",
+    () =>
       Effect.gen(function* () {
         let cheat = true;
         const drawn: string[] = [];
@@ -580,37 +582,40 @@ describe("the frame stage", () => {
           { seed: 5 }
         );
         const world = yield* app.read(World);
-        app.tick(1);
+        yield* app.tick(1);
         const before = world.hash();
-        expect(() => app.frame()).toThrow(
+        expect(yield* thrown(app.frame())).toThrow(
           /A draw from world\.random was made while the world is frozen/
         );
         expect(world.hash()).toBe(before);
         // The frame ran to its end first, and the outcome is a defect.
         expect(drawn).toEqual(["After"]);
-        const exit = app.frameExit(0);
+        const exit = yield* Effect.exit(app.frame(0));
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
         expect(world.hash()).toBe(before);
         // The app is not left in a frame, nor the world frozen: it ticks,
         // and draws once it behaves.
-        app.tick(1);
+        yield* app.tick(1);
         expect(world.hash()).not.toBe(before);
         cheat = false;
-        app.frame();
-        expect(Exit.isSuccess(app.frameExit(0))).toBe(true);
+        yield* app.frame();
+        expect(Exit.isSuccess(yield* Effect.exit(app.frame(0)))).toBe(true);
       })
-    );
-  });
+  );
 
-  it("issues an action as input from outside: logged, applied next tick, replayed without it", () => {
-    const Kick = Action.define("fr/Kick", Schema.Struct({ by: Schema.Int }));
-    const kick = Action.handler(Kick, function* ({ by }) {
-      (yield* Balls).each((ball) => {
-        ball.vx += by;
-      });
-    });
-    Effect.runSync(
+  it.effect(
+    "issues an action as input from outside: logged, applied next tick, replayed without it",
+    () =>
       Effect.gen(function* () {
+        const Kick = Action.define(
+          "fr/Kick",
+          Schema.Struct({ by: Schema.Int })
+        );
+        const kick = Action.handler(Kick, function* ({ by }) {
+          (yield* Balls).each((ball) => {
+            ball.vx += by;
+          });
+        });
         // A button in the picture: pressed in the third frame.
         const Button = System.frame("Button", function* () {
           if ((yield* Frame).count === 3) {
@@ -631,17 +636,17 @@ describe("the frame stage", () => {
           { checkpointEvery: 1 }
         );
         for (let n = 0; n < 5; n++) {
-          app.tick(1);
-          app.frame();
+          yield* app.tick(1);
+          yield* app.frame();
         }
-        expect(ballsOf(app)).toEqual([{ x: 1 + 1 + 1 + 5 + 5, vx: 5 }]);
+        expect(yield* ballsOf(app)).toEqual([{ x: 1 + 1 + 1 + 5 + 5, vx: 5 }]);
         expect(
           app.actionLog.filter((entry) => !Action.isCheckpoint(entry))
         ).toEqual([
           { tick: 3, name: "fr/Kick", payload: { by: 4 }, queued: true },
         ]);
         // The replay has no button and draws no frame.
-        const played = app.record();
+        const played = yield* app.record();
         const headless = yield* Journal.replay(
           played,
           App.define({ plugins: [Begin], systems: [Roll], handlers: [kick] }),
@@ -651,62 +656,73 @@ describe("the frame stage", () => {
           (yield* app.read(World)).hash()
         );
         // Nor may a frame dispatch: that would change the game there and then.
-        let own: App.Any | undefined;
+        let own: App.App | undefined;
         const Hasty = System.frame("Hasty", function* () {
-          own?.dispatchByName("fr/Kick", { by: 1 });
+          if (own !== undefined) {
+            yield* Effect.orDie(own.dispatchByName("fr/Kick", { by: 1 }));
+          }
         });
         const hasty = yield* App.make(
-          App.define({ plugins: [Begin], systems: [Hasty], handlers: [kick] }),
+          App.define({
+            plugins: [Begin],
+            systems: [Hasty],
+            handlers: [kick],
+          }),
           { checkpointEvery: 1 }
         );
         own = hasty;
-        expect(() => hasty.frame()).toThrow(
+        expect(yield* thrown(hasty.frame())).toThrow(
           /dispatch\("fr\/Kick"\) was called during the frame stage.*Actions\.enqueue/
         );
       })
-    );
-  });
+  );
 
-  it("refuses a tick, a frame or a save from inside a frame, and a frame from inside a tick", () => {
-    Effect.runSync(
+  it.effect(
+    "refuses a tick, a frame or a save from inside a frame, and a frame from inside a tick",
+    () =>
       Effect.gen(function* () {
-        let inFrame: (() => unknown) | undefined;
-        let inTick: (() => unknown) | undefined;
+        let inFrame: Effect.Effect<unknown> | undefined;
+        let inTick: Effect.Effect<unknown> | undefined;
         const drawn: number[] = [];
         const Reenter = System.frame("Reenter", function* () {
           drawn.push((yield* Frame).count);
-          inFrame?.();
+          if (inFrame !== undefined) {
+            yield* inFrame;
+          }
         });
         const InTick = System.tick("InTick", function* () {
-          inTick?.();
+          if (inTick !== undefined) {
+            yield* inTick;
+          }
         });
-        const app: App.Any = yield* App.make(
+        const app: App.App = yield* App.make(
           App.define({ systems: [Reenter, InTick] })
         );
-        inFrame = () => app.tick(1);
-        expect(() => app.frame()).toThrow(
+        inFrame = app.tick(1);
+        expect(yield* thrown(app.frame())).toThrow(
           /App\.tick was called from inside a frame/
         );
-        inFrame = () => app.frame();
-        expect(() => app.frame()).toThrow(
+        inFrame = app.frame();
+        expect(yield* thrown(app.frame())).toThrow(
           /App\.frame was called from inside a frame/
         );
-        inFrame = () => app.save();
-        expect(() => app.frame()).toThrow(/save\(\) was called during/);
+        inFrame = Effect.orDie(app.save());
+        expect(yield* thrown(app.frame())).toThrow(
+          /save\(\) was called during/
+        );
         inFrame = undefined;
-        inTick = () => app.frame();
+        inTick = app.frame();
         drawn.length = 0;
-        expect(() => app.tick(1)).toThrow(
+        expect(yield* thrown(app.tick(1))).toThrow(
           /App\.frame was called from inside a tick/
         );
         // Nothing was drawn in the middle of the tick.
         expect(drawn).toEqual([]);
         inTick = undefined;
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
       })
-    );
-  });
+  );
 
   it("keeps real time out of the simulation, and hooks out of the frame stage", () => {
     System.tick(
@@ -724,8 +740,9 @@ describe("the frame stage", () => {
 describe("what the frame stage reads", () => {
   const Bounced = Event.define("fr/Bounced", Schema.Struct({ at: Schema.Int }));
 
-  it("sees every event once, however many ticks ran since the last frame", () => {
-    Effect.runSync(
+  it.effect(
+    "sees every event once, however many ticks ran since the last frame",
+    () =>
       Effect.gen(function* () {
         const heard: number[] = [];
         const late: number[] = [];
@@ -747,16 +764,16 @@ describe("what the frame stage reads", () => {
         const app = yield* App.make(
           App.define({ systems: [Late, Emit, Listen] })
         );
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         expect(heard).toEqual([1]);
         // Four ticks with no frame between them, as after a hitch.
         for (let n = 0; n < 4; n++) {
-          app.tick(1);
+          yield* app.tick(1);
         }
-        app.frame();
+        yield* app.frame();
         expect(heard).toEqual([1, 2, 3, 4, 5]);
-        app.frame();
+        yield* app.frame();
         expect(heard).toEqual([1, 2, 3, 4, 5]);
         // The simulation cannot tell that anything was kept for the frame
         // stage: a system that first reads on tick 4 hears what it would
@@ -765,7 +782,7 @@ describe("what the frame stage reads", () => {
         const without: number[] = [];
         late.length = 0;
         for (let n = 0; n < 5; n++) {
-          headless.tick(1);
+          yield* headless.tick(1);
         }
         without.push(...late);
         expect(without).toEqual([3, 4]);
@@ -773,13 +790,15 @@ describe("what the frame stage reads", () => {
         const again = yield* App.make(
           App.define({ systems: [Late, Emit, Listen] })
         );
-        again.tick(1);
-        again.frame();
+        yield* again.tick(1);
+        yield* again.frame();
         for (let n = 0; n < 4; n++) {
-          again.tick(1);
+          yield* again.tick(1);
         }
         expect(late).toEqual(without);
-        expect(again.inspect().stores).toEqual(headless.inspect().stores);
+        expect((yield* again.inspect()).stores).toEqual(
+          (yield* headless.inspect()).stores
+        );
         // A system that sat ticks out is no different: when it reads
         // again it goes no further back than it could with no frame stage.
         const sat: number[] = [];
@@ -790,27 +809,24 @@ describe("what the frame stage reads", () => {
         }).pipe(
           System.runIf(Effect.map(Time, ({ tick }) => tick === 1 || tick === 6))
         );
-        const run = (each: App.Any) => {
+        const run = Effect.fnUntraced(function* (each: App.App) {
           sat.length = 0;
-          each.tick(1);
-          each.frame();
+          yield* each.tick(1);
+          yield* each.frame();
           for (let n = 0; n < 5; n++) {
-            each.tick(1);
+            yield* each.tick(1);
           }
           return [...sat];
-        };
+        });
         const all = App.define({ systems: [Sometimes, Emit, Listen] });
-        expect(run(yield* App.make(all))).toEqual([5]);
+        expect(yield* run(yield* App.make(all))).toEqual([5]);
         const unheard = App.define({ systems: [Sometimes, Emit] });
-        expect(run(yield* App.make(unheard))).toEqual([5]);
+        expect(yield* run(yield* App.make(unheard))).toEqual([5]);
         // Nor can a save: it holds what the simulation has yet to read, and
         // nothing that was only kept for the frame stage, or of its readers.
-        const saves = [again, headless].map((each) => {
-          const save = each.save();
-          return Exit.isSuccess(save)
-            ? readSnapshot(save.value.world).stores
-            : undefined;
-        });
+        const saves = yield* Effect.forEach([again, headless], (each) =>
+          Effect.map(each.save(), (save) => readSnapshot(save.world).stores)
+        );
         expect(saves[0]).toEqual(saves[1]);
         expect(saves[0]).toEqual([
           {
@@ -819,11 +835,11 @@ describe("what the frame stage reads", () => {
           },
         ]);
       })
-    );
-  });
+  );
 
-  it("stops keeping events for a frame stage that has stopped running", () => {
-    Effect.runSync(
+  it.effect(
+    "stops keeping events for a frame stage that has stopped running",
+    () =>
       Effect.gen(function* () {
         const heard: number[] = [];
         const Listen = System.frame("Listen", function* () {
@@ -835,36 +851,36 @@ describe("what the frame stage reads", () => {
         const app = yield* App.make(App.define({ systems: [Emit, Listen] }));
         // A frame stage that keeps running is kept for, however long.
         for (let n = 0; n < 700; n++) {
-          app.tick(1);
-          app.frame();
+          yield* app.tick(1);
+          yield* app.frame();
         }
         for (let n = 0; n < 4; n++) {
-          app.tick(1);
+          yield* app.tick(1);
         }
-        app.frame();
+        yield* app.frame();
         expect(heard.at(-1)).toBe(4);
         heard.length = 0;
-        app.tick(1);
-        app.frame();
+        yield* app.tick(1);
+        yield* app.frame();
         for (let n = 0; n < 500; n++) {
-          app.tick(1);
+          yield* app.tick(1);
         }
-        app.frame();
+        yield* app.frame();
         // All 500 were kept.
         expect(heard).toEqual([1, 500]);
         for (let n = 0; n < 2000; n++) {
-          app.tick(1);
+          yield* app.tick(1);
         }
-        app.frame();
+        yield* app.frame();
         // After 600 ticks without a frame the app stopped keeping them:
         // what is left is what any reader would find.
         expect(heard.at(-1)).toBeLessThan(5);
       })
-    );
-  });
+  );
 
-  it("has a place of its own in what changed, which is not the simulation's and not saved", () => {
-    Effect.runSync(
+  it.effect(
+    "has a place of its own in what changed, which is not the simulation's and not saved",
+    () =>
       Effect.gen(function* () {
         const drawn: number[] = [];
         const counted: number[] = [];
@@ -892,18 +908,18 @@ describe("what the frame stage reads", () => {
           systems: [Nudge, Count, Draw],
         });
         const app = yield* App.make(BallGame, { checkpointEvery: 1 });
-        app.frame();
-        app.tick(1);
-        app.tick(1);
-        app.frame();
-        app.frame();
+        yield* app.frame();
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.frame();
+        yield* app.frame();
         // The first frame draws everything; the next, the two that moved.
         expect(drawn).toEqual([3, 2, 0]);
         // The simulation's own reader saw each change once.
         expect(counted).toEqual([3, 1]);
 
-        app.tick(1);
-        const save = app.save();
+        yield* app.tick(1);
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -926,18 +942,18 @@ describe("what the frame stage reads", () => {
         });
         drawn.length = 0;
         counted.length = 0;
-        loaded.frame();
-        loaded.tick(1);
+        yield* loaded.frame();
+        yield* loaded.tick(1);
         // A loaded game has everything still to draw, and its simulation
         // goes on from where it was.
         expect(drawn).toEqual([3]);
         expect(counted).toEqual([1]);
       })
-    );
-  });
+  );
 
-  it("changes nothing: a game drawn every frame is the game that was never drawn", () => {
-    Effect.runSync(
+  it.effect(
+    "changes nothing: a game drawn every frame is the game that was never drawn",
+    () =>
       Effect.gen(function* () {
         const Watch = System.frame("Watch", function* () {
           let sum = 0;
@@ -987,21 +1003,23 @@ describe("what the frame stage reads", () => {
           App.define({ plugins: [Rack], systems: [Roll, Tally] })
         );
         for (let n = 0; n < 20; n++) {
-          drawn.tick(1 / 60);
+          yield* drawn.tick(1 / 60);
           for (let f = 0; f < n % 3; f++) {
-            drawn.frame(f / 3, 0.005);
+            yield* drawn.frame(f / 3, 0.005);
           }
-          undrawn.tick(1 / 60);
+          yield* undrawn.tick(1 / 60);
           expect(drawnWorld.hash()).toBe(undrawnWorld.hash());
         }
         expect(drawn.actionLog).toEqual(undrawn.actionLog);
-        const saved = [drawn.save(), undrawn.save()].map((save) =>
+        const saved = [
+          yield* Effect.exit(drawn.save()),
+          yield* Effect.exit(undrawn.save()),
+        ].map((save) =>
           Exit.isSuccess(save) ? Save.encode(save.value) : undefined
         );
         expect(saved[0]).toEqual(saved[1]);
       })
-    );
-  });
+  );
 });
 
 describe("a frame stage that is checked", () => {
@@ -1022,8 +1040,9 @@ describe("a frame stage that is checked", () => {
     void (yield* Seen).count();
   });
 
-  it("holds what a system does in place of running to the same, and names that system", () => {
-    Effect.runSync(
+  it.effect(
+    "holds what a system does in place of running to the same, and names that system",
+    () =>
       Effect.gen(function* () {
         // It does not run, and what it does then draws from the world's generator.
         const Idle = Honest.pipe(
@@ -1037,18 +1056,18 @@ describe("a frame stage that is checked", () => {
           }),
           { verifyFrames: true }
         );
-        const exit = app.frameExit(0);
+        const exit = yield* Effect.exit(app.frame(0));
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
         expect(error).toBeInstanceOf(App.FrameChangedWorld);
         expect(error).toMatchObject({ system: "Honest" });
       })
-    );
-  });
+  );
 
-  it("finds a draw from the world's generator, names the system, and takes it back", () => {
-    Effect.runSync(
+  it.effect(
+    "finds a draw from the world's generator, names the system, and takes it back",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({
@@ -1058,8 +1077,8 @@ describe("a frame stage that is checked", () => {
           { verifyFrames: true }
         );
         const world = yield* app.read(World);
-        app.tick(1);
-        const exit = app.frameExit(0.5);
+        yield* app.tick(1);
+        const exit = yield* Effect.exit(app.frame(0.5));
         const error = Exit.isFailure(exit)
           ? Cause.squash(exit.cause)
           : undefined;
@@ -1071,14 +1090,14 @@ describe("a frame stage that is checked", () => {
         // It is a defect: nothing in the error channel to handle.
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
         const before = world.hash();
-        expect(() => app.frame()).toThrow(App.FrameChangedWorld);
+        expect(yield* thrown(app.frame())).toThrow(App.FrameChangedWorld);
         expect(world.hash()).toBe(before);
       })
-    );
-  });
+  );
 
-  it("refuses a write through a raw column where it is made, and puts it back", () => {
-    Effect.runSync(
+  it.effect(
+    "refuses a write through a raw column where it is made, and puts it back",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(
           App.define({
@@ -1088,9 +1107,9 @@ describe("a frame stage that is checked", () => {
           { verifyFrames: true }
         );
         const world = yield* app.read(World);
-        app.tick(1);
+        yield* app.tick(1);
         const before = world.hash();
-        const exit = app.frameExit(0.5);
+        const exit = yield* Effect.exit(app.frame(0.5));
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
           new Error(
             'eachChunk() wrote "fr/Ball.x", which the query only reads, through its raw column. No change query would see the write, and no refusal would undo it, so it has been put back. Name "fr/Ball" in Query.writes to write it, or write it with each().'
@@ -1098,11 +1117,11 @@ describe("a frame stage that is checked", () => {
         );
         expect(world.hash()).toBe(before);
       })
-    );
-  });
+  );
 
-  it("passes a frame stage that leaves the world alone, and is off unless asked for", () => {
-    Effect.runSync(
+  it.effect(
+    "passes a frame stage that leaves the world alone, and is off unless asked for",
+    () =>
       Effect.gen(function* () {
         const checked = yield* App.make(
           App.define({
@@ -1111,11 +1130,11 @@ describe("a frame stage that is checked", () => {
           }),
           { verifyFrames: true }
         );
-        checked.tick(1);
-        checked.frame();
+        yield* checked.tick(1);
+        yield* checked.frame();
         // The world a frame is held to is the one it found, not the last one.
-        checked.tick(1);
-        checked.frame(0.5);
+        yield* checked.tick(1);
+        yield* checked.frame(0.5);
         // Unchecked, the write goes through: it is the game's to avoid.
         const unchecked = yield* App.make(
           App.define({
@@ -1123,9 +1142,8 @@ describe("a frame stage that is checked", () => {
             systems: [Sneak("raw"), Roll],
           })
         );
-        unchecked.frame();
-        expect(ballsOf(unchecked)).toEqual([{ x: 2, vx: 1 }]);
+        yield* unchecked.frame();
+        expect(yield* ballsOf(unchecked)).toEqual([{ x: 2, vx: 1 }]);
       })
-    );
-  });
+  );
 });

@@ -76,8 +76,8 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
 
 List the handler in a plugin's `handlers`. The app then accepts the action in two ways:
 
-- **`app.dispatch(Strike, payload)`** applies it immediately and returns an `Exit`, with the handler's result or why it was refused. Use it for turn-based input.
-- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input. A payload the schema refuses is refused at once. `enqueue` then returns an `Exit` that fails with `Action.InvalidPayload`, and nothing is queued or logged.
+- **`app.dispatch(Strike, payload)`** applies it immediately. Its Effect succeeds with the handler's result, or fails with why it was refused. Use it for turn-based input.
+- **`app.enqueue(Strike, payload)`** queues it for the start of the next tick, where a refusal becomes an `Action.Rejected` event. Use it for real-time input. A payload the schema refuses is refused at once. `enqueue` then fails with `Action.InvalidPayload`, and nothing is queued or logged.
 
 Dispatching an action that has no handler, or with the wrong payload, is a compile error.
 
@@ -174,7 +174,7 @@ Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app
 
 Both accept the issuer as a third argument, for a program that relays actions on someone else's behalf, such as a server for its clients: `app.enqueueByName(name, json, client)`. Don't pass it on an app in a session, where each peer's actions carry that peer's own name.
 
-`app.actionLog` holds every action from outside the simulation, in JSON form, with checkpoints of the world's hash among them. `app.record()` returns the log with how long each tick was. `Journal.encode` and `Journal.decode` convert that recording to bytes and back. See [replays](replays.md).
+`app.actionLog` holds every action from outside the simulation, in JSON form, with checkpoints of the world's hash among them. `app.record()` gives the log with how long each tick was. `Journal.encode` and `Journal.decode` convert that recording to bytes and back. See [replays](replays.md).
 
 ## Read more
 

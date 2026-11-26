@@ -1,7 +1,7 @@
+import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 // @vitest-environment happy-dom
 import { Effect, Layer } from "effect";
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Game, Screen } from "../examples/page/game.ts";
 import { Hud, Menu } from "../examples/page/protocol.ts";
@@ -23,8 +23,28 @@ declare global {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 /** Lets what is waiting on a promise or a timer run. */
-const settle = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const settle = Effect.promise(
+  () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+);
+
+/**
+ * Runs `effect` inside React's `act`, which renders what it was asked to
+ * once `effect` is done.
+ */
+const inAct = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.gen(function* () {
+    let done = (): void => {};
+    const acting = act(
+      () =>
+        new Promise<void>((resolve) => {
+          done = resolve;
+        })
+    );
+    const exit = yield* Effect.exit(effect);
+    done();
+    yield* Effect.promise(() => acting);
+    return yield* exit;
+  });
 
 const files = {
   "/level.json": JSON.stringify({
@@ -50,9 +70,9 @@ afterEach(() => {
 
 const Catch = App.define({ plugins: [Game] });
 
-const play = async (
+const play = Effect.fnUntraced(function* (
   mount: (root: Element, ui: View.Bridge<Requests>) => () => void
-) => {
+) {
   vi.stubGlobal("createImageBitmap", async () => ({ close() {} }));
   // The level's sound is decoded as a page decodes it.
   vi.stubGlobal(
@@ -87,15 +107,13 @@ const play = async (
   const source = Input.makeManualSource();
   const sound = Sound.makeRecorder();
   // The app puts the UI on the page when it is made.
-  const app = await act(async () =>
-    Effect.runSync(
-      App.make(Catch, { seed: 3 }).pipe(
-        Effect.provide(
-          Layer.mergeAll(ui, Sound.layer(sound), Assets.layerMemory(files))
-        ),
-        Effect.provideService(Screen, { canvas }),
-        Effect.provide(Input.layer(source))
-      )
+  const app = yield* inAct(
+    App.make(Catch, { seed: 3 }).pipe(
+      Effect.provide(
+        Layer.mergeAll(ui, Sound.layer(sound), Assets.layerMemory(files))
+      ),
+      Effect.provideService(Screen, { canvas }),
+      Effect.provide(Input.layer(source))
     )
   );
   const before = {
@@ -118,149 +136,158 @@ const play = async (
     before,
     told: () => told,
     /** How many times the document under the UI was changed since last asked. */
-    changed: async () => {
+    changed: Effect.gen(function* () {
       // An observer is told in its own time: a turn later.
-      await settle();
+      yield* settle;
       const count = records + changes.takeRecords().length;
       records = 0;
       return count;
-    },
+    }),
     buttons: () =>
       Array.from(root.querySelectorAll("button"))
         .filter((button) => !button.hidden)
         .map((button) => button.textContent),
     hud: () => root.querySelector(".hud")?.textContent,
-    click: async (label: string) => {
+    click: (label: string) => {
       const button = Array.from(root.querySelectorAll("button")).find(
         (one) => !one.hidden && one.textContent === label
       );
       if (button === undefined) {
         throw new Error(`There is no button "${label}"`);
       }
-      await act(async () => {
-        button.click();
-      });
+      return inAct(
+        Effect.sync(() => {
+          button.click();
+        })
+      );
     },
     /** What a driver does each frame a tick is due: the devices, a tick, a frame. */
-    step: async (times = 1) => {
-      await act(async () => {
-        for (let i = 0; i < times; i++) {
-          app.input();
-          app.tick(1 / 60);
-          app.frame();
-        }
-      });
-    },
-    close: () => act(() => Effect.runPromise(app.close)),
+    step: (times = 1) =>
+      inAct(
+        Effect.gen(function* () {
+          for (let i = 0; i < times; i++) {
+            yield* app.input();
+            yield* app.tick(1 / 60);
+            yield* app.frame();
+          }
+        })
+      ),
+    close: inAct(app.close),
   };
-};
+});
 
 describe.each([
   ["the page's own DOM", mountDom],
   ["a UI library, React", mountReact],
 ] as const)("a menu and a heads-up display built with %s", (_, mount) => {
-  it("shows the game, and acts on it only by sending actions", async () => {
-    const page = await play(mount);
-    // Before the game has said anything: every view at its initial value.
-    expect(page.before).toEqual({ buttons: ["Start"], hud: "Caught 0" });
-    // The game's first frames say what the UI already shows: it is told
-    // nothing, and nothing in the document changes.
-    await page.step(3);
-    expect(page.told()).toBe(0);
-    expect(await page.changed()).toBe(0);
+  it.live("shows the game, and acts on it only by sending actions", () =>
+    Effect.gen(function* () {
+      const page = yield* play(mount);
+      // Before the game has said anything: every view at its initial value.
+      expect(page.before).toEqual({ buttons: ["Start"], hud: "Caught 0" });
+      // The game's first frames say what the UI already shows: it is told
+      // nothing, and nothing in the document changes.
+      yield* page.step(3);
+      expect(page.told()).toBe(0);
+      expect(yield* page.changed).toBe(0);
 
-    // A button sends an action, and nothing else: the menu is as it was
-    // until the game has applied it and published what it then is.
-    await page.click("Start");
-    expect(page.buttons()).toEqual(["Start"]);
-    expect(await page.changed()).toBe(0);
-    await page.step();
-    expect(page.buttons()).toEqual(["Pause", "Quit"]);
-    expect(page.hud()).toBe("Loading");
-    // The game is heard as it is seen: from its events, in the frame.
-    expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
-    // And its music has begun, which is not an event but how things are.
-    expect(page.sound.scored).toEqual([
-      { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
-    ]);
-    expect(await page.changed()).toBeGreaterThan(0);
+      // A button sends an action, and nothing else: the menu is as it was
+      // until the game has applied it and published what it then is.
+      yield* page.click("Start");
+      expect(page.buttons()).toEqual(["Start"]);
+      expect(yield* page.changed).toBe(0);
+      yield* page.step();
+      expect(page.buttons()).toEqual(["Pause", "Quit"]);
+      expect(page.hud()).toBe("Loading");
+      // The game is heard as it is seen: from its events, in the frame.
+      expect(page.sound.played).toEqual([{ cue: "start", volume: 1, rate: 1 }]);
+      // And its music has begun, which is not an event but how things are.
+      expect(page.sound.scored).toEqual([
+        { channel: "music", track: "theme", volume: 0.4, fade: 0.6 },
+      ]);
+      expect(yield* page.changed).toBeGreaterThan(0);
 
-    // The level's files arrive, and the game fills its sky.
-    await settle();
-    await page.step();
-    expect(page.hud()).toBe("Caught 0");
-    await page.changed();
+      // The level's files arrive, and the game fills its sky.
+      yield* settle;
+      yield* page.step();
+      expect(page.hud()).toBe("Caught 0");
+      yield* page.changed;
 
-    // Stars fall, sixty ticks a second, and now and then one is caught.
-    // The UI is told when one is and at no other time: a frame in which
-    // nothing it shows changed changes nothing in the document.
-    const frames: { told: boolean; changed: boolean }[] = [];
-    for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i++) {
-      const told = page.told();
-      await page.step();
-      const changed = await page.changed();
-      frames.push({ told: page.told() !== told, changed: changed > 0 });
-    }
-    expect(frames.filter((frame) => frame.told !== frame.changed)).toEqual([]);
-    const quiet = frames.filter((frame) => !frame.told).length;
-    const { caught } = page.ui.get(Hud);
-    expect(caught).toBeGreaterThanOrEqual(3);
-    expect(page.hud()).toBe(`Caught ${caught}`);
-    // A sound for each frame in which stars were caught, and no other.
-    // It is the level's own sound, a clip its bundle holds.
-    const heard = page.sound.played.filter((one) => one.cue === "/caught.wav");
-    expect(heard[0]!.clip!.data).toEqual({ samples: 2 });
-    expect(heard.length).toBeGreaterThanOrEqual(1);
-    expect(heard.length).toBeLessThanOrEqual(caught);
-    expect(page.sound.played.length).toBe(1 + heard.length);
-    expect(quiet).toBeGreaterThan(50);
-    // Told of the menu once, of the level twice, and once per catch.
-    expect(page.told()).toBeLessThanOrEqual(3 + caught);
+      // Stars fall, sixty ticks a second, and now and then one is caught.
+      // The UI is told when one is and at no other time: a frame in which
+      // nothing it shows changed changes nothing in the document.
+      const frames: { told: boolean; changed: boolean }[] = [];
+      for (let i = 0; i < 900 && page.ui.get(Hud).caught < 3; i++) {
+        const told = page.told();
+        yield* page.step();
+        const changed = yield* page.changed;
+        frames.push({ told: page.told() !== told, changed: changed > 0 });
+      }
+      expect(frames.filter((frame) => frame.told !== frame.changed)).toEqual(
+        []
+      );
+      const quiet = frames.filter((frame) => !frame.told).length;
+      const { caught } = page.ui.get(Hud);
+      expect(caught).toBeGreaterThanOrEqual(3);
+      expect(page.hud()).toBe(`Caught ${caught}`);
+      // A sound for each frame in which stars were caught, and no other.
+      // It is the level's own sound, a clip its bundle holds.
+      const heard = page.sound.played.filter(
+        (one) => one.cue === "/caught.wav"
+      );
+      expect(heard[0]!.clip!.data).toEqual({ samples: 2 });
+      expect(heard.length).toBeGreaterThanOrEqual(1);
+      expect(heard.length).toBeLessThanOrEqual(caught);
+      expect(page.sound.played.length).toBe(1 + heard.length);
+      expect(quiet).toBeGreaterThan(50);
+      // Told of the menu once, of the level twice, and once per catch.
+      expect(page.told()).toBeLessThanOrEqual(3 + caught);
 
-    // Paused from the menu: the game stands still, and so does the UI.
-    await page.click("Pause");
-    await page.step();
-    expect(page.buttons()).toEqual(["Resume", "Quit"]);
-    // The music is turned down, not off.
-    expect(page.sound.scored.at(-1)).toEqual({
-      channel: "music",
-      track: "theme",
-      volume: 0.1,
-      fade: 0.6,
-    });
-    await page.changed();
-    const paused = page.told();
-    await page.step(60);
-    expect(page.told()).toBe(paused);
-    expect(await page.changed()).toBe(0);
-    expect(page.hud()).toBe(`Caught ${caught}`);
+      // Paused from the menu: the game stands still, and so does the UI.
+      yield* page.click("Pause");
+      yield* page.step();
+      expect(page.buttons()).toEqual(["Resume", "Quit"]);
+      // The music is turned down, not off.
+      expect(page.sound.scored.at(-1)).toEqual({
+        channel: "music",
+        track: "theme",
+        volume: 0.1,
+        fade: 0.6,
+      });
+      yield* page.changed;
+      const paused = page.told();
+      yield* page.step(60);
+      expect(page.told()).toBe(paused);
+      expect(yield* page.changed).toBe(0);
+      expect(page.hud()).toBe(`Caught ${caught}`);
 
-    // Resumed from the keyboard: the menu follows the game, whoever asked.
-    page.source.tap("KeyP");
-    await page.step();
-    expect(page.buttons()).toEqual(["Pause", "Quit"]);
+      // Resumed from the keyboard: the menu follows the game, whoever asked.
+      page.source.tap("KeyP");
+      yield* page.step();
+      expect(page.buttons()).toEqual(["Pause", "Quit"]);
 
-    // Enter starts a game, and this one is started: nothing begins, and
-    // nothing says that anything did.
-    page.source.tap("Enter");
-    await page.step(2);
-    expect(page.sound.played.filter((one) => one.cue === "start").length).toBe(
-      1
-    );
+      // Enter starts a game, and this one is started: nothing begins, and
+      // nothing says that anything did.
+      page.source.tap("Enter");
+      yield* page.step(2);
+      expect(
+        page.sound.played.filter((one) => one.cue === "start").length
+      ).toBe(1);
 
-    await page.click("Quit");
-    await page.step();
-    expect(page.buttons()).toEqual(["Start"]);
-    expect(page.hud()).toBe("Caught 0");
-    expect(page.ui.get(Menu)).toEqual({ phase: "title" });
-    // Back at the title there is no music.
-    expect(page.sound.playing.size).toBe(0);
-    expect(page.sound.scored.length).toBe(4);
+      yield* page.click("Quit");
+      yield* page.step();
+      expect(page.buttons()).toEqual(["Start"]);
+      expect(page.hud()).toBe("Caught 0");
+      expect(page.ui.get(Menu)).toEqual({ phase: "title" });
+      // Back at the title there is no music.
+      expect(page.sound.playing.size).toBe(0);
+      expect(page.sound.scored.length).toBe(4);
 
-    // Closing the app takes the UI out, and it leaves nothing behind.
-    await page.close();
-    expect(page.root.childNodes.length).toBe(0);
-  });
+      // Closing the app takes the UI out, and it leaves nothing behind.
+      yield* page.close;
+      expect(page.root.childNodes.length).toBe(0);
+    })
+  );
 });
 
 describe("the page's UI", () => {

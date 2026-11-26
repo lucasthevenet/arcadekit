@@ -3,8 +3,8 @@
  * that puts the same app back to it.
  *
  *   const moment = yield* Timeline.capture(app)   // fails with Save.SaveRefused
- *   app.tick(1 / 60)
- *   Timeline.rewind(app, moment)                  // the same app, as it was
+ *   yield* app.tick(1 / 60)
+ *   yield* Timeline.rewind(app, moment)           // the same app, as it was
  *
  * An undo, a search ahead or a rewind mechanic keeps moments, and a session
  * that runs ahead rewinds to them. A game that never goes back imports none
@@ -16,7 +16,7 @@
  * holds the queued actions and the events as they are, without encoding
  * them, and it belongs to one app in one run of the program.
  */
-import { Exit } from "effect";
+import { Effect, Exit } from "effect";
 
 import type * as App from "./App.ts";
 import type { SavedChanges } from "./ecs/changes.ts";
@@ -73,8 +73,8 @@ const between = (app: Game, call: string, rule: string): void => {
 };
 
 /**
- * Captures a game as it is, to return to with `rewind`. Call it between
- * ticks: it throws during a tick, a stage or a handler.
+ * Captures a game as it is, to return to with `rewind`. Run it between
+ * ticks: it dies during a tick, a stage or a handler.
  *
  * With `stages`, the moment also holds where the change queries of the frame
  * and input stages had got to, for a rewind that comes before those stages
@@ -90,35 +90,36 @@ const between = (app: Game, call: string, rule: string): void => {
 export const capture = (
   app: Game,
   options?: { readonly stages?: boolean }
-): Exit.Exit<Moment, Save.SaveRefused> => {
-  between(app, "capture", "A game is captured between ticks.");
-  const { time } = app;
-  const { commands, events, world } = partsOf(app);
-  return Exit.map(
-    Save.taking(commands, "capture", () => world._capture()),
-    (of) =>
-      new Held(
-        time.tick,
-        world,
-        of,
-        events.mark(),
-        // What runs between ticks has everything still to draw, unless it is
-        // to draw nothing before the game comes back here.
-        world.saveChanges(
+): Effect.Effect<Moment, Save.SaveRefused> =>
+  Effect.suspend(() => {
+    between(app, "capture", "A game is captured between ticks.");
+    const { time } = app;
+    const { commands, events, world } = partsOf(app);
+    return Exit.map(
+      Save.taking(commands, "capture", () => world._capture()),
+      (of): Moment =>
+        new Held(
+          time.tick,
+          world,
+          of,
+          events.mark(),
+          // What runs between ticks has everything still to draw, unless it
+          // is to draw nothing before the game comes back here.
+          world.saveChanges(
+            options?.stages === true
+              ? undefined
+              : (reader) => !reader.startsWith(READER)
+          ),
           options?.stages === true
-            ? undefined
-            : (reader) => !reader.startsWith(READER)
-        ),
-        options?.stages === true
-      )
-  );
-};
+        )
+    );
+  });
 
 /**
  * Puts a game back, in place, to a moment `capture` took of it. The app, its
  * world and its services stay the same objects, and hold what they held
- * then. Its log goes back to the length it had. Call it between ticks, with
- * a moment of this app: it throws otherwise.
+ * then. Its log goes back to the length it had. Run it between ticks, with
+ * a moment of this app: it dies otherwise.
  *
  * The game plays on from there. The frame and input stages, and code outside
  * the game that reads an event, hear every event it emits from then on,
@@ -148,23 +149,26 @@ export const rewind = (
   app: Game,
   moment: Moment,
   options?: { readonly again?: boolean }
-): void => {
-  between(app, "rewind", "A game is put back between ticks.");
-  const { commands, dispatcher, events, world } = partsOf(app);
-  if (!(moment instanceof Held) || moment.of !== world) {
-    throw new Error(
-      "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+): Effect.Effect<void> =>
+  Effect.sync(() => {
+    between(app, "rewind", "A game is put back between ticks.");
+    const { commands, dispatcher, events, world } = partsOf(app);
+    if (!(moment instanceof Held) || moment.of !== world) {
+      throw new Error(
+        "Timeline.rewind() was given a moment that this app did not capture. A moment is of one app, in one run of the program: to bring a game back from elsewhere, save it and load the save."
+      );
+    }
+    dispatcher.flush();
+    // What is queued on the buffer was never part of the world.
+    commands.rollback(0);
+    const again = options?.again === true;
+    world._rewind(
+      moment.world,
+      moment.changes,
+      again && !moment.stages
+        ? (reader) => reader.startsWith(READER)
+        : undefined
     );
-  }
-  dispatcher.flush();
-  // What is queued on the buffer was never part of the world.
-  commands.rollback(0);
-  const again = options?.again === true;
-  world._rewind(
-    moment.world,
-    moment.changes,
-    again && !moment.stages ? (reader) => reader.startsWith(READER) : undefined
-  );
-  events.rewound(moment.told, again);
-  commands.apply();
-};
+    events.rewound(moment.told, again);
+    commands.apply();
+  });

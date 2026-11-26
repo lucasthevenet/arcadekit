@@ -32,9 +32,9 @@ const program = Effect.gen(function* () {
     App.make(Game),
     (made) => made.close
   );
-  app.tick(1 / 60);
+  yield* app.tick(1 / 60);
 
-  const saved = app.save(); // Exit<Save, SaveRefused>
+  const saved = yield* Effect.exit(app.save()); // fails with SaveRefused
   if (Exit.isFailure(saved)) {
     return;
   }
@@ -74,13 +74,13 @@ These aren't saved: `Field.transient` fields, which are `undefined` after a load
 ## Return to the present from a save
 
 ```ts sketch
-const tail = game.record(save); // from the save's tick to now
+const tail = yield * game.record(save); // from the save's tick to now
 const app = yield * Journal.replay(tail, Game);
 ```
 
 A save records the length the action log had, `save.logLength`. Record what the game played since its last save, and replay only that tail to return to the present. The tail holds the save, so replaying it costs the same however long the game has run.
 
-`app.record(save)` takes a save the app made itself, and throws for one whose tick its log doesn't reach. An app made from a save starts its own log empty, and a recording of it begins at that save.
+`app.record(save)` takes a save the app made itself, and dies for one whose tick its log doesn't reach. An app made from a save starts its own log empty, and a recording of it begins at that save.
 
 The [replay](replays.md) checks itself against the tail's checkpoints, so a save that didn't restore the game exactly is caught at the next checkpoint.
 

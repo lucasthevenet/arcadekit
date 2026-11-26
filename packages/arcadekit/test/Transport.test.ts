@@ -1,17 +1,17 @@
-import { Effect, Layer, Result } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "@effect/vitest";
+import { Context, Effect, Layer, Result } from "effect";
 
 import { App, Driver, Input, Journal, Plugin, World } from "../src/index.ts";
 import { Drift, Message, Session, Transport } from "../src/net/index.ts";
-import {
-  CoinGame,
-  DELTA,
-  Drop,
-  Lying,
-  moves,
-  players,
-  setGlitch,
-} from "./peers.ts";
+import { thrown } from "./checks.ts";
+import { CoinGame, DELTA, Drop, moves, players, setGlitch } from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
@@ -29,7 +29,9 @@ const messagesIn = (
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
-  readonly connected: Transport.Connected;
+  readonly connected: Transport.Connected<
+    Effect.Error<ReturnType<Peer["session"]["tick"]>>
+  >;
 }
 
 /** Peers of the game, each joined to a layer of its own. */
@@ -57,16 +59,10 @@ const seated = (
         Transport.connect(session, options).pipe(Effect.provide(layerOf(name))),
         (made) => made.close
       );
-      const services = yield* Effect.context();
       seats.push({
         name,
         app: session.app,
         world: yield* session.app.read(World),
-        // Read again each time: a rollback restores the world, and a view
-        // does not outlive that.
-        get coins() {
-          return Effect.runSyncWith(services)(session.app.read(Lying));
-        },
         session,
         hashes: [],
         source,
@@ -195,337 +191,342 @@ describe("a session joined to a transport", () => {
     setGlitch(undefined);
   });
 
-  it("is handed what arrived, steps, and sends what it has to say", () => {
-    const hub = Transport.makeHub();
-    const grace = hub.port("grace");
-    Effect.runSync(
-      Effect.scoped(
+  it.effect("is handed what arrived, steps, and sends what it has to say", () =>
+    Effect.gen(function* () {
+      const hub = Transport.makeHub();
+      const grace = hub.port("grace");
+      yield* Effect.scoped(
         Effect.gen(function* () {
           const [ada] = yield* seated(
             ["ada", "grace"],
             (name) => hub.layer(name),
             undefined
           );
-          ada!.app.enqueue(Drop, { by: "ada", value: 4 });
+          yield* ada!.app.enqueue(Drop, { by: "ada", value: 4 });
           // It waits for grace, and has said its piece all the same.
-          expect(ada!.connected.tick()).toBe(false);
+          expect(yield* ada!.connected.tick()).toBe(false);
           expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
             0, 1, 2,
           ]);
           for (let tick = 0; tick <= 2; tick++) {
             grace.send(message("grace", tick));
           }
-          expect(ada!.connected.tick()).toBe(true);
-          expect(ada!.connected.tick()).toBe(true);
-          expect(ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
+          expect(yield* ada!.connected.tick()).toBe(true);
           expect(ada!.app.time.tick).toBe(3);
           expect(moves(ada!.app.actionLog)).toHaveLength(1);
           expect(messagesIn(grace.receive()).map((sent) => sent.tick)).toEqual([
             3, 4,
           ]);
         })
-      )
-    );
-  });
+      );
+    })
+  );
 
-  it("keeps peers the same game under a driver, with lockstep and with rollback", () => {
-    for (const ahead of [undefined, 8]) {
-      const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 7 });
-      Effect.runSync(
-        Effect.scoped(
+  it.effect(
+    "keeps peers the same game under a driver, with lockstep and with rollback",
+    () =>
+      Effect.gen(function* () {
+        for (const ahead of [undefined, 8]) {
+          const hub = Transport.makeHub({ delay: { min: 0, max: 4 }, seed: 7 });
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const seats = yield* seated(
+                ["ada", "grace"],
+                (name) => hub.layer(name),
+                ahead
+              );
+              const steps = seats.map((seat) =>
+                Driver.fixedStep(seat.connected)
+              );
+              const act = players(11);
+              const frame = Effect.fnUntraced(function* (acting: boolean) {
+                hub.step();
+                for (const [index, seat] of seats.entries()) {
+                  if (acting) {
+                    yield* act(seat);
+                  }
+                  yield* steps[index]!(DELTA);
+                }
+              });
+              for (let i = 0; i < 200; i++) {
+                yield* frame(true);
+              }
+              // To rest, and then to the same tick.
+              for (let i = 0; i < 30; i++) {
+                yield* frame(false);
+              }
+              const [ada, grace] = seats as [Seat, Seat];
+              for (
+                let i = 0;
+                i < 50 && ada.app.time.tick !== grace.app.time.tick;
+                i++
+              ) {
+                hub.step();
+                yield* (
+                  ada.app.time.tick < grace.app.time.tick ? ada : grace
+                ).connected.tick();
+              }
+              expect(ada.app.time.tick).toBe(grace.app.time.tick);
+              expect(ada.app.time.tick).toBeGreaterThan(
+                ahead === undefined ? 60 : 200
+              );
+              expect(ada.world.hash()).toBe(grace.world.hash());
+              expect(ada.app.actionLog).toEqual(grace.app.actionLog);
+              expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
+              expect(ada.session.drifted).toBeUndefined();
+              // Only a game played with rollback goes back.
+              expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
+              const whole = yield* ada.app.record();
+              const alone = yield* Journal.replay(whole, CoinGame, {
+                checkpointEvery: 1,
+              });
+              expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
+            })
+          );
+        }
+      })
+  );
+
+  it.effect(
+    "plays on to the same game when a peer is cut off and comes back, with what was lost sent again",
+    () =>
+      Effect.gen(function* () {
+        for (const ahead of [undefined, 8]) {
+          const hub = Transport.makeHub({ delay: { min: 0, max: 3 }, seed: 9 });
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const seats = yield* seated(
+                ["ada", "edsger", "grace"],
+                (name) => hub.layer(name),
+                ahead
+              );
+              const [ada, edsger, grace] = seats as [Seat, Seat, Seat];
+              const act = players(13);
+              const frame = Effect.fnUntraced(function* (acting: boolean) {
+                hub.step();
+                for (const seat of seats) {
+                  if (acting) {
+                    yield* act(seat);
+                  }
+                  yield* seat.connected.tick();
+                }
+              });
+              for (let i = 0; i < 60; i++) {
+                yield* frame(true);
+              }
+              // Grace's socket drops, with what was on its way to and from it.
+              hub.disconnect("grace");
+              for (let i = 0; i < 40; i++) {
+                yield* frame(true);
+              }
+              expect(ada.connected.away).toEqual(["grace"]);
+              expect(edsger.connected.away).toEqual(["grace"]);
+              expect(grace.connected.away).toEqual([]);
+              // The others went no further than grace's word allows.
+              expect(ada.session.waitingFor).toEqual(["grace"]);
+              hub.reconnect("grace");
+              for (let i = 0; i < 100; i++) {
+                yield* frame(true);
+              }
+              expect(ada.connected.away).toEqual([]);
+              for (let i = 0; i < 30; i++) {
+                yield* frame(false);
+              }
+              for (
+                let i = 0;
+                i < 100 &&
+                new Set(seats.map((seat) => seat.app.time.tick)).size > 1;
+                i++
+              ) {
+                hub.step();
+                const furthest = Math.max(
+                  ...seats.map((seat) => seat.app.time.tick)
+                );
+                for (const seat of seats) {
+                  if (seat.app.time.tick < furthest) {
+                    yield* seat.connected.tick();
+                  }
+                }
+              }
+              expect(edsger.app.time.tick).toBe(ada.app.time.tick);
+              expect(grace.app.time.tick).toBe(ada.app.time.tick);
+              expect(ada.app.time.tick).toBeGreaterThan(100);
+              for (const seat of [edsger, grace]) {
+                expect(seat.world.hash()).toBe(ada.world.hash());
+                expect(seat.app.actionLog).toEqual(ada.app.actionLog);
+                expect(seat.session.drifted).toBeUndefined();
+              }
+              expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
+              // Grace's moves are in the game from before, during and after.
+              const hers = moves(ada.app.actionLog).filter(
+                (entry) => entry.from === "grace"
+              );
+              expect(hers.length).toBeGreaterThan(10);
+              // Once every peer has heard it, nothing is kept.
+              for (let i = 0; i < 10; i++) {
+                yield* frame(false);
+              }
+              for (const seat of seats) {
+                expect(seat.session.unheard).toBeLessThanOrEqual(
+                  seat.session.delay + (ahead ?? 0) + 6
+                );
+              }
+            })
+          );
+        }
+      })
+  );
+
+  it.effect(
+    "fails the tick with the peers that stayed away longer than awayFor",
+    () =>
+      Effect.gen(function* () {
+        const hub = Transport.makeHub();
+        yield* Effect.scoped(
           Effect.gen(function* () {
-            const seats = yield* seated(
+            const [ada, grace] = (yield* seated(
               ["ada", "grace"],
               (name) => hub.layer(name),
-              ahead
-            );
-            const steps = seats.map((seat) => Driver.fixedStep(seat.connected));
-            const act = players(11);
-            const frame = (acting: boolean): void => {
+              undefined,
+              { awayFor: 1000 }
+            )) as [Seat, Seat];
+            const frame = Effect.fnUntraced(function* () {
               hub.step();
-              seats.forEach((seat, index) => {
-                if (acting) {
-                  act(seat);
-                }
-                steps[index]!(DELTA);
-              });
-            };
-            for (let i = 0; i < 200; i++) {
-              frame(true);
-            }
-            // To rest, and then to the same tick.
-            for (let i = 0; i < 30; i++) {
-              frame(false);
-            }
-            const [ada, grace] = seats as [Seat, Seat];
-            for (
-              let i = 0;
-              i < 50 && ada.app.time.tick !== grace.app.time.tick;
-              i++
-            ) {
-              hub.step();
-              (ada.app.time.tick < grace.app.time.tick
-                ? ada
-                : grace
-              ).connected.tick();
-            }
-            expect(ada.app.time.tick).toBe(grace.app.time.tick);
-            expect(ada.app.time.tick).toBeGreaterThan(
-              ahead === undefined ? 60 : 200
-            );
-            expect(ada.world.hash()).toBe(grace.world.hash());
-            expect(ada.app.actionLog).toEqual(grace.app.actionLog);
-            expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
-            expect(ada.session.drifted).toBeUndefined();
-            // Only a game played with rollback goes back.
-            expect(ada.session.rewinds > 0).toBe(ahead !== undefined);
-            const whole = ada.app.record();
-            const alone = yield* Journal.replay(whole, CoinGame, {
-              checkpointEvery: 1,
+              yield* ada.connected.tick();
+              yield* grace.connected.tick();
             });
-            expect((yield* alone.read(World)).hash()).toBe(ada.world.hash());
-          })
-        )
-      );
-    }
-  });
-
-  it("plays on to the same game when a peer is cut off and comes back, with what was lost sent again", () => {
-    for (const ahead of [undefined, 8]) {
-      const hub = Transport.makeHub({ delay: { min: 0, max: 3 }, seed: 9 });
-      Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const seats = yield* seated(
-              ["ada", "edsger", "grace"],
-              (name) => hub.layer(name),
-              ahead
-            );
-            const [ada, edsger, grace] = seats as [Seat, Seat, Seat];
-            const act = players(13);
-            const frame = (acting: boolean): void => {
-              hub.step();
-              for (const seat of seats) {
-                if (acting) {
-                  act(seat);
-                }
-                seat.connected.tick();
-              }
-            };
-            for (let i = 0; i < 60; i++) {
-              frame(true);
+            for (let i = 0; i < 10; i++) {
+              yield* frame();
             }
-            // Grace's socket drops, with what was on its way to and from it.
+            // Back before a second has passed: the wait starts over.
             hub.disconnect("grace");
-            for (let i = 0; i < 40; i++) {
-              frame(true);
+            for (let i = 0; i < 20; i++) {
+              yield* frame();
             }
-            expect(ada.connected.away).toEqual(["grace"]);
-            expect(edsger.connected.away).toEqual(["grace"]);
-            expect(grace.connected.away).toEqual([]);
-            // The others went no further than grace's word allows.
-            expect(ada.session.waitingFor).toEqual(["grace"]);
             hub.reconnect("grace");
-            for (let i = 0; i < 100; i++) {
-              frame(true);
+            for (let i = 0; i < 40; i++) {
+              yield* frame();
             }
             expect(ada.connected.away).toEqual([]);
+            hub.disconnect("grace");
+            // A second is 30 ticks of 1 / 30: the tick that hears she left,
+            // and 29 more.
             for (let i = 0; i < 30; i++) {
-              frame(false);
-            }
-            for (
-              let i = 0;
-              i < 100 &&
-              new Set(seats.map((seat) => seat.app.time.tick)).size > 1;
-              i++
-            ) {
               hub.step();
-              const furthest = Math.max(
-                ...seats.map((seat) => seat.app.time.tick)
-              );
-              for (const seat of seats) {
-                if (seat.app.time.tick < furthest) {
-                  seat.connected.tick();
-                }
-              }
+              yield* ada.connected.tick();
             }
-            expect(edsger.app.time.tick).toBe(ada.app.time.tick);
-            expect(grace.app.time.tick).toBe(ada.app.time.tick);
-            expect(ada.app.time.tick).toBeGreaterThan(100);
-            for (const seat of [edsger, grace]) {
-              expect(seat.world.hash()).toBe(ada.world.hash());
-              expect(seat.app.actionLog).toEqual(ada.app.actionLog);
-              expect(seat.session.drifted).toBeUndefined();
-            }
-            expect(moves(ada.app.actionLog).length).toBeGreaterThan(30);
-            // Grace's moves are in the game from before, during and after.
-            const hers = moves(ada.app.actionLog).filter(
-              (entry) => entry.from === "grace"
+            expect(ada.connected.away).toEqual(["grace"]);
+            const ticked = yield* Effect.result(ada.connected.tick());
+            const thrown = Result.isFailure(ticked)
+              ? ticked.failure
+              : "it did not throw";
+            expect(thrown).toEqual(
+              new Transport.Left({ peers: ["grace"], awayFor: 1000 })
             );
-            expect(hers.length).toBeGreaterThan(10);
-            // Once every peer has heard it, nothing is kept.
-            for (let i = 0; i < 10; i++) {
-              frame(false);
-            }
-            for (const seat of seats) {
-              expect(seat.session.unheard).toBeLessThanOrEqual(
-                seat.session.delay + (ahead ?? 0) + 6
-              );
-            }
+            expect(thrown).toBeInstanceOf(Transport.Left);
+            expect(String(thrown)).toContain(
+              "grace left and did not come back within 1000 ms, so the game cannot go on."
+            );
           })
-        )
-      );
-    }
-  });
-
-  it("fails the tick with the peers that stayed away longer than awayFor", () => {
-    const hub = Transport.makeHub();
-    Effect.runSync(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const [ada, grace] = (yield* seated(
-            ["ada", "grace"],
-            (name) => hub.layer(name),
-            undefined,
-            { awayFor: 1000 }
-          )) as [Seat, Seat];
-          const frame = (): void => {
-            hub.step();
-            ada.connected.tick();
-            grace.connected.tick();
-          };
-          for (let i = 0; i < 10; i++) {
-            frame();
-          }
-          // Back before a second has passed: the wait starts over.
-          hub.disconnect("grace");
-          for (let i = 0; i < 20; i++) {
-            frame();
-          }
-          hub.reconnect("grace");
-          for (let i = 0; i < 40; i++) {
-            frame();
-          }
-          expect(ada.connected.away).toEqual([]);
-          hub.disconnect("grace");
-          // A second is 30 ticks of 1 / 30: the tick that hears she left,
-          // and 29 more.
-          for (let i = 0; i < 30; i++) {
-            hub.step();
-            ada.connected.tick();
-          }
-          expect(ada.connected.away).toEqual(["grace"]);
-          const ticked = Result.try(() => ada.connected.tick());
-          const thrown = Result.isFailure(ticked)
-            ? ticked.failure
-            : "it did not throw";
-          expect(thrown).toEqual(
-            new Transport.Left({ peers: ["grace"], awayFor: 1000 })
-          );
-          expect(thrown).toBeInstanceOf(Transport.Left);
-          expect(String(thrown)).toContain(
-            "grace left and did not come back within 1000 ms, so the game cannot go on."
-          );
-        })
-      )
-    );
-  });
-
-  it("sends a stopped session's last word, so that every peer stops", () => {
-    // With no delay the second peer finds the difference in the very tick
-    // it would have said its own hash in: unless that tick sends as it
-    // fails, the first never hears it, and waits.
-    for (const delay of [0, { min: 0, max: 3 }]) {
-      const hub = Transport.makeHub({ delay, seed: 3 });
-      Effect.runSync(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const seats = yield* seated(
-              ["ada", "grace"],
-              (name) => hub.layer(name),
-              undefined
-            );
-            setGlitch({ tick: 9, apps: "all" });
-            seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
-            const stopped = new Map<string, unknown>();
-            for (let i = 0; i < 200 && stopped.size < 2; i++) {
-              hub.step();
-              for (const seat of seats) {
-                const ticked = Result.try(() => seat.connected.tick());
-                if (Result.isFailure(ticked)) {
-                  stopped.set(seat.name, ticked.failure);
-                }
-              }
-            }
-            // Both, and with the same report.
-            expect(stopped.get("ada")).toBeInstanceOf(Drift.Drifted);
-            expect(stopped.get("grace")).toBeInstanceOf(Drift.Drifted);
-            expect((stopped.get("ada") as Drift.Drifted).hashes).toEqual(
-              (stopped.get("grace") as Drift.Drifted).hashes
-            );
-            setGlitch(undefined);
-          })
-        )
-      );
-    }
-  });
-
-  it("draws the game through the session", () => {
-    const hub = Transport.makeHub();
-    Effect.runSync(
-      Effect.gen(function* () {
-        const session = yield* Session.make(CoinGame, {
-          seed: 5,
-          checkpointEvery: 1,
-          me: "ada",
-          others: [],
-          delta: DELTA,
-          ahead: 0,
-        });
-        let drawn = 0;
-        const connected = yield* Transport.connect({
-          ...session,
-          frame: () => {
-            drawn++;
-          },
-        }).pipe(Effect.provide(hub.layer("ada")));
-        Driver.fixedStep(connected)(DELTA);
-        expect(drawn).toBe(1);
-        expect(session.app.time.tick).toBe(1);
+        );
       })
-    );
-  });
+  );
 
-  it("does not compile without a transport", () => {
-    Effect.runSync(
-      Effect.map(
-        Session.make(CoinGame, {
-          seed: 5,
-          checkpointEvery: 1,
-          me: "ada",
-          others: [],
-          delta: DELTA,
-          ahead: 0,
-        }),
-        (session) => {
-          expect(() =>
-            Effect.runSync(
-              // @ts-expect-error A game of several peers is given a transport.
-              Transport.connect(session)
-            )
-          ).toThrow(/Transport/u);
-          const hub = Transport.makeHub();
-          // It needs no scope: the connection listens in one of its own.
-          const made = Effect.runSync(
-            Transport.connect(session).pipe(
-              Effect.provide(Transport.layer(hub.port("ada")))
-            )
+  it.effect(
+    "sends a stopped session's last word, so that every peer stops",
+    () =>
+      Effect.gen(function* () {
+        // With no delay the second peer finds the difference in the very tick
+        // it would have said its own hash in: unless that tick sends as it
+        // fails, the first never hears it, and waits.
+        for (const delay of [0, { min: 0, max: 3 }]) {
+          const hub = Transport.makeHub({ delay, seed: 3 });
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const seats = yield* seated(
+                ["ada", "grace"],
+                (name) => hub.layer(name),
+                undefined
+              );
+              setGlitch({ tick: 9, apps: "all" });
+              yield* seats[0]!.app.enqueue(Drop, { by: "ada", value: 1 });
+              const stopped = new Map<string, unknown>();
+              for (let i = 0; i < 200 && stopped.size < 2; i++) {
+                hub.step();
+                for (const seat of seats) {
+                  const ticked = yield* Effect.result(seat.connected.tick());
+                  if (Result.isFailure(ticked)) {
+                    stopped.set(seat.name, ticked.failure);
+                  }
+                }
+              }
+              // Both, and with the same report.
+              expect(stopped.get("ada")).toBeInstanceOf(Drift.Drifted);
+              expect(stopped.get("grace")).toBeInstanceOf(Drift.Drifted);
+              expect((stopped.get("ada") as Drift.Drifted).hashes).toEqual(
+                (stopped.get("grace") as Drift.Drifted).hashes
+              );
+              setGlitch(undefined);
+            })
           );
-          expect(made.tick()).toBe(true);
         }
-      )
-    );
-  });
+      })
+  );
+
+  it.effect("draws the game through the session", () =>
+    Effect.gen(function* () {
+      const hub = Transport.makeHub();
+      const session = yield* Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
+        me: "ada",
+        others: [],
+        delta: DELTA,
+        ahead: 0,
+      });
+      let drawn = 0;
+      const connected = yield* Transport.connect({
+        ...session,
+        frame: () =>
+          Effect.sync(() => {
+            drawn++;
+          }),
+      }).pipe(Effect.provide(hub.layer("ada")));
+      yield* Driver.fixedStep(connected)(DELTA);
+      expect(drawn).toBe(1);
+      expect(session.app.time.tick).toBe(1);
+    })
+  );
+
+  it.effect("does not compile without a transport", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.make(CoinGame, {
+        seed: 5,
+        checkpointEvery: 1,
+        me: "ada",
+        others: [],
+        delta: DELTA,
+        ahead: 0,
+      });
+      // A game of several peers is given a transport, and one without it
+      // finds none.
+      expectTypeOf<
+        Effect.Services<ReturnType<typeof Transport.connect>>
+      >().toEqualTypeOf<Transport.Transport>();
+      const none = Context.empty() as Context.Context<Transport.Transport>;
+      expect(
+        yield* thrown(Effect.provideContext(Transport.connect(session), none))
+      ).toThrow(/Transport/u);
+      const hub = Transport.makeHub();
+      // It needs no scope: the connection listens in one of its own.
+      const made = yield* Transport.connect(session).pipe(
+        Effect.provide(Transport.layer(hub.port("ada")))
+      );
+      expect(yield* made.tick()).toBe(true);
+    })
+  );
 });
 
 describe("a transport over a wire", () => {
@@ -594,250 +595,294 @@ const until = async (holds: () => boolean, what: string): Promise<void> => {
   throw new Error(`timed out waiting until ${what}`);
 };
 
+/** Waits, a few milliseconds at a time, until what `holds` runs says it does. */
+const waitUntil = <E>(
+  holds: Effect.Effect<boolean, E>,
+  what: string
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 400; i++) {
+      if (yield* Effect.orDie(holds)) {
+        return;
+      }
+      yield* Effect.promise(() => later(5));
+    }
+    return yield* Effect.die(new Error(`timed out waiting until ${what}`));
+  });
+
+/** A session connected to a transport, whose tick fails with `Drift.Drifted`, as a type. */
+declare const drifting: Transport.Connected<Drift.Drifted>;
+
+describe("a session connected to a transport", () => {
+  it("is run by Driver.run, which fails with what its tick fails with, each by its tag", () => {
+    const run = () => Driver.run(Effect.succeed(drifting));
+    expectTypeOf<Effect.Error<ReturnType<typeof run>>>().toEqualTypeOf<
+      Drift.Drifted | Transport.Left
+    >();
+  });
+});
+
 describe("the transport between tabs, a BroadcastChannel", () => {
   const nextRoom = (): string => `arcadekit-test/${crypto.randomUUID()}`;
 
-  it("carries messages to whoever opened the same name, and closes with its scope", async () => {
-    const name = nextRoom();
-    const stranger = new BroadcastChannel(name);
-    const heard: unknown[] = [];
-    stranger.onmessage = (event: MessageEvent<unknown>) => {
-      heard.push(event.data);
-    };
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const listen = (peer: string) =>
-            Transport.listen.pipe(
-              Effect.provide(Transport.layerBroadcastChannel(name, peer))
-            );
-          const ada = yield* listen("ada");
-          const grace = yield* listen("grace");
-          ada.send(message("ada", 0, 7));
-          grace.send(message("grace", 0));
-          // Whatever else is posted under the name is not a message.
-          stranger.postMessage({ not: "a message" });
-          stranger.postMessage("nor is this");
-          yield* Effect.promise(() => later(20));
-          expect(grace.receive()).toEqual([message("ada", 0, 7)]);
-          expect(ada.receive()).toEqual([
-            { joined: "grace" },
-            message("grace", 0),
-          ]);
-          expect(grace.receive()).toEqual([]);
-        })
-      )
-    );
-    await later(20);
-    // Messages as bytes and notices as text, as any wire would carry them.
-    expect(heard).toEqual([
-      Message.encodeNotice({ joined: "ada" }),
-      Message.encodeNotice({ joined: "grace" }),
-      Message.encode(message("ada", 0, 7)),
-      Message.encode(message("grace", 0)),
-      Message.encodeNotice({ left: "grace" }),
-      Message.encodeNotice({ left: "ada" }),
-    ]);
-    stranger.close();
-  });
-
-  it("closes its channel, and stops listening to it, when its scope closes", () => {
-    // A stand-in for the page's own, which notes what is done to it.
-    const made: {
-      name: string;
-      closed: boolean;
-      onmessage: unknown;
-      posted: unknown[];
-    }[] = [];
-    vi.stubGlobal(
-      "BroadcastChannel",
-      class {
-        readonly record;
-        constructor(name: string) {
-          this.record = {
-            name,
-            closed: false,
-            onmessage: null as unknown,
-            posted: [] as unknown[],
-          };
-          made.push(this.record);
-        }
-        set onmessage(listener: unknown) {
-          this.record.onmessage = listener;
-        }
-        postMessage(data: unknown): void {
-          this.record.posted.push(data);
-        }
-        close(): void {
-          this.record.closed = true;
-        }
-      }
-    );
-    try {
-      Effect.runSync(
-        Effect.scoped(
+  it.effect(
+    "carries messages to whoever opened the same name, and closes with its scope",
+    () =>
+      Effect.gen(function* () {
+        const name = nextRoom();
+        const stranger = new BroadcastChannel(name);
+        const heard: unknown[] = [];
+        stranger.onmessage = (event: MessageEvent<unknown>) => {
+          heard.push(event.data);
+        };
+        yield* Effect.scoped(
           Effect.gen(function* () {
-            const layer = Transport.layerBroadcastChannel("game/room", "ada");
-            // A layer opens nothing: opening the transport does.
-            yield* Layer.build(layer);
-            expect(made).toHaveLength(0);
-            const transport = yield* Transport.listen.pipe(
-              Effect.provide(layer)
-            );
-            expect(made).toHaveLength(1);
-            expect(made[0]!.name).toBe("game/room");
-            expect(typeof made[0]!.onmessage).toBe("function");
-            expect(made[0]!.closed).toBe(false);
-            transport.send(message("ada", 0));
-            expect(made[0]!.posted).toEqual([
-              Message.encodeNotice({ joined: "ada" }),
-              Message.encode(message("ada", 0)),
+            const listen = (peer: string) =>
+              Transport.listen.pipe(
+                Effect.provide(Transport.layerBroadcastChannel(name, peer))
+              );
+            const ada = yield* listen("ada");
+            const grace = yield* listen("grace");
+            ada.send(message("ada", 0, 7));
+            grace.send(message("grace", 0));
+            // Whatever else is posted under the name is not a message.
+            stranger.postMessage({ not: "a message" });
+            stranger.postMessage("nor is this");
+            yield* Effect.promise(() => later(20));
+            expect(grace.receive()).toEqual([message("ada", 0, 7)]);
+            expect(ada.receive()).toEqual([
+              { joined: "grace" },
+              message("grace", 0),
             ]);
+            expect(grace.receive()).toEqual([]);
           })
-        )
-      );
-      expect(made[0]!.posted.at(-1)).toBe(
-        Message.encodeNotice({ left: "ada" })
-      );
-      expect(made[0]!.closed).toBe(true);
-      expect(made[0]!.onmessage).toBeNull();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
+        );
+        yield* Effect.promise(() => later(20));
+        // Messages as bytes and notices as text, as any wire would carry them.
+        expect(heard).toEqual([
+          Message.encodeNotice({ joined: "ada" }),
+          Message.encodeNotice({ joined: "grace" }),
+          Message.encode(message("ada", 0, 7)),
+          Message.encode(message("grace", 0)),
+          Message.encodeNotice({ left: "grace" }),
+          Message.encodeNotice({ left: "ada" }),
+        ]);
+        stranger.close();
+      })
+  );
 
-  it("lasts as long as its connection, whatever its layer is provided to, and closes the session with it, saying so when used after", async () => {
-    const name = nextRoom();
-    const outside = new BroadcastChannel(name);
-    const heard: unknown[] = [];
-    outside.onmessage = (event: MessageEvent<unknown>) => {
-      heard.push(event.data);
-    };
-    const log: string[] = [];
-    const Held = Plugin.make("tr/Held", {
-      layer: Layer.effectDiscard(
-        Effect.acquireRelease(
-          Effect.sync(() => log.push("acquired")),
-          () => Effect.sync(() => log.push("released"))
-        )
-      ),
-    });
-    // Provided to the one line that connects, in a scope that is gone once
-    // the line has run: it lasts all the same.
-    const connected = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flatMap(
-          Session.make(App.define({ plugins: [Held] }), {
-            seed: 5,
-            me: "ada",
-            others: ["grace"],
-            delta: DELTA,
+  it.effect(
+    "closes its channel, and stops listening to it, when its scope closes",
+    () =>
+      Effect.gen(function* () {
+        // A stand-in for the page's own, which notes what is done to it.
+        const made: {
+          name: string;
+          closed: boolean;
+          onmessage: unknown;
+          posted: unknown[];
+        }[] = [];
+        vi.stubGlobal(
+          "BroadcastChannel",
+          class {
+            readonly record;
+            constructor(name: string) {
+              this.record = {
+                name,
+                closed: false,
+                onmessage: null as unknown,
+                posted: [] as unknown[],
+              };
+              made.push(this.record);
+            }
+            set onmessage(listener: unknown) {
+              this.record.onmessage = listener;
+            }
+            postMessage(data: unknown): void {
+              this.record.posted.push(data);
+            }
+            close(): void {
+              this.record.closed = true;
+            }
+          }
+        );
+        yield* Effect.ensuring(
+          Effect.gen(function* () {
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const layer = Transport.layerBroadcastChannel(
+                  "game/room",
+                  "ada"
+                );
+                // A layer opens nothing: opening the transport does.
+                yield* Layer.build(layer);
+                expect(made).toHaveLength(0);
+                const transport = yield* Transport.listen.pipe(
+                  Effect.provide(layer)
+                );
+                expect(made).toHaveLength(1);
+                expect(made[0]!.name).toBe("game/room");
+                expect(typeof made[0]!.onmessage).toBe("function");
+                expect(made[0]!.closed).toBe(false);
+                transport.send(message("ada", 0));
+                expect(made[0]!.posted).toEqual([
+                  Message.encodeNotice({ joined: "ada" }),
+                  Message.encode(message("ada", 0)),
+                ]);
+              })
+            );
+            expect(made[0]!.posted.at(-1)).toBe(
+              Message.encodeNotice({ left: "ada" })
+            );
+            expect(made[0]!.closed).toBe(true);
+            expect(made[0]!.onmessage).toBeNull();
           }),
-          (session) =>
-            Transport.connect(session).pipe(
-              Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
+          Effect.sync(() => vi.unstubAllGlobals())
+        );
+      })
+  );
+
+  it.effect(
+    "lasts as long as its connection, whatever its layer is provided to, and closes the session with it, saying so when used after",
+    () =>
+      Effect.gen(function* () {
+        const name = nextRoom();
+        const outside = new BroadcastChannel(name);
+        const heard: unknown[] = [];
+        outside.onmessage = (event: MessageEvent<unknown>) => {
+          heard.push(event.data);
+        };
+        const log: string[] = [];
+        const Held = Plugin.make("tr/Held", {
+          layer: Layer.effectDiscard(
+            Effect.acquireRelease(
+              Effect.sync(() => log.push("acquired")),
+              () => Effect.sync(() => log.push("released"))
             )
-        )
-      )
-    );
-    expect(connected.tick()).toBe(true);
-    await until(
-      () => heard.length > 1,
-      "the notice that ada joined, and its first message, were heard"
-    );
-    expect(log).toEqual(["acquired"]);
-    await Effect.runPromise(connected.close);
-    expect(log).toEqual(["acquired", "released"]);
-    // Closing it again does nothing.
-    await Effect.runPromise(connected.close);
-    expect(log).toEqual(["acquired", "released"]);
-    outside.postMessage(Message.encode(message("grace", 0)));
-    await later(20);
-    // It says so, in place of a game that waits for ever.
-    expect(() => connected.tick()).toThrow(
-      /The transport "arcadekit-test\/.*" was used after it was let go, and its channel closed: the connection Transport\.connect made was closed/u
-    );
-    // As one listened on in a scope does once the scope has closed.
-    const kept = await Effect.runPromise(
-      Effect.scoped(
-        Transport.listen.pipe(
-          Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
-        )
-      )
-    );
-    expect(() => kept.send(message("ada", 0))).toThrow(
-      /or the scope Transport\.listen ran in had ended/u
-    );
-    outside.close();
-  });
+          ),
+        });
+        // Provided to the one line that connects, in a scope that is gone once
+        // the line has run: it lasts all the same.
+        const connected = yield* Effect.scoped(
+          Effect.flatMap(
+            Session.make(App.define({ plugins: [Held] }), {
+              seed: 5,
+              me: "ada",
+              others: ["grace"],
+              delta: DELTA,
+            }),
+            (session) =>
+              Transport.connect(session).pipe(
+                Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
+              )
+          )
+        );
+        expect(yield* connected.tick()).toBe(true);
+        yield* Effect.promise(() =>
+          until(
+            () => heard.length > 1,
+            "the notice that ada joined, and its first message, were heard"
+          )
+        );
+        expect(log).toEqual(["acquired"]);
+        yield* connected.close;
+        expect(log).toEqual(["acquired", "released"]);
+        // Closing it again does nothing.
+        yield* connected.close;
+        expect(log).toEqual(["acquired", "released"]);
+        outside.postMessage(Message.encode(message("grace", 0)));
+        yield* Effect.promise(() => later(20));
+        // It says so, in place of a game that waits for ever.
+        expect(yield* thrown(connected.tick())).toThrow(
+          /The transport "arcadekit-test\/.*" was used after it was let go, and its channel closed: the connection Transport\.connect made was closed/u
+        );
+        // As one listened on in a scope does once the scope has closed.
+        const kept = yield* Effect.scoped(
+          Transport.listen.pipe(
+            Effect.provide(Transport.layerBroadcastChannel(name, "ada"))
+          )
+        );
+        expect(() => kept.send(message("ada", 0))).toThrow(
+          /or the scope Transport\.listen ran in had ended/u
+        );
+        outside.close();
+      })
+  );
 
-  it("says a peer left when its connection closes, and joined when it listens again", async () => {
-    const name = nextRoom();
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const [ada, grace] = (yield* seated(
-            ["ada", "grace"],
-            (peer) => Transport.layerBroadcastChannel(name, peer),
-            8
-          )) as [Seat, Seat];
-          ada.connected.tick();
-          grace.connected.tick();
-          yield* grace.connected.close;
-          yield* Effect.promise(() =>
-            until(() => {
-              ada.connected.tick();
-              return ada.connected.away.length > 0;
-            }, "ada heard that grace left")
-          );
-          expect(ada.connected.away).toEqual(["grace"]);
-          yield* Transport.listen.pipe(
-            Effect.provide(Transport.layerBroadcastChannel(name, "grace"))
-          );
-          yield* Effect.promise(() =>
-            until(() => {
-              ada.connected.tick();
-              return ada.connected.away.length === 0;
-            }, "ada heard that grace joined again")
-          );
-        })
-      )
-    );
-  });
+  it.effect(
+    "says a peer left when its connection closes, and joined when it listens again",
+    () =>
+      Effect.gen(function* () {
+        const name = nextRoom();
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const [ada, grace] = (yield* seated(
+              ["ada", "grace"],
+              (peer) => Transport.layerBroadcastChannel(name, peer),
+              8
+            )) as [Seat, Seat];
+            yield* ada.connected.tick();
+            yield* grace.connected.tick();
+            yield* grace.connected.close;
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* ada.connected.tick();
+                return ada.connected.away.length > 0;
+              }),
+              "ada heard that grace left"
+            );
+            expect(ada.connected.away).toEqual(["grace"]);
+            yield* Transport.listen.pipe(
+              Effect.provide(Transport.layerBroadcastChannel(name, "grace"))
+            );
+            yield* waitUntil(
+              Effect.gen(function* () {
+                yield* ada.connected.tick();
+                return ada.connected.away.length === 0;
+              }),
+              "ada heard that grace joined again"
+            );
+          })
+        );
+      })
+  );
 
-  it("fails the tick once a peer whose tab closed stays away longer than awayFor", async () => {
-    const name = nextRoom();
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const [ada, grace] = (yield* seated(
-            ["ada", "grace"],
-            (peer) => Transport.layerBroadcastChannel(name, peer),
-            8,
-            { awayFor: 0 }
-          )) as [Seat, Seat];
-          ada.connected.tick();
-          yield* grace.connected.close;
-          let thrown: unknown;
-          yield* Effect.promise(() =>
-            until(() => {
-              const ticked = Result.try(() => ada.connected.tick());
-              thrown = Result.isFailure(ticked) ? ticked.failure : undefined;
-              return thrown !== undefined;
-            }, "ada's tick failed")
-          );
-          expect(thrown).toEqual(
-            new Transport.Left({ peers: ["grace"], awayFor: 0 })
-          );
-        })
-      )
-    );
-  });
+  it.effect(
+    "fails the tick once a peer whose tab closed stays away longer than awayFor",
+    () =>
+      Effect.gen(function* () {
+        const name = nextRoom();
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const [ada, grace] = (yield* seated(
+              ["ada", "grace"],
+              (peer) => Transport.layerBroadcastChannel(name, peer),
+              8,
+              { awayFor: 0 }
+            )) as [Seat, Seat];
+            yield* ada.connected.tick();
+            yield* grace.connected.close;
+            let thrown: unknown;
+            yield* waitUntil(
+              Effect.gen(function* () {
+                const ticked = yield* Effect.result(ada.connected.tick());
+                thrown = Result.isFailure(ticked) ? ticked.failure : undefined;
+                return thrown !== undefined;
+              }),
+              "ada's tick failed"
+            );
+            expect(thrown).toEqual(
+              new Transport.Left({ peers: ["grace"], awayFor: 0 })
+            );
+          })
+        );
+      })
+  );
 
-  it("keeps two peers the same game, each ticking in its own time", async () => {
-    const name = nextRoom();
-    await Effect.runPromise(
-      Effect.scoped(
+  it.effect("keeps two peers the same game, each ticking in its own time", () =>
+    Effect.gen(function* () {
+      const name = nextRoom();
+      yield* Effect.scoped(
         Effect.gen(function* () {
           const seats = yield* seated(
             ["ada", "grace"],
@@ -849,9 +894,9 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           for (let i = 0; i < 60; i++) {
             for (const seat of seats) {
               if (i < 40) {
-                act(seat);
+                yield* act(seat);
               }
-              seat.connected.tick();
+              yield* seat.connected.tick();
               // The other end hears in its own time, not in this loop's.
               yield* Effect.promise(() => later(1));
             }
@@ -864,9 +909,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
             i++
           ) {
             yield* Effect.promise(() => later(2));
-            (ada.app.time.tick <= grace.app.time.tick
-              ? ada
-              : grace
+            yield* (
+              ada.app.time.tick <= grace.app.time.tick ? ada : grace
             ).connected.tick();
           }
           expect(ada.app.time.tick).toBe(grace.app.time.tick);
@@ -877,7 +921,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
           expect(ada.session.drifted).toBeUndefined();
           expect(grace.session.drifted).toBeUndefined();
         })
-      )
-    );
-  });
+      );
+    })
+  );
 });

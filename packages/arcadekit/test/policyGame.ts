@@ -252,15 +252,17 @@ export const play = (): Record<string, unknown> =>
       const world = yield* app.read(World);
       const outcomes: string[] = [];
       for (let tick = 0; tick < 6; tick++) {
-        app.tick(1 / 60);
-        app.frame(0.5);
+        yield* app.tick(1 / 60);
+        yield* app.frame(0.5);
         if (tick === 1 || tick === 3) {
           // The first is paid; the second cannot be, and is taken back.
-          const exit = app.dispatch(Tax, { amount: tick === 1 ? 1 : 1000 });
+          const exit = yield* Effect.exit(
+            app.dispatch(Tax, { amount: tick === 1 ? 1 : 1000 })
+          );
           outcomes.push(Exit.isSuccess(exit) ? "paid" : "refused");
         }
       }
-      const saved = app.save();
+      const saved = yield* Effect.exit(app.save());
       if (Exit.isFailure(saved)) {
         return { failed: "save" };
       }
@@ -273,8 +275,8 @@ export const play = (): Record<string, unknown> =>
         save: read.value,
         checkpointEvery: 1,
       });
-      again.tick(1 / 60);
-      app.tick(1 / 60);
+      yield* again.tick(1 / 60);
+      yield* app.tick(1 / 60);
       return {
         hash: world.hash(),
         loaded: (yield* again.read(World)).hash(),

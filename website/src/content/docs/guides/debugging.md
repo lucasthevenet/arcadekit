@@ -19,14 +19,17 @@ Browser.runMain(
     hz: 60,
     ready: (app) =>
       Effect.sync(() => {
-        Object.assign(globalThis, { app });
+        // For the browser's console, which runs no Effect of its own.
+        Object.assign(globalThis, {
+          inspect: () => Effect.runSync(app.inspect()),
+        });
       }),
   }),
   { target: document.querySelector("canvas")! }
 );
 ```
 
-`app.inspect()` returns what the game holds and what it did last, as plain data. In a page, keep the app where the browser's console can reach it, as above. Then type `app.inspect()` in the console, or `console.table(app.inspect().systems)` for the systems. A game's own UI can show the same data, and a test can check it.
+`yield* app.inspect()` gives what the game holds and what it did last, as plain data. The browser's console runs no Effect, so a page hands it a function that runs `app.inspect()`, as above. Then type `inspect()` in the console, or `console.table(inspect().systems)` for the systems. A game's own UI can show the same data, and a test can check it.
 
 | Field | What it holds |
 | --- | --- |
@@ -41,7 +44,7 @@ Browser.runMain(
 - `ran` is false for a system whose `System.runIf` condition didn't hold, and for one that hasn't had a turn yet, such as a hook whose state was never entered.
 - `ms` includes the system's condition and applying its commands. It is measured on every turn, whether or not you inspect.
 - `events` holds what the last tick's actions, hooks and systems emitted, including an `Action.Rejected` for each refusal and, for a refusal by a handler, the action's own event that `Action.rejected` reads, and what was emitted since the tick before it ended. An event that a refused handler emitted is not there, since a refusal takes it back.
-- `inspect` copies the whole world, so call it when you look rather than every frame. It throws if called from inside a tick or a frame.
+- `inspect` copies the whole world, so run it when you look rather than every frame. It dies if run from inside a tick or a frame.
 
 ## Trace an app
 

@@ -1,5 +1,5 @@
+import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
 
 import {
   Action,
@@ -19,6 +19,7 @@ import {
   World,
 } from "../src/index.ts";
 import * as Services from "../src/Services.ts";
+import { thrown } from "./checks.ts";
 
 const Position = Component.define("rd/Position", { x: Field.f32 });
 const Aim = Component.define("rd/Aim", { at: Field.entity });
@@ -47,11 +48,12 @@ const Rules = Plugin.make("rd/Rules", {
 const Game = App.define({ plugins: [Rules] });
 
 describe("a game, from outside it", () => {
-  it("is read with app.read: the world, a query that reads, a singleton, a state and the time", () => {
-    Effect.runSync(
+  it.effect(
+    "is read with app.read: the world, a query that reads, a singleton, a state and the time",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(Game);
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         const world = yield* app.read(World);
         const [rock] = (yield* app.read(Placed)).entities();
         expect(world.get(rock!, Position)).toEqual({ x: 4 });
@@ -67,11 +69,11 @@ describe("a game, from outside it", () => {
           )
         ).toBe(world.hash());
       })
-    );
-  });
+  );
 
-  it("is changed by an action alone: the app has no world to write, and app.read takes nothing that writes", () => {
-    Effect.runSync(
+  it.effect(
+    "is changed by an action alone: the app has no world to write, and app.read takes nothing that writes",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(Game);
         // @ts-expect-error the app hands out no world
@@ -107,104 +109,101 @@ describe("a game, from outside it", () => {
           app.read(Score.writes),
         ];
         expect(reads).toHaveLength(8);
-        expect(app.enqueue(Drop, { x: 1 })).toEqual(
+        expect(yield* Effect.exit(app.enqueue(Drop, { x: 1 }))).toEqual(
           expect.objectContaining({ _tag: "Success" })
         );
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         expect(world.entityCount).toBe(2);
       })
-    );
-  });
+  );
 
-  it("is replayed to the same world, since what changed it is in the log", () => {
-    const { count, recording } = Effect.runSync(
+  it.effect(
+    "is replayed to the same world, since what changed it is in the log",
+    () =>
       Effect.gen(function* () {
         const app = yield* App.make(Game, { checkpointEvery: 0 });
         for (let n = 0; n < 5; n++) {
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
         }
-        app.enqueue(Drop, { x: 2 });
+        yield* app.enqueue(Drop, { x: 2 });
         for (let n = 0; n < 5; n++) {
-          app.tick(1 / 60);
+          yield* app.tick(1 / 60);
         }
-        return {
-          count: (yield* app.read(World)).entityCount,
-          recording: app.record(),
-        };
-      })
-    );
-    expect(count).toBe(2);
-    const replayed = Effect.runSync(
-      Effect.gen(function* () {
-        const app = yield* Journal.replay(recording, Game, {
+        const count = (yield* app.read(World)).entityCount;
+        const recording = yield* app.record();
+        expect(count).toBe(2);
+        const replayed = yield* Journal.replay(recording, Game, {
           checkpointEvery: 0,
         });
-        return (yield* app.read(World)).entityCount;
+        expect((yield* replayed.read(World)).entityCount).toBe(count);
       })
-    );
-    expect(replayed).toBe(count);
-  });
+  );
 
-  it("is read between ticks, and not from inside one", () => {
-    const outside: { app?: App.Any } = {};
-    const Peek = System.tick("rd/Peek", function* () {
-      if (outside.app !== undefined) {
-        yield* outside.app.read(World);
-      }
-    });
-    expect(() =>
-      Effect.runSync(
-        Effect.gen(function* () {
-          const app = yield* App.make(App.define({ systems: [Peek] }));
-          outside.app = app;
-          app.tick(1 / 60);
-        })
-      )
-    ).toThrow(/app\.read\(\) was run during a tick/);
-  });
+  it.effect("is read between ticks, and not from inside one", () =>
+    Effect.gen(function* () {
+      const outside: { app?: App.Any } = {};
+      const Peek = System.tick("rd/Peek", function* () {
+        if (outside.app !== undefined) {
+          yield* outside.app.read(World);
+        }
+      });
+      expect(
+        yield* thrown(
+          Effect.gen(function* () {
+            const app = yield* App.make(App.define({ systems: [Peek] }));
+            outside.app = app;
+            yield* app.tick(1 / 60);
+          })
+        )
+      ).toThrow(/app\.read\(\) was run during a tick/);
+    })
+  );
 });
 
 describe("the world a system is handed", () => {
-  it("turns a Field.entity back into its entity with live, as the world app.read hands out does", () => {
-    const seen: unknown[] = [];
-    const Aimed = Query.all(Aim);
-    const Look = System.tick("rd/Look", function* () {
-      const world = yield* World;
-      (yield* Aimed).each((aim) => {
-        seen.push(world.live(aim.at));
-      });
-    });
-    const Setup = Plugin.make("rd/Aims", {
-      systems: [Look],
-      setup: Effect.gen(function* () {
-        const commands = yield* Commands.spawns(Position, Aim);
-        const rock = commands.spawn(Position.of({ x: 1 }));
-        commands.spawn(Aim.of({ at: rock }));
-      }),
-    });
-    Effect.runSync(
+  it.effect(
+    "turns a Field.entity back into its entity with live, as the world app.read hands out does",
+    () =>
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ plugins: [Setup] }));
-        app.tick(1 / 60);
-        const world = yield* app.read(World);
-        const [rock] = (yield* app.read(Placed)).entities();
-        const [aim] = (yield* app.read(Aimed)).entities();
-        const ref = world.get(aim!, Aim)!.at;
-        expect(seen).toEqual([rock]);
-        expect(world.live(ref)).toBe(rock);
+        const seen: unknown[] = [];
+        const Aimed = Query.all(Aim);
+        const Look = System.tick("rd/Look", function* () {
+          const world = yield* World;
+          (yield* Aimed).each((aim) => {
+            seen.push(world.live(aim.at));
+          });
+        });
+        const Setup = Plugin.make("rd/Aims", {
+          systems: [Look],
+          setup: Effect.gen(function* () {
+            const commands = yield* Commands.spawns(Position, Aim);
+            const rock = commands.spawn(Position.of({ x: 1 }));
+            commands.spawn(Aim.of({ at: rock }));
+          }),
+        });
+        {
+          const app = yield* App.make(App.define({ plugins: [Setup] }));
+          yield* app.tick(1 / 60);
+          const world = yield* app.read(World);
+          const [rock] = (yield* app.read(Placed)).entities();
+          const [aim] = (yield* app.read(Aimed)).entities();
+          const ref = world.get(aim!, Aim)!.at;
+          expect(seen).toEqual([rock]);
+          expect(world.live(ref)).toBe(rock);
+        }
       })
-    );
-  });
+  );
 
-  it("is not the world itself, so no check of its class reaches spawn or despawn", () => {
-    const seen: unknown[] = [];
-    const Look = System.tick("rd/Look", function* () {
-      seen.push(yield* World, yield* World.writes(Position));
-    });
-    Effect.runSync(
+  it.effect(
+    "is not the world itself, so no check of its class reaches spawn or despawn",
+    () =>
       Effect.gen(function* () {
+        const seen: unknown[] = [];
+        const Look = System.tick("rd/Look", function* () {
+          seen.push(yield* World, yield* World.writes(Position));
+        });
         const app = yield* App.make(App.define({ systems: [Look] }));
-        app.tick(1 / 60);
+        yield* app.tick(1 / 60);
         expect(seen).toHaveLength(2);
         for (const world of seen) {
           expect(world).not.toBeInstanceOf(EcsWorld);
@@ -215,9 +214,8 @@ describe("the world a system is handed", () => {
         const read = yield* app.read(World);
         expect(read).not.toBeInstanceOf(EcsWorld);
         expect(seen).not.toContain(read);
+        // What unwraps it is no export of the entry.
+        expect(Object.keys(Services)).not.toContain("whole");
       })
-    );
-    // What unwraps it is no export of the entry.
-    expect(Object.keys(Services)).not.toContain("whole");
-  });
+  );
 });

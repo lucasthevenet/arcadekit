@@ -49,6 +49,37 @@ import {
 } from "./core.ts";
 import type { Variant } from "./core.ts";
 
+/**
+ * `measure` for what an app runs: each pass calls `run` and yields what it
+ * returns, as a driver yields a tick, all in one fiber. The median
+ * milliseconds of a pass.
+ */
+const measureEffect = <E>(
+  run: () => Effect.Effect<unknown, E>,
+  runs = 300,
+  warmup = 80,
+  before?: () => Effect.Effect<unknown, E>
+): Effect.Effect<number, E> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < warmup; i++) {
+      if (before !== undefined) {
+        yield* before();
+      }
+      yield* run();
+    }
+    const samples: number[] = [];
+    for (let i = 0; i < runs; i++) {
+      if (before !== undefined) {
+        yield* before();
+      }
+      const start = performance.now();
+      yield* run();
+      samples.push(performance.now() - start);
+    }
+    samples.sort((a, b) => a - b);
+    return samples[samples.length >> 1]!;
+  });
+
 // As `bench/core.ts` has them, and constants of this module so that a loop
 // reads them at no cost.
 const N = 100_000;
@@ -129,24 +160,32 @@ const scanReads = Action.handler(Scan, function* () {
   return sum;
 });
 
-/** Median milliseconds of one dispatch, in an app whose world holds N entities. */
-const dispatching = <P>(
-  action: Action.ActionDef<string, P>,
-  payload: (target: Entity) => P,
+/** The game a dispatch is measured in: N entities, and the two actions. */
+const dispatchable = () =>
+  // No checkpoints: this measures the action, not the hash.
+  App.make(App.define({ plugins: [Populated], handlers: [nudge, sweep] }), {
+    checkpointEvery: 0,
+  });
+
+/**
+ * Median milliseconds of one dispatch, in an app whose world holds N
+ * entities. `send` is given the app and an entity, and returns the dispatch
+ * to measure, its payload made once.
+ */
+const dispatching = (
+  send: (
+    app: Effect.Success<ReturnType<typeof dispatchable>>,
+    target: Entity
+  ) => () => Effect.Effect<unknown, Action.InvalidPayload | Refused>,
   runs = 20_000,
   warmup = 5000
 ): number =>
   Effect.runSync(
     Effect.gen(function* () {
-      // No checkpoints: this measures the action, not the hash.
-      const app = yield* App.make(
-        App.define({ plugins: [Populated], handlers: [nudge, sweep] }),
-        { checkpointEvery: 0 }
-      );
+      const app = yield* dispatchable();
       const target = (yield* app.read(Seen)).entities()[N >> 1]!;
-      const given = payload(target);
-      const dispatch = app.dispatch as (a: unknown, p: unknown) => unknown;
-      return measure(() => dispatch(action, given), runs, warmup);
+      const dispatch = send(app, target);
+      return yield* measureEffect(() => Effect.exit(dispatch()), runs, warmup);
     })
   );
 
@@ -185,7 +224,7 @@ const idling = (power: "on" | "off"): number =>
         }),
       });
       const app = yield* App.make(App.define({ plugins: [Switched], systems }));
-      return measure(() => app.tick(DT), 50_000, 20_000);
+      return yield* measureEffect(() => app.tick(DT), 50_000, 20_000);
     })
   );
 
@@ -207,27 +246,28 @@ const listening = (changing: boolean): number =>
       }
       source.move(Input.pointerX, 120);
       source.move(Input.pointerY, 80);
-      app.input();
-      app.tick(DT);
+      yield* app.input();
+      yield* app.tick(DT);
       let down = false;
       return changing
-        ? measure(
-            () => {
-              down = !down;
-              if (down) {
-                source.press("Space");
-              } else {
-                source.release("Space");
-              }
-              app.input();
-              app.tick(DT);
-              // The log is the game's to keep; here it would only grow.
-              (app.actionLog as unknown[]).length = 0;
-            },
+        ? yield* measureEffect(
+            () =>
+              Effect.gen(function* () {
+                down = !down;
+                if (down) {
+                  source.press("Space");
+                } else {
+                  source.release("Space");
+                }
+                yield* app.input();
+                yield* app.tick(DT);
+                // The log is the game's to keep; here it would only grow.
+                (app.actionLog as unknown[]).length = 0;
+              }),
             20_000,
             5000
           )
-        : measure(() => app.input(), 50_000, 20_000);
+        : yield* measureEffect(() => app.input(), 50_000, 20_000);
     })
   );
 
@@ -270,10 +310,10 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
       const app = yield* mode === "nobody"
         ? made
         : made.pipe(Effect.provide(ui));
-      return measure(
+      return yield* measureEffect(
         () => {
           frames++;
-          app.frame();
+          return app.frame();
         },
         50_000,
         20_000
@@ -306,7 +346,7 @@ const sounding = (happening: boolean): number =>
         App.define({ plugins: [Sound.plugin], systems: [Score, Cues] }),
         { checkpointEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
-      return measure(
+      return yield* measureEffect(
         () => app.frame(),
         50_000,
         20_000,
@@ -333,7 +373,7 @@ const scoring = (): number =>
         App.define({ plugins: [Sound.plugin], systems: [Score] }),
         { checkpointEvery: 0 }
       ).pipe(Effect.provide(Sound.layer({ play() {}, music() {} })));
-      return measure(() => app.frame(), 50_000, 20_000);
+      return yield* measureEffect(() => app.frame(), 50_000, 20_000);
     })
   );
 
@@ -369,12 +409,12 @@ const atRest = (): number =>
       const advance = Driver.fixedStep(app, { hz: 60, ticks: "whenNeeded" });
       // A new game rests after its first tick when that tick changed nothing.
       for (let i = 0; i < 10; i++) {
-        advance(DT);
+        yield* advance(DT);
       }
       if (app.time.tick !== 1) {
         throw new Error(`The game did not come to rest: tick ${app.time.tick}`);
       }
-      return measure(() => advance(DT), 50_000, 20_000);
+      return yield* measureEffect(() => advance(DT), 50_000, 20_000);
     })
   );
 
@@ -396,26 +436,24 @@ const rewinding = (back: boolean): number =>
       const app = yield* App.make(
         App.define({ plugins: [Populated], systems: [Movement] })
       );
-      app.tick(DT);
-      const moment = Timeline.capture(app);
-      if (Exit.isFailure(moment)) {
-        throw new Error("the game could not be captured");
-      }
+      yield* app.tick(DT);
+      const moment = yield* Timeline.capture(app);
       let sink = 0;
       const ms = back
-        ? measure(
-            () => {
-              Timeline.rewind(app, moment.value);
-              sink += app.time.tick;
-            },
+        ? yield* measureEffect(
+            () =>
+              Effect.map(Timeline.rewind(app, moment), () => {
+                sink += app.time.tick;
+              }),
             300,
             80,
             () => app.tick(DT)
           )
-        : measure(
-            () => {
-              sink += Exit.isSuccess(Timeline.capture(app)) ? 1 : 0;
-            },
+        : yield* measureEffect(
+            () =>
+              Effect.map(Effect.exit(Timeline.capture(app)), (captured) => {
+                sink += Exit.isSuccess(captured) ? 1 : 0;
+              }),
             300,
             80,
             () => app.tick(DT)
@@ -450,19 +488,18 @@ const rollingBack = (): number =>
         App.define({ plugins: [Populated], systems: [Write, Draw] })
       );
       ten = (yield* app.read(Seen)).entities().slice(0, 10);
-      app.tick(DT);
-      app.frame(0);
-      const moment = Timeline.capture(app);
-      if (Exit.isFailure(moment)) {
-        throw new Error("the game could not be captured");
-      }
-      app.tick(DT);
-      app.frame(0);
-      const ms = measure(() => {
-        Timeline.rewind(app, moment.value, { again: true });
-        app.tick(DT);
-        app.frame(0);
-      });
+      yield* app.tick(DT);
+      yield* app.frame(0);
+      const moment = yield* Timeline.capture(app);
+      yield* app.tick(DT);
+      yield* app.frame(0);
+      const ms = yield* measureEffect(() =>
+        Effect.gen(function* () {
+          yield* Timeline.rewind(app, moment, { again: true });
+          yield* app.tick(DT);
+          yield* app.frame(0);
+        })
+      );
       void sink;
       return ms;
     })
@@ -503,7 +540,7 @@ const drawingIdle = (): number =>
         drawer(9, false),
       ] as const;
       const app = yield* App.make(App.define({ plugins: [Empty], systems }));
-      return measure(() => app.frame(0.5), 50_000, 20_000);
+      return yield* measureEffect(() => app.frame(0.5), 50_000, 20_000);
     })
   );
 
@@ -515,7 +552,7 @@ const drawingRaw = (verify: boolean): number =>
         App.define({ plugins: [Populated], systems: [drawer(0, true)] }),
         { verifyFrames: verify }
       );
-      const ms = measure(() => app.frame(0.5));
+      const ms = yield* measureEffect(() => app.frame(0.5));
       void sink;
       return ms;
     })
@@ -529,7 +566,11 @@ const scanned = (handler: typeof scanPlain): number =>
         App.define({ plugins: [Populated], handlers: [handler] }),
         { checkpointEvery: 0 }
       );
-      return measure(() => app.dispatch(Scan, {}), 300, 80);
+      return yield* measureEffect(
+        () => Effect.exit(app.dispatch(Scan, {})),
+        300,
+        80
+      );
     })
   );
 
@@ -615,7 +656,7 @@ const variants: Record<string, Variant> = {
           const app = yield* App.make(
             App.define({ plugins: [Populated], systems: [Movement] })
           );
-          return measure(() => app.tick(DT));
+          return yield* measureEffect(() => app.tick(DT));
         })
       ),
   },
@@ -628,7 +669,7 @@ const variants: Record<string, Variant> = {
           const app = yield* App.make(
             App.define({ plugins: [Populated], systems: [MovementRaw] })
           );
-          return measure(() => app.tick(DT));
+          return yield* measureEffect(() => app.tick(DT));
         })
       ),
   },
@@ -653,7 +694,7 @@ const variants: Record<string, Variant> = {
             idle(9),
           ] as const;
           const app = yield* App.make(App.define({ systems }));
-          return measure(() => app.tick(DT), 50_000, 20_000);
+          return yield* measureEffect(() => app.tick(DT), 50_000, 20_000);
         })
       ),
   },
@@ -763,22 +804,46 @@ const variants: Record<string, Variant> = {
   dispatchSet: {
     unit: "dispatch",
     label: "dispatch: handler reads and sets one entity, accepted",
-    run: () => dispatching(Nudge, (target) => ({ target, refuse: false })),
+    run: () =>
+      dispatching((app, target) => {
+        const payload = { target, refuse: false };
+        return () => app.dispatch(Nudge, payload);
+      }),
   },
   dispatchSetRefused: {
     unit: "dispatch",
     label: "dispatch: the same, refused after its write",
-    run: () => dispatching(Nudge, (target) => ({ target, refuse: true })),
+    run: () =>
+      dispatching((app, target) => {
+        const payload = { target, refuse: true };
+        return () => app.dispatch(Nudge, payload);
+      }),
   },
   dispatchLoop: {
     unit: "dispatch",
     label: "dispatch: handler loops over all 100,000, accepted",
-    run: () => dispatching(Sweep, () => ({ refuse: false }), 300, 80),
+    run: () =>
+      dispatching(
+        (app) => {
+          const payload = { refuse: false };
+          return () => app.dispatch(Sweep, payload);
+        },
+        300,
+        80
+      ),
   },
   dispatchLoopRefused: {
     unit: "dispatch",
     label: "dispatch: the same, refused after its loop",
-    run: () => dispatching(Sweep, () => ({ refuse: true }), 300, 80),
+    run: () =>
+      dispatching(
+        (app) => {
+          const payload = { refuse: true };
+          return () => app.dispatch(Sweep, payload);
+        },
+        300,
+        80
+      ),
   },
   dispatchScan: {
     unit: "dispatch",

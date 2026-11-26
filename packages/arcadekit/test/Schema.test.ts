@@ -1,6 +1,6 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Option, Predicate, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
-import { assert, describe, expect, it } from "vitest";
 
 import { entityOf } from "../src/ecs/component.ts";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../src/index.ts";
 import { Layout } from "../src/internal/recording.ts";
 import { Message } from "../src/net/index.ts";
+import { thrown } from "./checks.ts";
 
 const Health = Component.define("sc/Health", { hp: Field.i32 });
 
@@ -82,10 +83,10 @@ const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
 
 const game = begin(App.make(Game));
 
-const withApp = <A, T, E = never>(
+const withApp = <A, T, E = never, E2 = never>(
   make: Effect.Effect<A, E>,
-  use: (made: A) => T
-): T => Effect.runSync(Effect.map(make, use));
+  use: (made: A) => Effect.Effect<T, E2>
+) => Effect.flatMap(make, use);
 
 /** The applied actions of a log, without the checkpoints recorded among them. */
 const moves = (log: readonly Action.LogEntry[]): Action.Logged[] =>
@@ -99,235 +100,305 @@ const failure = <E>(exit: Exit.Exit<unknown, E>): E => {
 };
 
 describe("actions with a schema", () => {
-  it("infer the payload type and log the payload in its JSON form", () => {
-    withApp(game, ({ app, target }) => {
-      received.length = 0;
-      const exit = app.dispatch(Damage, {
-        target,
-        amount: 4,
-        seed: 12_345_678_901_234_567_890n,
-      });
-      expect(exit).toEqual(Exit.succeed(46));
-      // The handler gets the value as given...
-      expect(received).toEqual([
-        { target, amount: 4, seed: 12_345_678_901_234_567_890n },
-      ]);
-      // ...and the log gets something JSON can hold.
-      expect(moves(app.actionLog)).toEqual([
-        {
-          tick: 0,
-          name: "Damage",
-          payload: { target, amount: 4, seed: "12345678901234567890" },
-        },
-      ]);
-      expect(() => JSON.stringify(app.actionLog)).not.toThrow();
-
-      // The failure type says a schema-defined action can be rejected as invalid.
-      const typed: Exit.Exit<number, NoSuchTarget | Action.InvalidPayload> =
-        exit;
-      void typed;
-    });
-  });
-
-  it("reject a payload the compiler accepts but the schema does not", () => {
-    withApp(game, ({ app, world, target }) => {
-      received.length = 0;
-      const exit = app.dispatch(Damage, { target, amount: 999, seed: 1n });
-      const error = failure(exit);
-      assert(error._tag === "InvalidPayload");
-      expect(error.action).toBe("Damage");
-      expect(error.message).toMatch(/amount/);
-      // The handler never ran, nothing changed, nothing was logged.
-      expect(received).toEqual([]);
-      expect(world.get(target, Health)).toEqual({ hp: 50 });
-      expect(moves(app.actionLog)).toEqual([]);
-    });
-  });
-
-  it("validate and convert payloads that arrive as data", () => {
-    withApp(game, ({ app, target }) => {
-      received.length = 0;
-      const exit = app.dispatchByName("Damage", {
-        target,
-        amount: 3,
-        seed: "77",
-        note: "from the network",
-      });
-      expect(exit).toEqual(Exit.succeed(47));
-      // Decoded for the handler: the seed is a bigint again.
-      expect(received).toEqual([
-        { target, amount: 3, seed: 77n, note: "from the network" },
-      ]);
-      expect(moves(app.actionLog)[0]!.payload).toEqual({
-        target,
-        amount: 3,
-        seed: "77",
-        note: "from the network",
-      });
-    });
-  });
-
-  it("turn every kind of bad input into a failure, never a crash", () => {
-    withApp(game, ({ app, world, target }) => {
-      received.length = 0;
-      const bad: [label: string, payload: unknown][] = [
-        ["missing field", { target, amount: 3 }],
-        ["wrong type", { target, amount: "3", seed: "1" }],
-        ["out of range", { target, amount: 0, seed: "1" }],
-        ["not an integer", { target, amount: 2.5, seed: "1" }],
-        ["bad entity id", { target: -1, amount: 3, seed: "1" }],
-        ["fractional entity id", { target: 1.5, amount: 3, seed: "1" }],
-        ["unconvertible", { target, amount: 3, seed: "not a number" }],
-        ["null", null],
-        ["a string", "Damage"],
-        ["an array", [1, 2, 3]],
-        ["undefined", undefined],
-      ];
-      for (const [label, payload] of bad) {
-        const error = failure(app.dispatchByName("Damage", payload));
-        assert(Schema.is(Action.InvalidPayload)(error), label);
-        expect(error.message.length, label).toBeGreaterThan(0);
-      }
-      expect(failure(app.dispatchByName("Nope", {}))).toEqual(
-        Action.UnknownAction.make({ action: "Nope" })
-      );
-      expect(failure(app.dispatchByName("constructor", {}))).toBeInstanceOf(
-        Action.UnknownAction
-      );
-
-      // A well-formed payload can still be refused by the rules.
-      const dead = entityOf(4000);
-      expect(
-        failure(
-          app.dispatchByName("Damage", { target: dead, amount: 3, seed: "1" })
-        )
-      ).toEqual(NoSuchTarget.make({ target: dead }));
-
-      expect(received).toHaveLength(1); // only the last one reached the handler
-      expect(world.get(target, Health)).toEqual({ hp: 50 });
-      expect(moves(app.actionLog)).toEqual([]);
-    });
-  });
-
-  it("report bad queued input as events, and refuse a payload with no JSON form where it is enqueued", () => {
-    const rejected: string[] = [];
-    const events: (typeof Action.Rejected.codec)["Type"][] = [];
-    const Watch = System.tick("Watch", function* () {
-      for (const event of (yield* Action.Rejected).read()) {
-        rejected.push(`${event.action}: ${event.error._tag}`);
-        events.push(event);
-      }
-    });
-    const make = begin(
-      App.make(
-        App.define({ plugins: [Target], systems: [Watch], handlers: [damage] })
-      )
-    );
-    withApp(make, ({ app, world, target }) => {
-      app.enqueueByName("Damage", { target, amount: 5, seed: "9" });
-      app.enqueueByName("Damage", { target, amount: 500, seed: "9" });
-      app.enqueueByName("Teleport", { x: 1 });
-      expect(app.enqueue(Damage, { target, amount: 2, seed: 9n })).toEqual(
-        Exit.void
-      );
-      // Refused by its handler: no such target.
-      app.enqueue(Damage, { target: entityOf(999), amount: 3, seed: 7n });
-      // A payload its schema refuses has no JSON form to log or send: it is
-      // refused where it is enqueued, and nothing is queued.
-      expect(app.enqueue(Damage, { target, amount: -2, seed: 9n })).toEqual(
-        Exit.fail(
-          Action.InvalidPayload.make({
-            action: "Damage",
-            message: 'Expected a value between 1 and 10\n  at ["amount"]',
+  it.effect("infer the payload type and log the payload in its JSON form", () =>
+    withApp(game, ({ app, target }) =>
+      Effect.gen(function* () {
+        received.length = 0;
+        const exit = yield* Effect.exit(
+          app.dispatch(Damage, {
+            target,
+            amount: 4,
+            seed: 12_345_678_901_234_567_890n,
           })
-        )
-      );
-      app.tick(1);
-      expect(world.get(target, Health)).toEqual({ hp: 43 });
-      expect(rejected).toEqual([
-        "Damage: InvalidPayload",
-        "Teleport: UnknownAction",
-        "Damage: NoSuchTarget",
-      ]);
-      // A refusal is data: the payload and the error in their JSON form. It
-      // is written down and read back as it was.
-      expect(events[2]).toEqual({
-        action: "Damage",
-        payload: { target: 999, amount: 3, seed: "7" },
-        error: { _tag: "NoSuchTarget", target: 999 },
-        from: undefined,
-      });
-      for (const event of events) {
-        const encoded = Event.encode(Action.Rejected, event);
-        assert(Exit.isSuccess(encoded));
-        const json: unknown = JSON.parse(JSON.stringify(encoded.value));
-        expect(Event.decode(Action.Rejected, json)).toEqual(
-          Exit.succeed(event)
         );
-      }
-      // What was enqueued is in the log as it arrived, with what became of
-      // it.
-      expect(
-        moves(app.actionLog).map((entry) => [
-          entry.name,
-          (entry.payload as { amount?: number }).amount,
-          entry.queued,
-          entry.refused === undefined ? "applied" : "refused",
-        ])
-      ).toEqual([
-        ["Damage", 5, true, "applied"],
-        ["Damage", 500, true, "refused"],
-        ["Teleport", undefined, true, "refused"],
-        ["Damage", 2, true, "applied"],
-        ["Damage", 3, true, "refused"],
-      ]);
-      // The mark is the error's own message where it has one, and its name
-      // where it has none.
-      const invalid = Exit.findErrorOption(
-        app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
-      );
-      expect(moves(app.actionLog)[1]!.refused).toBe(
-        Option.getOrThrow(invalid as Option.Option<Error>).message
-      );
-      expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
-      expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
-      expect(moves(app.actionLog)[3]!.payload).toEqual({
-        target,
-        amount: 2,
-        seed: "9",
-      });
-    });
-  });
+        expect(exit).toEqual(Exit.succeed(46));
+        // The handler gets the value as given...
+        expect(received).toEqual([
+          { target, amount: 4, seed: 12_345_678_901_234_567_890n },
+        ]);
+        // ...and the log gets something JSON can hold.
+        expect(moves(app.actionLog)).toEqual([
+          {
+            tick: 0,
+            name: "Damage",
+            payload: { target, amount: 4, seed: "12345678901234567890" },
+          },
+        ]);
+        expect(() => JSON.stringify(app.actionLog)).not.toThrow();
 
-  it("are all defined with one: a payload's schema, or only a name", () => {
-    // @ts-expect-error an action's payload is given by a schema, not a type
-    void (() => Action.define<{ readonly name: string }>()("Typed"));
-    withApp(game, ({ app }) => {
-      const exit: Exit.Exit<string, Action.InvalidPayload> = app.dispatch(
-        Rename,
-        { name: "bob" }
-      );
-      expect(exit).toEqual(Exit.succeed("BOB"));
-      // By name, a wrong shape is refused before the handler sees it.
-      const wrong = failure(app.dispatchByName("Rename", { name: 42 }));
-      expect(wrong).toBeInstanceOf(Action.InvalidPayload);
+        // The failure type says a schema-defined action can be rejected as invalid.
+        const typed: Exit.Exit<number, NoSuchTarget | Action.InvalidPayload> =
+          exit;
+        void typed;
+      })
+    )
+  );
 
-      // An action with no payload is issued with nothing, logged as null, and
-      // taken by name as null.
-      resets.length = 0;
-      expect(Exit.isSuccess(app.dispatch(Reset, undefined))).toBe(true);
-      expect(Exit.isSuccess(app.dispatchByName("Reset", null))).toBe(true);
-      expect(failure(app.dispatchByName("Reset", { x: 1 }))).toBeInstanceOf(
-        Action.InvalidPayload
-      );
-      expect(resets).toEqual([undefined, undefined]);
-      expect(
-        moves(app.actionLog)
-          .filter((entry) => entry.name === "Reset")
-          .map((entry) => entry.payload)
-      ).toEqual([null, null]);
-    });
-  });
+  it.effect(
+    "reject a payload the compiler accepts but the schema does not",
+    () =>
+      withApp(game, ({ app, world, target }) =>
+        Effect.gen(function* () {
+          received.length = 0;
+          const exit = yield* Effect.exit(
+            app.dispatch(Damage, {
+              target,
+              amount: 999,
+              seed: 1n,
+            })
+          );
+          const error = failure(exit);
+          assert(error._tag === "InvalidPayload");
+          expect(error.action).toBe("Damage");
+          expect(error.message).toMatch(/amount/);
+          // The handler never ran, nothing changed, nothing was logged.
+          expect(received).toEqual([]);
+          expect(world.get(target, Health)).toEqual({ hp: 50 });
+          expect(moves(app.actionLog)).toEqual([]);
+        })
+      )
+  );
+
+  it.effect("validate and convert payloads that arrive as data", () =>
+    withApp(game, ({ app, target }) =>
+      Effect.gen(function* () {
+        received.length = 0;
+        const exit = yield* Effect.exit(
+          app.dispatchByName("Damage", {
+            target,
+            amount: 3,
+            seed: "77",
+            note: "from the network",
+          })
+        );
+        expect(exit).toEqual(Exit.succeed(47));
+        // Decoded for the handler: the seed is a bigint again.
+        expect(received).toEqual([
+          { target, amount: 3, seed: 77n, note: "from the network" },
+        ]);
+        expect(moves(app.actionLog)[0]!.payload).toEqual({
+          target,
+          amount: 3,
+          seed: "77",
+          note: "from the network",
+        });
+      })
+    )
+  );
+
+  it.effect("turn every kind of bad input into a failure, never a crash", () =>
+    withApp(game, ({ app, world, target }) =>
+      Effect.gen(function* () {
+        received.length = 0;
+        const bad: [label: string, payload: unknown][] = [
+          ["missing field", { target, amount: 3 }],
+          ["wrong type", { target, amount: "3", seed: "1" }],
+          ["out of range", { target, amount: 0, seed: "1" }],
+          ["not an integer", { target, amount: 2.5, seed: "1" }],
+          ["bad entity id", { target: -1, amount: 3, seed: "1" }],
+          ["fractional entity id", { target: 1.5, amount: 3, seed: "1" }],
+          ["unconvertible", { target, amount: 3, seed: "not a number" }],
+          ["null", null],
+          ["a string", "Damage"],
+          ["an array", [1, 2, 3]],
+          ["undefined", undefined],
+        ];
+        for (const [label, payload] of bad) {
+          const error = failure(
+            yield* Effect.exit(app.dispatchByName("Damage", payload))
+          );
+          assert(Schema.is(Action.InvalidPayload)(error), label);
+          expect(error.message.length, label).toBeGreaterThan(0);
+        }
+        expect(
+          failure(yield* Effect.exit(app.dispatchByName("Nope", {})))
+        ).toEqual(Action.UnknownAction.make({ action: "Nope" }));
+        expect(
+          failure(yield* Effect.exit(app.dispatchByName("constructor", {})))
+        ).toBeInstanceOf(Action.UnknownAction);
+
+        // A well-formed payload can still be refused by the rules.
+        const dead = entityOf(4000);
+        expect(
+          failure(
+            yield* Effect.exit(
+              app.dispatchByName("Damage", {
+                target: dead,
+                amount: 3,
+                seed: "1",
+              })
+            )
+          )
+        ).toEqual(NoSuchTarget.make({ target: dead }));
+
+        expect(received).toHaveLength(1); // only the last one reached the handler
+        expect(world.get(target, Health)).toEqual({ hp: 50 });
+        expect(moves(app.actionLog)).toEqual([]);
+      })
+    )
+  );
+
+  it.effect(
+    "report bad queued input as events, and refuse a payload with no JSON form where it is enqueued",
+    () =>
+      Effect.gen(function* () {
+        const rejected: string[] = [];
+        const events: (typeof Action.Rejected.codec)["Type"][] = [];
+        const Watch = System.tick("Watch", function* () {
+          for (const event of (yield* Action.Rejected).read()) {
+            rejected.push(`${event.action}: ${event.error._tag}`);
+            events.push(event);
+          }
+        });
+        const make = begin(
+          App.make(
+            App.define({
+              plugins: [Target],
+              systems: [Watch],
+              handlers: [damage],
+            })
+          )
+        );
+        yield* withApp(make, ({ app, world, target }) =>
+          Effect.gen(function* () {
+            yield* app.enqueueByName("Damage", {
+              target,
+              amount: 5,
+              seed: "9",
+            });
+            yield* app.enqueueByName("Damage", {
+              target,
+              amount: 500,
+              seed: "9",
+            });
+            yield* app.enqueueByName("Teleport", { x: 1 });
+            expect(
+              yield* Effect.exit(
+                app.enqueue(Damage, { target, amount: 2, seed: 9n })
+              )
+            ).toEqual(Exit.void);
+            // Refused by its handler: no such target.
+            yield* app.enqueue(Damage, {
+              target: entityOf(999),
+              amount: 3,
+              seed: 7n,
+            });
+            // A payload its schema refuses has no JSON form to log or send: it is
+            // refused where it is enqueued, and nothing is queued.
+            expect(
+              yield* Effect.exit(
+                app.enqueue(Damage, { target, amount: -2, seed: 9n })
+              )
+            ).toEqual(
+              Exit.fail(
+                Action.InvalidPayload.make({
+                  action: "Damage",
+                  message: 'Expected a value between 1 and 10\n  at ["amount"]',
+                })
+              )
+            );
+            yield* app.tick(1);
+            expect(world.get(target, Health)).toEqual({ hp: 43 });
+            expect(rejected).toEqual([
+              "Damage: InvalidPayload",
+              "Teleport: UnknownAction",
+              "Damage: NoSuchTarget",
+            ]);
+            // A refusal is data: the payload and the error in their JSON form. It
+            // is written down and read back as it was.
+            expect(events[2]).toEqual({
+              action: "Damage",
+              payload: { target: 999, amount: 3, seed: "7" },
+              error: { _tag: "NoSuchTarget", target: 999 },
+              from: undefined,
+            });
+            for (const event of events) {
+              const encoded = Event.encode(Action.Rejected, event);
+              assert(Exit.isSuccess(encoded));
+              const json: unknown = JSON.parse(JSON.stringify(encoded.value));
+              expect(Event.decode(Action.Rejected, json)).toEqual(
+                Exit.succeed(event)
+              );
+            }
+            // What was enqueued is in the log as it arrived, with what became of
+            // it.
+            expect(
+              moves(app.actionLog).map((entry) => [
+                entry.name,
+                (entry.payload as { amount?: number }).amount,
+                entry.queued,
+                entry.refused === undefined ? "applied" : "refused",
+              ])
+            ).toEqual([
+              ["Damage", 5, true, "applied"],
+              ["Damage", 500, true, "refused"],
+              ["Teleport", undefined, true, "refused"],
+              ["Damage", 2, true, "applied"],
+              ["Damage", 3, true, "refused"],
+            ]);
+            // The mark is the error's own message where it has one, and its name
+            // where it has none.
+            const invalid = Exit.findErrorOption(
+              yield* Effect.exit(
+                app.dispatchByName("Damage", { target, amount: 500, seed: "9" })
+              )
+            );
+            expect(moves(app.actionLog)[1]!.refused).toBe(
+              Option.getOrThrow(invalid as Option.Option<Error>).message
+            );
+            expect(moves(app.actionLog)[1]!.refused).toMatch(/amount/);
+            expect(moves(app.actionLog)[2]!.refused).toBe("UnknownAction");
+            expect(moves(app.actionLog)[3]!.payload).toEqual({
+              target,
+              amount: 2,
+              seed: "9",
+            });
+          })
+        );
+      })
+  );
+
+  it.effect(
+    "are all defined with one: a payload's schema, or only a name",
+    () =>
+      Effect.gen(function* () {
+        // @ts-expect-error an action's payload is given by a schema, not a type
+        void (() => Action.define<{ readonly name: string }>()("Typed"));
+        yield* withApp(game, ({ app }) =>
+          Effect.gen(function* () {
+            const exit: Exit.Exit<string, Action.InvalidPayload> =
+              yield* Effect.exit(app.dispatch(Rename, { name: "bob" }));
+            expect(exit).toEqual(Exit.succeed("BOB"));
+            // By name, a wrong shape is refused before the handler sees it.
+            const wrong = failure(
+              yield* Effect.exit(app.dispatchByName("Rename", { name: 42 }))
+            );
+            expect(wrong).toBeInstanceOf(Action.InvalidPayload);
+
+            // An action with no payload is issued with nothing, logged as null, and
+            // taken by name as null.
+            resets.length = 0;
+            expect(
+              Exit.isSuccess(yield* Effect.exit(app.dispatch(Reset, undefined)))
+            ).toBe(true);
+            expect(
+              Exit.isSuccess(
+                yield* Effect.exit(app.dispatchByName("Reset", null))
+              )
+            ).toBe(true);
+            expect(
+              failure(yield* Effect.exit(app.dispatchByName("Reset", { x: 1 })))
+            ).toBeInstanceOf(Action.InvalidPayload);
+            expect(resets).toEqual([undefined, undefined]);
+            expect(
+              moves(app.actionLog)
+                .filter((entry) => entry.name === "Reset")
+                .map((entry) => entry.payload)
+            ).toEqual([null, null]);
+          })
+        );
+      })
+  );
 
   it("check entity ids for shape", () => {
     const ok = Schema.decodeUnknownExit(EntityId);
@@ -357,36 +428,52 @@ describe("events with a schema", () => {
   /** No payload: only a name. */
   const Started = Event.define("sc/Started");
 
-  it("infer the payload type, and are emitted and read as ever, with no check", () => {
-    const seen: unknown[] = [];
-    const Emit = System.tick("Emit", function* () {
-      const hit = yield* Hit.emits;
-      // The payload is typed by the schema: a string here would not compile.
-      hit.emit({ target: entityOf(1), amount: 3, at: new Date(5), seed: 9n });
-      hit.emit({
-        target: entityOf(1),
-        // @ts-expect-error the schema says a whole number
-        amount: "three",
-        at: new Date(5),
-        seed: 9n,
-      });
-      // Out of the schema's range, which only the schema knows: emitting
-      // checks nothing, so that it stays a plain call inside a loop.
-      hit.emit({ target: entityOf(1), amount: 500, at: new Date(5), seed: 9n });
-    });
-    const Read = System.tick("Read", function* () {
-      for (const hit of (yield* Hit).read()) {
-        seen.push(hit.amount);
-      }
-    });
-    withApp(App.make(App.define({ systems: [Emit, Read] })), (app) => {
-      app.tick(1);
-      expect(seen).toEqual([3, "three", 500]);
-      expect(app.inspect().events["sc/Hit"]).toHaveLength(3);
-    });
-    expect(Hit.name).toBe("sc/Hit");
-    expect(Hit.codec).toBeDefined();
-  });
+  it.effect(
+    "infer the payload type, and are emitted and read as ever, with no check",
+    () =>
+      Effect.gen(function* () {
+        const seen: unknown[] = [];
+        const Emit = System.tick("Emit", function* () {
+          const hit = yield* Hit.emits;
+          // The payload is typed by the schema: a string here would not compile.
+          hit.emit({
+            target: entityOf(1),
+            amount: 3,
+            at: new Date(5),
+            seed: 9n,
+          });
+          hit.emit({
+            target: entityOf(1),
+            // @ts-expect-error the schema says a whole number
+            amount: "three",
+            at: new Date(5),
+            seed: 9n,
+          });
+          // Out of the schema's range, which only the schema knows: emitting
+          // checks nothing, so that it stays a plain call inside a loop.
+          hit.emit({
+            target: entityOf(1),
+            amount: 500,
+            at: new Date(5),
+            seed: 9n,
+          });
+        });
+        const Read = System.tick("Read", function* () {
+          for (const hit of (yield* Hit).read()) {
+            seen.push(hit.amount);
+          }
+        });
+        yield* withApp(App.make(App.define({ systems: [Emit, Read] })), (app) =>
+          Effect.gen(function* () {
+            yield* app.tick(1);
+            expect(seen).toEqual([3, "three", 500]);
+            expect((yield* app.inspect()).events["sc/Hit"]).toHaveLength(3);
+          })
+        );
+        expect(Hit.name).toBe("sc/Hit");
+        expect(Hit.codec).toBeDefined();
+      })
+  );
 
   it("are written as JSON and read back, checked against the schema", () => {
     const payload = {
@@ -441,47 +528,61 @@ describe("events with a schema", () => {
     expect(failure(Event.decode(Started, { n: 1 })).event).toBe("sc/Started");
   });
 
-  it("are known by name in an app: two different events with one name are refused", () => {
-    const Twin = Event.define("sc/Hit", Schema.Number);
-    const Both = System.tick("Both", function* () {
-      (yield* Hit.emits).emit({
-        target: entityOf(1),
-        amount: 1,
-        at: new Date(1),
-        seed: 1n,
-      });
-      (yield* Twin.emits).emit(1);
-    });
-    withApp(App.make(App.define({ systems: [Both] })), (app) => {
-      expect(() => app.tick(1)).toThrow(
-        /Two different events are both named "sc\/Hit"/
-      );
-    });
-    // Each on its own, in an app of its own, is fine.
-    const Alone = System.tick("Alone", function* () {
-      (yield* Twin.emits).emit(2);
-    });
-    const heard: number[] = [];
-    const Hear = System.tick("Hear", function* () {
-      heard.push(...(yield* Twin).read());
-    });
-    withApp(App.make(App.define({ systems: [Alone, Hear] })), (app) => {
-      app.tick(1);
-      expect(heard).toEqual([2]);
-    });
-    // An event that is only read is known by its name as well.
-    const Shout = System.tick("Shout", function* () {
-      (yield* Hit.emits).emit({
-        target: entityOf(1),
-        amount: 1,
-        at: new Date(1),
-        seed: 1n,
-      });
-    });
-    withApp(App.make(App.define({ systems: [Shout, Hear] })), (app) => {
-      expect(() => app.tick(1)).toThrow(/both named/);
-    });
-  });
+  it.effect(
+    "are known by name in an app: two different events with one name are refused",
+    () =>
+      Effect.gen(function* () {
+        const Twin = Event.define("sc/Hit", Schema.Number);
+        const Both = System.tick("Both", function* () {
+          (yield* Hit.emits).emit({
+            target: entityOf(1),
+            amount: 1,
+            at: new Date(1),
+            seed: 1n,
+          });
+          (yield* Twin.emits).emit(1);
+        });
+        yield* withApp(App.make(App.define({ systems: [Both] })), (app) =>
+          Effect.gen(function* () {
+            expect(yield* thrown(app.tick(1))).toThrow(
+              /Two different events are both named "sc\/Hit"/
+            );
+          })
+        );
+        // Each on its own, in an app of its own, is fine.
+        const Alone = System.tick("Alone", function* () {
+          (yield* Twin.emits).emit(2);
+        });
+        const heard: number[] = [];
+        const Hear = System.tick("Hear", function* () {
+          heard.push(...(yield* Twin).read());
+        });
+        yield* withApp(
+          App.make(App.define({ systems: [Alone, Hear] })),
+          (app) =>
+            Effect.gen(function* () {
+              yield* app.tick(1);
+              expect(heard).toEqual([2]);
+            })
+        );
+        // An event that is only read is known by its name as well.
+        const Shout = System.tick("Shout", function* () {
+          (yield* Hit.emits).emit({
+            target: entityOf(1),
+            amount: 1,
+            at: new Date(1),
+            seed: 1n,
+          });
+        });
+        yield* withApp(
+          App.make(App.define({ systems: [Shout, Hear] })),
+          (app) =>
+            Effect.gen(function* () {
+              expect(yield* thrown(app.tick(1))).toThrow(/both named/);
+            })
+        );
+      })
+  );
 });
 
 const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
@@ -492,21 +593,29 @@ const unwrap = <A, E>(exit: Exit.Exit<A, E>): A => {
 };
 
 describe("saving and replaying", () => {
-  const record = () =>
-    withApp(game, ({ app, world, target }) => {
-      app.dispatch(Damage, { target, amount: 4, seed: 1n });
-      app.tick(1);
-      app.enqueue(Damage, { target, amount: 10, seed: 2n, note: "big hit" });
-      app.tick(1);
-      app.tick(1);
-      app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
-      app.dispatch(Rename, { name: "x" });
-      app.tick(1);
-      return {
-        bytes: Journal.encode(app.record()),
-        hp: world.get(target, Health)!.hp,
-      };
-    });
+  const record = Effect.fnUntraced(function* () {
+    return yield* withApp(game, ({ app, world, target }) =>
+      Effect.gen(function* () {
+        yield* app.dispatch(Damage, { target, amount: 4, seed: 1n });
+        yield* app.tick(1);
+        yield* app.enqueue(Damage, {
+          target,
+          amount: 10,
+          seed: 2n,
+          note: "big hit",
+        });
+        yield* app.tick(1);
+        yield* app.tick(1);
+        yield* app.dispatchByName("Damage", { target, amount: 1, seed: "3" });
+        yield* app.dispatch(Rename, { name: "x" });
+        yield* app.tick(1);
+        return {
+          bytes: Journal.encode(yield* app.record()),
+          hp: world.get(target, Health)!.hp,
+        };
+      })
+    );
+  });
 
   /** A recording's fields as its bytes hold them, each checked on its own. */
   const Written = SchemaBinary.toCodec(Layout);
@@ -515,11 +624,14 @@ describe("saving and replaying", () => {
   /** Fields written as a recording's bytes, as a player edits a file. */
   const written = (fields: typeof Layout.Type) =>
     unwrap(Schema.encodeExit(Written)(fields));
-  const replayInto = (recording: Journal.Recording) =>
-    withApp(
+  const replayInto = Effect.fnUntraced(function* (
+    recording: Journal.Recording
+  ) {
+    return yield* withApp(
       begin(Journal.replay(recording, Game)),
-      ({ world, target }) => world.get(target, Health)!.hp
+      ({ world, target }) => Effect.sync(() => world.get(target, Health)!.hp)
     );
+  });
   /**
    * The recording in `bytes` with its log replaced by `log`, read back as a
    * player's edited file is: whatever the log says, the replay checks it.
@@ -543,112 +655,121 @@ describe("saving and replaying", () => {
     return { ...entry, payload: entry.payload };
   };
 
-  it("round-trips the recording through bytes and reproduces the game", () => {
-    const saved = record();
-    expect(saved.hp).toBe(35);
-    expect(saved.bytes).toBeInstanceOf(Uint8Array);
+  it.effect(
+    "round-trips the recording through bytes and reproduces the game",
+    () =>
+      Effect.gen(function* () {
+        const saved = yield* record();
+        expect(saved.hp).toBe(35);
+        expect(saved.bytes).toBeInstanceOf(Uint8Array);
 
-    const loaded = Journal.decode(saved.bytes);
-    expect(Exit.isSuccess(loaded)).toBe(true);
-    if (!Exit.isSuccess(loaded)) {
-      return;
-    }
-    expect(
-      moves(loaded.value.log).map((entry) => `${entry.tick}:${entry.name}`)
-    ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
-    expect(loaded.value).toMatchObject({
-      start: 0,
-      end: 4,
-      deltas: [{ tick: 0, delta: 1 }],
-    });
-    expect(replayInto(loaded.value)).toBe(saved.hp);
-  });
-
-  it("refuses bytes that are not a recording", () => {
-    /**
-     * A recording of nothing that begins after `ticks` ticks: it holds the
-     * save its game was at then.
-     */
-    const since = (ticks: number): Uint8Array<ArrayBuffer> =>
-      withApp(game, ({ app }) => {
-        for (let tick = 0; tick < ticks; tick++) {
-          app.tick(1);
+        const loaded = Journal.decode(saved.bytes);
+        expect(Exit.isSuccess(loaded)).toBe(true);
+        if (!Exit.isSuccess(loaded)) {
+          return;
         }
-        const save = app.save();
-        assert(Exit.isSuccess(save));
-        return Journal.encode(app.record(save.value));
+        expect(
+          moves(loaded.value.log).map((entry) => `${entry.tick}:${entry.name}`)
+        ).toEqual(["0:Damage", "1:Damage", "3:Damage", "3:Rename"]);
+        expect(loaded.value).toMatchObject({
+          start: 0,
+          end: 4,
+          deltas: [{ tick: 0, delta: 1 }],
+        });
+        expect(yield* replayInto(loaded.value)).toBe(saved.hp);
+      })
+  );
+
+  it.effect("refuses bytes that are not a recording", () =>
+    Effect.gen(function* () {
+      /**
+       * A recording of nothing that begins after `ticks` ticks: it holds the
+       * save its game was at then.
+       */
+      const since = Effect.fnUntraced(function* (ticks: number) {
+        return yield* withApp(game, ({ app }) =>
+          Effect.gen(function* () {
+            for (let tick = 0; tick < ticks; tick++) {
+              yield* app.tick(1);
+            }
+            const save = yield* Effect.exit(app.save());
+            assert(Exit.isSuccess(save));
+            return Journal.encode(yield* app.record(save.value));
+          })
+        );
       });
-    const valid = {
-      ...fieldsIn(since(1)),
-      start: 1,
-      end: 3,
-      deltas: [{ tick: 1, delta: 1 }],
-      log: [],
-    };
-    const AnyStart = SchemaBinary.toCodec(
-      Schema.Struct({ ...Layout.fields, start: Schema.Int })
-    );
-    const anyStart = (fields: typeof AnyStart.Type) =>
-      unwrap(Schema.encodeExit(AnyStart)(fields));
-    for (const [what, bytes] of [
-      ["text", new TextEncoder().encode("not a recording")],
-      ["nothing", new Uint8Array()],
-      ["noise", new Uint8Array([1, 2])],
-      // A log out of order, or outside the recording.
-      ["a log before it", written({ ...valid, log: [{ tick: 0, hash: 1 }] })],
-      ["a log after it", written({ ...valid, log: [{ tick: 4, hash: 1 }] })],
-      [
-        "a log out of order",
-        written({
-          ...valid,
-          log: [
-            { tick: 2, hash: 1 },
-            { tick: 1, hash: 1 },
-          ],
-        }),
-      ],
-      // A recording that ends before it begins, or at a tick that isn't one.
-      ["a start that is no tick", anyStart({ ...valid, start: -1 })],
-      ["an end before its start", written({ ...valid, end: 0 })],
-      // Runs of deltas that don't cover it, in order.
-      ["no deltas", written({ ...valid, deltas: [] })],
-      [
-        "deltas that begin late",
-        written({ ...valid, deltas: [{ tick: 2, delta: 1 }] }),
-      ],
-      [
-        "deltas of one tick twice",
-        written({
-          ...valid,
-          deltas: [
-            { tick: 1, delta: 1 },
-            { tick: 1, delta: 2 },
-          ],
-        }),
-      ],
-      [
-        "deltas past its end",
-        written({
-          ...valid,
-          deltas: [
-            { tick: 1, delta: 1 },
-            { tick: 3, delta: 2 },
-          ],
-        }),
-      ],
-    ] as const) {
-      expect(Exit.isFailure(Journal.decode(bytes)), what).toBe(true);
-    }
-    expect(Exit.isSuccess(Journal.decode(anyStart(valid)))).toBe(true);
-    expect(Exit.isSuccess(Journal.decode(written(valid)))).toBe(true);
-    expect(fieldsIn(since(4))).toMatchObject({
-      start: 4,
-      end: 4,
-      deltas: [],
-      log: [],
-    });
-    expect(Exit.isSuccess(Journal.decode(since(4)))).toBe(true);
-  });
+      const valid = {
+        ...fieldsIn(yield* since(1)),
+        start: 1,
+        end: 3,
+        deltas: [{ tick: 1, delta: 1 }],
+        log: [],
+      };
+      const AnyStart = SchemaBinary.toCodec(
+        Schema.Struct({ ...Layout.fields, start: Schema.Int })
+      );
+      const anyStart = (fields: typeof AnyStart.Type) =>
+        unwrap(Schema.encodeExit(AnyStart)(fields));
+      for (const [what, bytes] of [
+        ["text", new TextEncoder().encode("not a recording")],
+        ["nothing", new Uint8Array()],
+        ["noise", new Uint8Array([1, 2])],
+        // A log out of order, or outside the recording.
+        ["a log before it", written({ ...valid, log: [{ tick: 0, hash: 1 }] })],
+        ["a log after it", written({ ...valid, log: [{ tick: 4, hash: 1 }] })],
+        [
+          "a log out of order",
+          written({
+            ...valid,
+            log: [
+              { tick: 2, hash: 1 },
+              { tick: 1, hash: 1 },
+            ],
+          }),
+        ],
+        // A recording that ends before it begins, or at a tick that isn't one.
+        ["a start that is no tick", anyStart({ ...valid, start: -1 })],
+        ["an end before its start", written({ ...valid, end: 0 })],
+        // Runs of deltas that don't cover it, in order.
+        ["no deltas", written({ ...valid, deltas: [] })],
+        [
+          "deltas that begin late",
+          written({ ...valid, deltas: [{ tick: 2, delta: 1 }] }),
+        ],
+        [
+          "deltas of one tick twice",
+          written({
+            ...valid,
+            deltas: [
+              { tick: 1, delta: 1 },
+              { tick: 1, delta: 2 },
+            ],
+          }),
+        ],
+        [
+          "deltas past its end",
+          written({
+            ...valid,
+            deltas: [
+              { tick: 1, delta: 1 },
+              { tick: 3, delta: 2 },
+            ],
+          }),
+        ],
+      ] as const) {
+        expect(Exit.isFailure(Journal.decode(bytes)), what).toBe(true);
+      }
+      expect(Exit.isSuccess(Journal.decode(anyStart(valid)))).toBe(true);
+      expect(Exit.isSuccess(Journal.decode(written(valid)))).toBe(true);
+      expect(fieldsIn(yield* since(4))).toMatchObject({
+        start: 4,
+        end: 4,
+        deltas: [],
+        log: [],
+      });
+      expect(Exit.isSuccess(Journal.decode(yield* since(4)))).toBe(true);
+    })
+  );
 
   it("writes a message and a recording in the same bytes as before", () => {
     // Bytes written once, so a change to how either is laid out, an upgrade
@@ -690,61 +811,60 @@ describe("saving and replaying", () => {
     expect(hex(Journal.encode(recording.value))).toBe(recordingBytes);
   });
 
-  it("stops a replay at the first entry that no longer applies", () => {
-    const saved = record();
-    // Entry 0 is the checkpoint of the state the game started from; the four
-    // actions follow it.
-    const { log } = fieldsIn(saved.bytes);
-    expect(
-      log.map((entry) =>
-        Action.isCheckpoint(entry) ? "checkpoint" : entry.name
-      )
-    ).toEqual(["checkpoint", "Damage", "Damage", "Damage", "Rename"]);
+  it.effect("stops a replay at the first entry that no longer applies", () =>
+    Effect.gen(function* () {
+      const saved = yield* record();
+      // Entry 0 is the checkpoint of the state the game started from; the four
+      // actions follow it.
+      const { log } = fieldsIn(saved.bytes);
+      expect(
+        log.map((entry) =>
+          Action.isCheckpoint(entry) ? "checkpoint" : entry.name
+        )
+      ).toEqual(["checkpoint", "Damage", "Damage", "Damage", "Rename"]);
 
-    // An edited save file: a hit far above what the schema allows.
-    const hit = actionAt(log, 2);
-    const edited = log.with(2, {
-      ...hit,
-      payload: { ...hit.payload, amount: 9999 },
-    });
-    let caught: unknown;
-    try {
-      replayInto(withLog(saved.bytes, edited));
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(Journal.ReplayDiverged);
-    expect((caught as Journal.ReplayDiverged).index).toBe(2);
-    expect((caught as Journal.ReplayDiverged).tick).toBe(1);
-    // It was enqueued, so the replay enqueues it too, and stops after the
-    // tick in which its own rules refused what the game had accepted.
-    expect((caught as Journal.ReplayDiverged).reason).toMatch(/amount/);
-    expect((caught as Error).message).toMatch(
-      /Log entry 2 \("Damage" at tick 1\) was refused on replay/
-    );
+      // An edited save file: a hit far above what the schema allows.
+      const hit = actionAt(log, 2);
+      const edited = log.with(2, {
+        ...hit,
+        payload: { ...hit.payload, amount: 9999 },
+      });
+      const caught = yield* Effect.flip(
+        replayInto(withLog(saved.bytes, edited))
+      );
+      assert(caught instanceof Journal.ReplayDiverged, "the replay diverged");
+      expect(caught.index).toBe(2);
+      expect(caught.tick).toBe(1);
+      // It was enqueued, so the replay enqueues it too, and stops after the
+      // tick in which its own rules refused what the game had accepted.
+      expect(caught.reason).toMatch(/amount/);
+      expect(caught.message).toMatch(
+        /Log entry 2 \("Damage" at tick 1\) was refused on replay/
+      );
 
-    // An action this build of the game does not have.
-    const renamed = log.with(1, { ...actionAt(log, 1), name: "Smite" });
-    expect(() => replayInto(withLog(saved.bytes, renamed))).toThrow(
-      /Log entry 1 \("Smite" at tick 0\)/
-    );
+      // An action this build of the game does not have.
+      const renamed = log.with(1, { ...actionAt(log, 1), name: "Smite" });
+      expect(yield* thrown(replayInto(withLog(saved.bytes, renamed)))).toThrow(
+        /Log entry 1 \("Smite" at tick 0\)/
+      );
 
-    // Valid entries the rules refuse: the target is not in this game.
-    const struck = actionAt(log, 3);
-    const retargeted = log.with(3, {
-      ...struck,
-      payload: { ...struck.payload, target: 4000 },
-    });
-    expect(() => replayInto(withLog(saved.bytes, retargeted))).toThrow(
-      /Log entry 3/
-    );
+      // Valid entries the rules refuse: the target is not in this game.
+      const struck = actionAt(log, 3);
+      const retargeted = log.with(3, {
+        ...struck,
+        payload: { ...struck.payload, target: 4000 },
+      });
+      expect(
+        yield* thrown(replayInto(withLog(saved.bytes, retargeted)))
+      ).toThrow(/Log entry 3/);
 
-    // An entry past the recording's end is refused before any replay.
-    const late = log.with(4, { ...actionAt(log, 4), tick: 99 });
-    expect(
-      Exit.isFailure(
-        Journal.decode(written({ ...fieldsIn(saved.bytes), log: late }))
-      )
-    ).toBe(true);
-  });
+      // An entry past the recording's end is refused before any replay.
+      const late = log.with(4, { ...actionAt(log, 4), tick: 99 });
+      expect(
+        Exit.isFailure(
+          Journal.decode(written({ ...fieldsIn(saved.bytes), log: late }))
+        )
+      ).toBe(true);
+    })
+  );
 });

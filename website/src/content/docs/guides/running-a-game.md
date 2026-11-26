@@ -24,8 +24,10 @@ Browser.runMain(
     seed: Date.now(),
     hz: 60,
     ready: (app) =>
-      Effect.sync(() => {
-        button.onclick = () => app.enqueue(NewGame, {});
+      Effect.gen(function* () {
+        // A click comes from outside any Effect: it runs what it asks for.
+        const runFork = Effect.runForkWith(yield* Effect.context());
+        button.onclick = () => runFork(app.enqueue(NewGame, {}));
       }),
   }),
   { target: canvas, preventDefault: ["Space", "ArrowUp", "ArrowDown"] }
@@ -37,7 +39,7 @@ Browser.runMain(
 - The game, which `App.define` makes from its plugins, systems, and handlers. It is the same every time it is played.
 - How this run of it starts: a `seed` for a new game, or a `save` to continue one, among its options as `App.make` takes them.
 
-On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame throws, it closes the app. Its options:
+On each repaint, it runs the ticks that are due at `hz`, then the frame stage. It never completes on its own. When it is interrupted, or a tick or a frame fails, it closes the app. Its options:
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -65,7 +67,7 @@ The loop keeps to these rules:
 - The first frame draws the game as it is and runs no tick. The loop counts time from it.
 - While the tab is hidden, the loop requests no frames, and the hidden time doesn't count. When the tab returns, the game resumes where it was.
 - After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
-- If a tick or a frame throws, the loop stops and the program dies with the thrown error.
+- If a tick or a frame fails, the loop stops and the program fails with what it failed with: what the game's systems fail with, which a program catches by its tag. A defect, such as a call made where it may not be, kills it.
 
 To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because the app hands it [the view bridge](ui.md).
 
@@ -73,7 +75,7 @@ Given a `save`, the app resumes from it instead of starting fresh. Making it can
 
 Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in a scope of its own, and `Sound.plugin` opens the page's sound there too. The app lets go of both when it is closed.
 
-Use `Effect.runSync` and `Effect.runPromise` only in tests. Inside a program, yield an Effect instead of running it.
+Inside a program, and in a test, yield an Effect instead of running it. Each method of an app returns an Effect. Only a callback that runs outside any Effect, such as a button's, runs one, with what `Effect.runForkWith` makes of where it was wired, as `ready` does above.
 
 ## Run a game under a Content Security Policy
 
@@ -151,18 +153,18 @@ const program = Effect.gen(function* () {
     App.make(App.define({ plugins: [Game] })),
     (made) => made.close
   );
-  app.input(); // the input stage: reads the devices and the UI
-  app.tick(1 / 60); // one tick
-  app.frame(1, 1 / 60); // the frame stage: alpha, then real seconds
+  yield* app.input(); // the input stage: reads the devices and the UI
+  yield* app.tick(1 / 60); // one tick
+  yield* app.frame(1, 1 / 60); // the frame stage: alpha, then real seconds
 
   const advance = Driver.fixedStep(app, { hz: 60 });
-  advance(0.5); // thirty ticks, then the frame stage
+  yield* advance(0.5); // thirty ticks, then the frame stage
 }).pipe(Effect.scoped);
 ```
 
 An app has a scope of its own. It opens the devices, the sound, and what its plugins' layers acquire there, and `app.close` lets go of them. Close an app you step when you are done with it. Held with `Effect.acquireRelease`, as above, it is closed with the program's scope. An app that is never closed holds what it opened until the program ends.
 
-- A tick reads no device. Call `app.input()` before each tick that should receive the devices and the UI, as a driver does. A tool that re-runs a game from its log skips that call, because the log already holds what the devices reported. See [replays](replays.md).
+- A tick reads no device. Run `app.input()` before each tick that should receive the devices and the UI, as a driver does. A tool that re-runs a game from its log skips that step, because the log already holds what the devices reported. See [replays](replays.md).
 - No driver ticks an app that you step. When its UI sends something, run a tick.
 
 A program that makes its app itself can run `Driver.frames(app, { hz })`, the loop that `Driver.run` uses. `Driver.interval(app, { hz })` steps the same way on a timer. Neither closes the app, which belongs to the program. Each stops when the fiber that runs it is interrupted. One started with `Effect.forkScoped` stops when its scope closes, and leaves no frame requested.

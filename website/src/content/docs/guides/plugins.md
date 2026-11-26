@@ -55,7 +55,7 @@ const Game = Plugin.make("game/Game", {
 
 const program = Effect.gen(function* () {
   const app = yield* App.make(App.define({ plugins: [Game] }));
-  app.tick(1 / 60);
+  yield* app.tick(1 / 60);
 });
 ```
 

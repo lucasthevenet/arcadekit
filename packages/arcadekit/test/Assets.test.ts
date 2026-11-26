@@ -1,3 +1,4 @@
+import { afterEach, assert, describe, expect, it, vi } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -11,7 +12,6 @@ import {
   Schema,
   Scope,
 } from "effect";
-import { afterEach, assert, describe, expect, it, vi } from "vitest";
 
 import {
   Action,
@@ -72,10 +72,12 @@ const files = {
   "/notes.txt": "héllo",
 };
 
-/** The loader `Assets.layerMemory` makes of `files`. */
-const memory = Effect.runSync(
-  Effect.provide(Effect.service(Assets.Loader), Assets.layerMemory(files))
-);
+/** A file of `files`, as the loader `Assets.layerMemory` makes of them reads it. */
+const fromMemory = (url: string) =>
+  Effect.service(Assets.Loader).pipe(
+    Effect.flatMap((loader) => loader.bytes(url)),
+    Effect.provide(Assets.layerMemory(files))
+  );
 
 /** A loader whose files arrive when the test says so. */
 const makeSlowLoader = () => {
@@ -172,89 +174,89 @@ describe("an asset", () => {
     vi.unstubAllGlobals();
   });
 
-  it("is loaded into a scope, and let go when the scope closes", async () => {
-    const log: string[] = [];
-    const Forest = Assets.bundle("as/Forest", {
-      backdrop: tracked("/forest.png", log),
-      layout: Assets.json("/forest.json", Layout),
-      notes: Assets.text("/notes.txt"),
-      raw: Assets.bytes("/cave.png"),
-    });
-    const scope = Scope.makeUnsafe();
-    const loaded = await Effect.runPromise(
-      Assets.load(Forest).pipe(
+  it.effect("is loaded into a scope, and let go when the scope closes", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const Forest = Assets.bundle("as/Forest", {
+        backdrop: tracked("/forest.png", log),
+        layout: Assets.json("/forest.json", Layout),
+        notes: Assets.text("/notes.txt"),
+        raw: Assets.bytes("/cave.png"),
+      });
+      const scope = Scope.makeUnsafe();
+      const loaded = yield* Assets.load(Forest).pipe(
         Scope.provide(scope),
         Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    expect(loaded).toEqual({
-      backdrop: { at: "/forest.png", size: 3 },
-      layout: { walls: 3, name: "Forest" },
-      notes: "héllo",
-      raw: new Uint8Array([4, 5]),
-    });
-    // The compiler knows what each is.
-    const walls: number = loaded.layout.walls;
-    const notes: string = loaded.notes;
-    void [walls, notes];
-    expect(log).toEqual(["open /forest.png"]);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+      );
+      expect(loaded).toEqual({
+        backdrop: { at: "/forest.png", size: 3 },
+        layout: { walls: 3, name: "Forest" },
+        notes: "héllo",
+        raw: new Uint8Array([4, 5]),
+      });
+      // The compiler knows what each is.
+      const walls: number = loaded.layout.walls;
+      const notes: string = loaded.notes;
+      void [walls, notes];
+      expect(log).toEqual(["open /forest.png"]);
+      yield* Scope.close(scope, Exit.void);
+      expect(log).toEqual(["open /forest.png", "close /forest.png"]);
 
-    // With Effect.scoped, the scope is the block.
-    log.length = 0;
-    const size = await Effect.runPromise(
-      Effect.scoped(
+      // With Effect.scoped, the scope is the block.
+      log.length = 0;
+      const size = yield* Effect.scoped(
         Effect.gen(function* () {
           const { backdrop } = yield* Assets.load(Forest);
           expect(log).toEqual(["open /forest.png"]);
           return backdrop.size;
         })
-      ).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-    expect(size).toBe(3);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-  });
+      ).pipe(Effect.provide(Assets.layerMemory(files)));
+      expect(size).toBe(3);
+      expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    })
+  );
 
-  it("fails with the asset that could not be loaded, and what the others made is let go with the scope", async () => {
-    const log: string[] = [];
-    const Broken = Assets.bundle("as/Broken", {
-      backdrop: tracked("/forest.png", log),
-      missing: tracked("/nowhere.png", log),
-    });
-    const exit = await Effect.runPromise(
-      Effect.exit(Effect.scoped(Assets.load(Broken))).pipe(
-        Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    const error = Cause.squash((exit as Exit.Failure<never, unknown>).cause);
-    expectFailed(error, "/nowhere.png", "There is no such file.");
-    // Nothing that was made is left.
-    expect(log.filter((line) => line.startsWith("open")).length).toBe(
-      log.filter((line) => line.startsWith("close")).length
-    );
-    expect(log.includes("open /nowhere.png")).toBe(false);
-    // A file is one that was given, not a word every object knows.
-    const inherited = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Assets.load(
-            Assets.bundle("as/Odd", { file: Assets.bytes("toString") })
+  it.effect(
+    "fails with the asset that could not be loaded, and what the others made is let go with the scope",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Broken = Assets.bundle("as/Broken", {
+          backdrop: tracked("/forest.png", log),
+          missing: tracked("/nowhere.png", log),
+        });
+        const exit = yield* Effect.exit(
+          Effect.scoped(Assets.load(Broken))
+        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        expect(Exit.isFailure(exit)).toBe(true);
+        const error = Cause.squash(
+          (exit as Exit.Failure<never, unknown>).cause
+        );
+        expectFailed(error, "/nowhere.png", "There is no such file.");
+        // Nothing that was made is left.
+        expect(log.filter((line) => line.startsWith("open")).length).toBe(
+          log.filter((line) => line.startsWith("close")).length
+        );
+        expect(log.includes("open /nowhere.png")).toBe(false);
+        // A file is one that was given, not a word every object knows.
+        const inherited = yield* Effect.exit(
+          Effect.scoped(
+            Assets.load(
+              Assets.bundle("as/Odd", { file: Assets.bytes("toString") })
+            )
           )
-        )
-      ).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-    expectFailed(
-      Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
-      "toString",
-      "There is no such file."
-    );
-  });
+        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        expectFailed(
+          Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
+          "toString",
+          "There is no such file."
+        );
+      })
+  );
 
-  it("is checked against its schema, since it comes from outside", async () => {
-    const tryLoad = (file: string | Uint8Array) =>
-      Effect.runPromise(
+  it.effect("is checked against its schema, since it comes from outside", () =>
+    Effect.gen(function* () {
+      const tryLoad = (file: string | Uint8Array) =>
         Effect.exit(
           Effect.scoped(
             Assets.load(
@@ -263,28 +265,26 @@ describe("an asset", () => {
               })
             )
           )
-        ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })))
+        ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })));
+      const failure = Effect.fnUntraced(function* (file: string | Uint8Array) {
+        const exit = yield* tryLoad(file);
+        expect(Exit.isFailure(exit)).toBe(true);
+        return Option.getOrThrow(Exit.findErrorOption(exit));
+      });
+      expect(yield* tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
+        Exit.succeed({ layout: { walls: 2, name: "Ok" } })
       );
-    const failure = async (file: string | Uint8Array) => {
-      const exit = await tryLoad(file);
-      expect(Exit.isFailure(exit)).toBe(true);
-      return Option.getOrThrow(Exit.findErrorOption(exit));
-    };
-    expect(await tryLoad('{"walls":2,"name":"Ok"}')).toEqual(
-      Exit.succeed({ layout: { walls: 2, name: "Ok" } })
-    );
-    const notJson = await failure("<html>");
-    expect(notJson).toBeInstanceOf(Assets.AssetFailed);
-    expect(notJson.url).toBe("/layout.json");
-    expect(notJson.message).toMatch(/^It is not JSON/);
-    const wrongShape = await failure('{"walls":-1,"name":"Bad"}');
-    expect(wrongShape).toBeInstanceOf(Assets.AssetFailed);
-    expect(wrongShape.url).toBe("/layout.json");
-    expect(wrongShape.message).not.toMatch(/^It is not JSON/);
-    expect((await failure('{"walls":2}')).url).toBe("/layout.json");
-    // Text has to be text.
-    const exit = await Effect.runPromise(
-      Effect.exit(
+      const notJson = yield* failure("<html>");
+      expect(notJson).toBeInstanceOf(Assets.AssetFailed);
+      expect(notJson.url).toBe("/layout.json");
+      expect(notJson.message).toMatch(/^It is not JSON/);
+      const wrongShape = yield* failure('{"walls":-1,"name":"Bad"}');
+      expect(wrongShape).toBeInstanceOf(Assets.AssetFailed);
+      expect(wrongShape.url).toBe("/layout.json");
+      expect(wrongShape.message).not.toMatch(/^It is not JSON/);
+      expect((yield* failure('{"walls":2}')).url).toBe("/layout.json");
+      // Text has to be text.
+      const exit = yield* Effect.exit(
         Effect.scoped(
           Assets.load(
             Assets.bundle("as/Text", { notes: Assets.text("/notes.txt") })
@@ -294,343 +294,365 @@ describe("an asset", () => {
         Effect.provide(
           Assets.layerMemory({ "/notes.txt": new Uint8Array([0xff, 0xfe]) })
         )
-      )
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(Option.getOrThrow(Exit.findErrorOption(exit)).message).toMatch(
-      /^It is not text/
-    );
-  });
-
-  it("comes by fetch unless told otherwise, and an interrupted load gives the request up", async () => {
-    const requests: { url: string; signal: AbortSignal }[] = [];
-    const answers = new Map<string, () => Response>([
-      ["/notes.txt", () => new Response("fetched")],
-      [
-        "/gone.txt",
-        () => new Response("no", { status: 404, statusText: "Not Found" }),
-      ],
-      ["/busy.txt", () => new Response("later", { status: 503 })],
-      [
-        "/cut.txt",
-        () =>
-          new Response(
-            new ReadableStream({
-              pull: (controller) => controller.error(new Error("reset")),
-            })
-          ),
-      ],
-    ]);
-    // A page asks for a file by its path, from where the page is.
-    vi.stubGlobal("location", new URL("https://game.test/play/"));
-    vi.stubGlobal("fetch", (asked: URL, init: { signal: AbortSignal }) => {
-      const url = asked.pathname;
-      requests.push({ url, signal: init.signal });
-      const answer = answers.get(url);
-      return answer === undefined
-        ? new Promise<Response>((_resolve, reject) => {
-            init.signal.addEventListener("abort", () =>
-              reject(new Error("aborted"))
-            );
-          })
-        : Promise.resolve(answer());
-    });
-    const one = (url: string) =>
-      Effect.scoped(
-        Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
       );
-    expect(await Effect.runPromise(one("/notes.txt"))).toEqual({
-      file: "fetched",
-    });
-    const gone = await Effect.runPromiseExit(one("/gone.txt"));
-    expectFailed(
-      Cause.squash((gone as Exit.Failure<never, unknown>).cause),
-      "/gone.txt",
-      "The server answered 404"
-    );
-    // A server that failed may answer the next time, which one that said no
-    // won't.
-    const busy = await Effect.runPromiseExit(one("/busy.txt"));
-    expect(Cause.squash((busy as Exit.Failure<never, unknown>).cause)).toEqual(
-      new Assets.AssetFailed({
-        url: "/busy.txt",
-        message: "The server answered 503",
-        transient: true,
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(Option.getOrThrow(Exit.findErrorOption(exit)).message).toMatch(
+        /^It is not text/
+      );
+    })
+  );
+
+  it.effect(
+    "comes by fetch unless told otherwise, and an interrupted load gives the request up",
+    () =>
+      Effect.gen(function* () {
+        const requests: { url: string; signal: AbortSignal }[] = [];
+        const answers = new Map<string, () => Response>([
+          ["/notes.txt", () => new Response("fetched")],
+          [
+            "/gone.txt",
+            () => new Response("no", { status: 404, statusText: "Not Found" }),
+          ],
+          ["/busy.txt", () => new Response("later", { status: 503 })],
+          [
+            "/cut.txt",
+            () =>
+              new Response(
+                new ReadableStream({
+                  pull: (controller) => controller.error(new Error("reset")),
+                })
+              ),
+          ],
+        ]);
+        // A page asks for a file by its path, from where the page is.
+        vi.stubGlobal("location", new URL("https://game.test/play/"));
+        vi.stubGlobal("fetch", (asked: URL, init: { signal: AbortSignal }) => {
+          const url = asked.pathname;
+          requests.push({ url, signal: init.signal });
+          const answer = answers.get(url);
+          return answer === undefined
+            ? new Promise<Response>((_resolve, reject) => {
+                init.signal.addEventListener("abort", () =>
+                  reject(new Error("aborted"))
+                );
+              })
+            : Promise.resolve(answer());
+        });
+        const one = (url: string) =>
+          Effect.scoped(
+            Assets.load(Assets.bundle("as/Fetched", { file: Assets.text(url) }))
+          );
+        expect(yield* one("/notes.txt")).toEqual({
+          file: "fetched",
+        });
+        const gone = yield* Effect.exit(one("/gone.txt"));
+        expectFailed(
+          Cause.squash((gone as Exit.Failure<never, unknown>).cause),
+          "/gone.txt",
+          "The server answered 404"
+        );
+        // A server that failed may answer the next time, which one that said no
+        // won't.
+        const busy = yield* Effect.exit(one("/busy.txt"));
+        expect(
+          Cause.squash((busy as Exit.Failure<never, unknown>).cause)
+        ).toEqual(
+          new Assets.AssetFailed({
+            url: "/busy.txt",
+            message: "The server answered 503",
+            transient: true,
+          })
+        );
+        // So may a file whose download was cut off.
+        const cut = yield* Effect.exit(one("/cut.txt"));
+        expect(Option.getOrThrow(Exit.findErrorOption(cut)).transient).toBe(
+          true
+        );
+        // A request that never answers, and a load that is interrupted.
+        const fiber = yield* Effect.forkChild(one("/slow.txt"), {
+          startImmediately: true,
+        });
+        yield* Effect.promise(() => settle());
+        expect(requests.at(-1)!.url).toBe("/slow.txt");
+        expect(requests.at(-1)!.signal.aborted).toBe(false);
+        fiber.interruptUnsafe();
+        yield* Effect.promise(() => settle());
+        expect(requests.at(-1)!.signal.aborted).toBe(true);
       })
-    );
-    // So may a file whose download was cut off.
-    const cut = await Effect.runPromiseExit(one("/cut.txt"));
-    expect(Option.getOrThrow(Exit.findErrorOption(cut)).transient).toBe(true);
-    // A request that never answers, and a load that is interrupted.
-    const fiber = Effect.runFork(one("/slow.txt"));
-    await settle();
-    expect(requests.at(-1)!.url).toBe("/slow.txt");
-    expect(requests.at(-1)!.signal.aborted).toBe(false);
-    fiber.interruptUnsafe();
-    await settle();
-    expect(requests.at(-1)!.signal.aborted).toBe(true);
-  });
+  );
 });
 
 describe("a level's assets", () => {
-  it("are loaded when the level starts, and freed when the game leaves it", async () => {
-    const { Game, Go, drawn, log } = makeGame();
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const app = yield* Effect.acquireRelease(
-            App.make(App.define({ plugins: [Game] })),
-            (made) => made.close
-          );
-          const frame = (): string => {
-            app.frame();
-            return drawn.at(-1)!;
-          };
-          app.tick(1);
-          expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual([]);
-
-          // The game enters the forest: its assets are loaded.
-          app.dispatch(Go, { to: "forest" });
-          expect(frame()).toBe("menu: forest Absent, cave Absent");
-          app.tick(1);
-          expect(frame()).toBe(
-            "forest: forest Ready (Forest, 3 bytes), cave Absent"
-          );
-          expect(log).toEqual(["open /forest.png"]);
-          // They stay for as long as it does, loaded once.
-          app.tick(1);
-          frame();
-          frame();
-          expect(log).toEqual(["open /forest.png"]);
-
-          // It leaves for the cave: the forest's are freed, the cave's loaded.
-          app.dispatch(Go, { to: "cave" });
-          app.tick(1);
-          expect(frame()).toBe("cave: forest Absent, cave Ready");
-          expect(log).toEqual([
-            "open /forest.png",
-            "close /forest.png",
-            "open /cave.png",
-          ]);
-
-          // Back to the menu: nothing is left loaded.
-          app.dispatch(Go, { to: "menu" });
-          app.tick(1);
-          expect(frame()).toBe("menu: forest Absent, cave Absent");
-          expect(log).toEqual([
-            "open /forest.png",
-            "close /forest.png",
-            "open /cave.png",
-            "close /cave.png",
-          ]);
-
-          // And a level entered again is loaded again.
-          app.dispatch(Go, { to: "forest" });
-          app.tick(1);
-          expect(frame()).toBe(
-            "forest: forest Ready (Forest, 3 bytes), cave Absent"
-          );
-          expect(log.at(-1)).toBe("open /forest.png");
-        })
-      ).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-    // The program's scope has closed the app: what was still loaded went
-    // with it.
-    expect(log.at(-1)).toBe("close /forest.png");
-    expect(log.filter((line) => line.startsWith("open")).length).toBe(
-      log.filter((line) => line.startsWith("close")).length
-    );
-  });
-
-  it("are there, or gone, for every system of the frame they come or go in, wherever the system that keeps them is listed", async () => {
-    const log: string[] = [];
-    const Level = State.define("as/Order", ["menu", "forest"]);
-    const Forest = Assets.bundle("as/Ordered", {
-      backdrop: tracked("/forest.png", log),
-    });
-    const seen: string[] = [];
-    const Draw = System.frame("Draw", function* () {
-      seen.push((yield* Forest)._tag);
-    });
-    const Keep = Assets.during(State.is(Level, "forest"), Forest);
-    const Visit = Action.define(
-      "as/Visit",
-      Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
-    );
-    const visit = Action.handler(Visit, function* ({ to }) {
-      (yield* Level.sets).set(to);
-    });
-    // It is of the stage before a frame's own.
-    expect(Keep.stage).toBe("preFrame");
-    await Effect.runPromise(
+  it.effect(
+    "are loaded when the level starts, and freed when the game leaves it",
+    () =>
       Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({
-            plugins: [Assets.plugin], // Listed after what draws with the bundle.
-            systems: [Draw, Keep],
-            handlers: [visit],
+        const { Game, Go, drawn, log } = makeGame();
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const app = yield* Effect.acquireRelease(
+              App.make(App.define({ plugins: [Game] })),
+              (made) => made.close
+            );
+            const frame = Effect.fnUntraced(function* () {
+              yield* app.frame();
+              return drawn.at(-1)!;
+            });
+            yield* app.tick(1);
+            expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+            expect(log).toEqual([]);
+
+            // The game enters the forest: its assets are loaded.
+            yield* app.dispatch(Go, { to: "forest" });
+            expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+            yield* app.tick(1);
+            expect(yield* frame()).toBe(
+              "forest: forest Ready (Forest, 3 bytes), cave Absent"
+            );
+            expect(log).toEqual(["open /forest.png"]);
+            // They stay for as long as it does, loaded once.
+            yield* app.tick(1);
+            yield* frame();
+            yield* frame();
+            expect(log).toEqual(["open /forest.png"]);
+
+            // It leaves for the cave: the forest's are freed, the cave's loaded.
+            yield* app.dispatch(Go, { to: "cave" });
+            yield* app.tick(1);
+            expect(yield* frame()).toBe("cave: forest Absent, cave Ready");
+            expect(log).toEqual([
+              "open /forest.png",
+              "close /forest.png",
+              "open /cave.png",
+            ]);
+
+            // Back to the menu: nothing is left loaded.
+            yield* app.dispatch(Go, { to: "menu" });
+            yield* app.tick(1);
+            expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+            expect(log).toEqual([
+              "open /forest.png",
+              "close /forest.png",
+              "open /cave.png",
+              "close /cave.png",
+            ]);
+
+            // And a level entered again is loaded again.
+            yield* app.dispatch(Go, { to: "forest" });
+            yield* app.tick(1);
+            expect(yield* frame()).toBe(
+              "forest: forest Ready (Forest, 3 bytes), cave Absent"
+            );
+            expect(log.at(-1)).toBe("open /forest.png");
           })
+        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        // The program's scope has closed the app: what was still loaded went
+        // with it.
+        expect(log.at(-1)).toBe("close /forest.png");
+        expect(log.filter((line) => line.startsWith("open")).length).toBe(
+          log.filter((line) => line.startsWith("close")).length
         );
-        expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
-        const go = (to: "menu" | "forest") =>
-          Effect.sync(() => {
-            app.dispatch(Visit, { to });
-            app.tick(1);
-            app.frame();
+      })
+  );
+
+  it.effect(
+    "are there, or gone, for every system of the frame they come or go in, wherever the system that keeps them is listed",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Level = State.define("as/Order", ["menu", "forest"]);
+        const Forest = Assets.bundle("as/Ordered", {
+          backdrop: tracked("/forest.png", log),
+        });
+        const seen: string[] = [];
+        const Draw = System.frame("Draw", function* () {
+          seen.push((yield* Forest)._tag);
+        });
+        const Keep = Assets.during(State.is(Level, "forest"), Forest);
+        const Visit = Action.define(
+          "as/Visit",
+          Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
+        );
+        const visit = Action.handler(Visit, function* ({ to }) {
+          (yield* Level.sets).set(to);
+        });
+        // It is of the stage before a frame's own.
+        expect(Keep.stage).toBe("preFrame");
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({
+              plugins: [Assets.plugin], // Listed after what draws with the bundle.
+              systems: [Draw, Keep],
+              handlers: [visit],
+            })
+          );
+          expect(app.frameOrder).toEqual(["Assets.during(as/Ordered)", "Draw"]);
+          const go = (to: "menu" | "forest") =>
+            Effect.gen(function* () {
+              yield* app.dispatch(Visit, { to });
+              yield* app.tick(1);
+              yield* app.frame();
+            });
+          yield* app.frame();
+          yield* go("forest");
+          yield* go("menu");
+          expect(seen).toEqual(["Absent", "Ready", "Absent"]);
+          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+        }).pipe(Effect.provide(Assets.layerMemory(files)));
+      })
+  );
+
+  it.effect(
+    "take the time they take, and are given up if the game leaves first",
+    () =>
+      Effect.gen(function* () {
+        const { Game, Go, drawn, log } = makeGame();
+        const slow = makeSlowLoader();
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(App.define({ plugins: [Game] }));
+          const frame = Effect.fnUntraced(function* () {
+            yield* app.frame();
+            return drawn.at(-1)!;
           });
-        app.frame();
-        yield* go("forest");
-        yield* go("menu");
-        expect(seen).toEqual(["Absent", "Ready", "Absent"]);
-        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-      }).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-  });
+          yield* app.dispatch(Go, { to: "forest" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("forest: forest Loading, cave Absent");
+          expect(slow.asked.toSorted()).toEqual([
+            "/forest.json",
+            "/forest.png",
+          ]);
+          // The game goes on while they load.
+          yield* app.tick(1);
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("forest: forest Loading, cave Absent");
+          slow.waiting.get("/forest.png")!.arrive(new Uint8Array(7));
+          yield* Effect.promise(settle);
+          expect(yield* frame()).toBe("forest: forest Loading, cave Absent");
+          slow.waiting
+            .get("/forest.json")!
+            .arrive(new TextEncoder().encode('{"walls":1,"name":"Slow"}'));
+          yield* Effect.promise(settle);
+          expect(yield* frame()).toBe(
+            "forest: forest Ready (Slow, 7 bytes), cave Absent"
+          );
+          expect(slow.asked.length).toBe(2);
 
-  it("take the time they take, and are given up if the game leaves first", async () => {
-    const { Game, Go, drawn, log } = makeGame();
-    const slow = makeSlowLoader();
-    await Effect.runPromise(
+          // The cave starts loading, and the game leaves before it has.
+          yield* app.dispatch(Go, { to: "cave" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("cave: forest Absent, cave Loading");
+          yield* app.dispatch(Go, { to: "menu" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+          yield* Effect.promise(settle);
+          expect(slow.givenUp).toEqual(["/cave.png"]);
+          // Arriving late, it is nobody's.
+          slow.waiting.get("/cave.png")!.arrive(new Uint8Array(1));
+          yield* Effect.promise(settle);
+          expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+        }).pipe(Effect.provideService(Assets.Loader, slow.loader));
+      })
+  );
+
+  it.effect(
+    "say so when they cannot be loaded, keep nothing of what did load, and are tried again",
+    () =>
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ plugins: [Game] }));
-        const frame = (): string => {
-          app.frame();
-          return drawn.at(-1)!;
-        };
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        expect(frame()).toBe("forest: forest Loading, cave Absent");
-        expect(slow.asked.toSorted()).toEqual(["/forest.json", "/forest.png"]);
-        // The game goes on while they load.
-        app.tick(1);
-        app.tick(1);
-        expect(frame()).toBe("forest: forest Loading, cave Absent");
-        slow.waiting.get("/forest.png")!.arrive(new Uint8Array(7));
-        yield* Effect.promise(settle);
-        expect(frame()).toBe("forest: forest Loading, cave Absent");
-        slow.waiting
-          .get("/forest.json")!
-          .arrive(new TextEncoder().encode('{"walls":1,"name":"Slow"}'));
-        yield* Effect.promise(settle);
-        expect(frame()).toBe(
-          "forest: forest Ready (Slow, 7 bytes), cave Absent"
+        const { Forest, Game, Go, drawn, log } = makeGame();
+        const slow = makeSlowLoader();
+        const logged: unknown[] = [];
+        const errors: Assets.AssetFailed[] = [];
+        const Peek = System.frame("Peek", function* () {
+          const forest = yield* Forest;
+          if (forest._tag === "Failed") {
+            errors.push(forest.error);
+          }
+        });
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({ plugins: [Game], systems: [Peek] })
+          );
+          const frame = Effect.fnUntraced(function* () {
+            yield* app.frame();
+            return drawn.at(-1)!;
+          });
+          yield* app.dispatch(Go, { to: "forest" });
+          yield* app.tick(1);
+          yield* frame();
+          slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
+          yield* Effect.promise(settle);
+          expect(log).toEqual(["open /forest.png"]);
+          slow.waiting.get("/forest.json")!.fail("The disk is full.");
+          yield* Effect.promise(settle);
+          expect(yield* frame()).toBe("forest: forest Failed, cave Absent");
+          expectFailed(errors.at(-1), "/forest.json", "The disk is full.");
+          // The picture that did load is let go at once.
+          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+          // It is said once, through the app's loggers.
+          expect(logged.length).toBe(1);
+          expect(String(logged[0])).toMatch(
+            /The assets "as\/Forest" could not be loaded/
+          );
+          // It stays failed, and is not asked for again while the level lasts.
+          yield* frame();
+          yield* frame();
+          expect(slow.asked.length).toBe(2);
+          // Left and entered again, it is tried again.
+          yield* app.dispatch(Go, { to: "menu" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+          yield* app.dispatch(Go, { to: "forest" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("forest: forest Loading, cave Absent");
+          expect(slow.asked.length).toBe(4);
+        }).pipe(
+          Effect.provideService(Assets.Loader, slow.loader),
+          Effect.provide(
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.message);
+              }),
+            ])
+          )
         );
-        expect(slow.asked.length).toBe(2);
+      })
+  );
 
-        // The cave starts loading, and the game leaves before it has.
-        app.dispatch(Go, { to: "cave" });
-        app.tick(1);
-        expect(frame()).toBe("cave: forest Absent, cave Loading");
-        app.dispatch(Go, { to: "menu" });
-        app.tick(1);
-        expect(frame()).toBe("menu: forest Absent, cave Absent");
-        yield* Effect.promise(settle);
-        expect(slow.givenUp).toEqual(["/cave.png"]);
-        // Arriving late, it is nobody's.
-        slow.waiting.get("/cave.png")!.arrive(new Uint8Array(1));
-        yield* Effect.promise(settle);
-        expect(frame()).toBe("menu: forest Absent, cave Absent");
-        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-      }).pipe(Effect.provideService(Assets.Loader, slow.loader))
-    );
-  });
-
-  it("say so when they cannot be loaded, keep nothing of what did load, and are tried again", async () => {
-    const { Forest, Game, Go, drawn, log } = makeGame();
-    const slow = makeSlowLoader();
-    const logged: unknown[] = [];
-    const errors: Assets.AssetFailed[] = [];
-    const Peek = System.frame("Peek", function* () {
-      const forest = yield* Forest;
-      if (forest._tag === "Failed") {
-        errors.push(forest.error);
-      }
-    });
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [Game], systems: [Peek] })
-        );
-        const frame = (): string => {
-          app.frame();
-          return drawn.at(-1)!;
-        };
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        frame();
-        slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
-        yield* Effect.promise(settle);
-        expect(log).toEqual(["open /forest.png"]);
-        slow.waiting.get("/forest.json")!.fail("The disk is full.");
-        yield* Effect.promise(settle);
-        expect(frame()).toBe("forest: forest Failed, cave Absent");
-        expectFailed(errors.at(-1), "/forest.json", "The disk is full.");
-        // The picture that did load is let go at once.
-        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-        // It is said once, through the app's loggers.
-        expect(logged.length).toBe(1);
-        expect(String(logged[0])).toMatch(
-          /The assets "as\/Forest" could not be loaded/
-        );
-        // It stays failed, and is not asked for again while the level lasts.
-        frame();
-        frame();
-        expect(slow.asked.length).toBe(2);
-        // Left and entered again, it is tried again.
-        app.dispatch(Go, { to: "menu" });
-        app.tick(1);
-        expect(frame()).toBe("menu: forest Absent, cave Absent");
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        expect(frame()).toBe("forest: forest Loading, cave Absent");
-        expect(slow.asked.length).toBe(4);
-      }).pipe(
-        Effect.provideService(Assets.Loader, slow.loader),
-        Effect.provide(
-          Logger.layer([
-            Logger.make((options) => {
-              logged.push(options.message);
-            }),
-          ])
-        )
-      )
-    );
-  });
-
-  it("go with the app when it is closed, loaded or still loading", async () => {
-    const { Game, Go, log } = makeGame();
-    const slow = makeSlowLoader();
-    const app = await Effect.runPromise(
-      App.make(App.define({ plugins: [Game] })).pipe(
+  it.effect("go with the app when it is closed, loaded or still loading", () =>
+    Effect.gen(function* () {
+      const { Game, Go, log } = makeGame();
+      const slow = makeSlowLoader();
+      const app = yield* App.make(App.define({ plugins: [Game] })).pipe(
         Effect.provideService(Assets.Loader, slow.loader)
-      )
-    );
-    app.dispatch(Go, { to: "forest" });
-    app.tick(1);
-    app.frame();
-    slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
-    await settle();
-    expect(log).toEqual(["open /forest.png"]);
-    expect(slow.givenUp).toEqual([]);
-    await Effect.runPromise(app.close);
-    // The file that had not arrived is given up, and the one that had is let go.
-    expect(slow.givenUp).toEqual(["/forest.json"]);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-  });
+      );
+      yield* app.dispatch(Go, { to: "forest" });
+      yield* app.tick(1);
+      yield* app.frame();
+      slow.waiting.get("/forest.png")!.arrive(new Uint8Array(2));
+      yield* Effect.promise(() => settle());
+      expect(log).toEqual(["open /forest.png"]);
+      expect(slow.givenUp).toEqual([]);
+      yield* app.close;
+      // The file that had not arrived is given up, and the one that had is let go.
+      expect(slow.givenUp).toEqual(["/forest.json"]);
+      expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+    })
+  );
 
-  it("are no part of the simulation: a game that never draws loads nothing and is the same game", async () => {
-    const drawnGame = makeGame();
-    const bare = makeGame();
-    let asked = 0;
-    const counting: Assets.LoaderShape = {
-      bytes: () => {
-        asked++;
-        return Effect.succeed(new Uint8Array(1));
-      },
-    };
-    await Effect.runPromise(
+  it.effect(
+    "are no part of the simulation: a game that never draws loads nothing and is the same game",
+    () =>
       Effect.gen(function* () {
+        const drawnGame = makeGame();
+        const bare = makeGame();
+        let asked = 0;
+        const counting: Assets.LoaderShape = {
+          bytes: () => {
+            asked++;
+            return Effect.succeed(new Uint8Array(1));
+          },
+        };
         const seen = yield* App.make(
           App.define({ plugins: [drawnGame.Game] }),
           { checkpointEvery: 1 }
@@ -639,11 +661,11 @@ describe("a level's assets", () => {
           checkpointEvery: 1,
         }).pipe(Effect.provideService(Assets.Loader, counting));
         for (const to of ["forest", "cave", "menu"] as const) {
-          seen.dispatch(drawnGame.Go, { to });
-          unseen.dispatch(bare.Go, { to });
-          seen.tick(1);
-          seen.frame();
-          unseen.tick(1);
+          yield* seen.dispatch(drawnGame.Go, { to });
+          yield* unseen.dispatch(bare.Go, { to });
+          yield* seen.tick(1);
+          yield* seen.frame();
+          yield* unseen.tick(1);
           expect((yield* seen.read(World)).hash()).toBe(
             (yield* unseen.read(World)).hash()
           );
@@ -652,7 +674,7 @@ describe("a level's assets", () => {
         expect(bare.log).toEqual([]);
         expect(drawnGame.log.length).toBe(4);
         // The log of one replays in the other, which has no files.
-        const played = seen.record();
+        const played = yield* seen.record();
         const again = yield* Journal.replay(
           played,
           App.define({ plugins: [bare.Game] }),
@@ -663,215 +685,218 @@ describe("a level's assets", () => {
         );
         expect(asked).toBe(0);
       })
-    );
-  });
+  );
 
-  it("are loaded with none of the game's own services: nothing a loader draws or reaches is the world's", async () => {
-    const drawnGame = makeGame();
-    const bare = makeGame();
-    const reached: string[] = [];
-    const services = {
-      World,
-      Time,
-      Frame,
-      Commands,
-      Events,
-      Random,
-      Actions: Action.Actions,
-      Devices: Input.Devices,
-    };
-    // A loader that draws random numbers, as one that waits a random while
-    // before it tries again does, and looks for what the app provides.
-    const loader: Assets.LoaderShape = {
-      bytes: () =>
-        Effect.gen(function* () {
-          yield* EffectRandom.next;
-          for (const [name, key] of Object.entries(services)) {
-            const found = yield* Effect.serviceOption(
-              key as Context.Key<unknown, unknown>
-            );
-            if (Option.isSome(found)) {
-              reached.push(name);
-            }
-          }
-          yield* Effect.promise(settle);
-          yield* EffectRandom.next;
-          return new TextEncoder().encode('{"walls":1,"name":"Drawn"}');
-        }),
-    };
-    await Effect.runPromise(
+  it.effect(
+    "are loaded with none of the game's own services: nothing a loader draws or reaches is the world's",
+    () =>
       Effect.gen(function* () {
-        const seen = yield* App.make(
-          App.define({ plugins: [drawnGame.Game] }),
-          { seed: 3 }
-        );
-        const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
-          seed: 3,
-        });
-        for (const app of [seen, unseen]) {
-          app.dispatch(app === seen ? drawnGame.Go : bare.Go, {
-            to: "forest",
-          });
-          app.tick(1);
-        }
-        // The loader draws at once, while the frame stage is running:
-        // not from the world, which is frozen and would say so.
-        seen.frame();
-        yield* Effect.promise(settle);
-        yield* Effect.promise(settle);
-        seen.frame();
-        expect(drawnGame.drawn.at(-1)).toBe(
-          "forest: forest Ready (Drawn, 26 bytes), cave Absent"
-        );
-        expect(reached).toEqual([]);
-        // The game that loaded is the game that did not, its random
-        // numbers among the rest.
-        const seenWorld = yield* seen.read(World);
-        const unseenWorld = yield* unseen.read(World);
-        expect(seenWorld.hash()).toBe(unseenWorld.hash());
-        seen.tick(1);
-        unseen.tick(1);
-        expect(seenWorld.hash()).toBe(unseenWorld.hash());
-      }).pipe(Effect.provideService(Assets.Loader, loader))
-    );
-  });
-
-  it("cannot be asked for in the tick, where a replay would have nothing to say", () => {
-    const { Forest, Game } = makeGame();
-    // Nor loaded by any system: the only scope there is the app's, which
-    // would keep what each frame loaded until the app closed.
-    System.tick(
-      "Reload",
-      // @ts-expect-error a tick has no scope
-      function* () {
-        yield* Assets.load(Forest);
-      }
-    );
-    System.frame(
-      "Reload",
-      // @ts-expect-error a frame has no scope
-      function* () {
-        yield* Assets.load(Forest);
-      }
-    );
-    System.input(
-      "Reload",
-      // @ts-expect-error an input system has no scope
-      function* () {
-        yield* Assets.load(Forest);
-      }
-    );
-    System.tick(
-      "Cheat",
-      // @ts-expect-error assets are real time
-      function* () {
-        yield* Forest;
-      }
-    );
-    System.tick(
-      "Sneak",
-      // @ts-expect-error the store of assets is real time
-      function* () {
-        yield* Assets.Store;
-      }
-    );
-    Effect.runSync(
-      Effect.gen(function* () {
-        // The input stage may ask, as the frame stage may.
-        let status = "";
-        const Ask = System.input("Ask", function* () {
-          status = (yield* Forest)._tag;
-        });
-        const asking = yield* App.make(
-          App.define({ plugins: [Game], systems: [Ask] })
-        );
-        asking.input();
-        expect(status).toBe("Absent");
-      }).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-  });
-
-  it("reach the game as an action, issued once they are there, which a replay has without the file", async () => {
-    const Wall = Component.define("as/Wall", { at: Field.i32 });
-    const Built = Singleton.define(
-      "as/Built",
-      { level: Field.json<string>() },
-      { level: "" }
-    );
-    const Level = State.define("as/Stage", ["menu", "forest"]);
-    const Forest = Assets.bundle("as/ForestLayout", {
-      layout: Assets.json("/forest.json", Layout),
-    });
-    const Enter = Action.define("as/Enter", Schema.Struct({}));
-    const Build = Action.define("as/Build", Layout);
-    const handlers = [
-      Action.handler(Enter, function* () {
-        (yield* Level.sets).set("forest");
-      }),
-      Action.handler(Build, function* ({ name, walls }) {
-        const commands = yield* Commands.spawns(Wall);
-        for (let at = 0; at < walls; at++) {
-          commands.spawn(Wall.of({ at }));
-        }
-        (yield* Built.writes).level = name;
-      }),
-    ] as const;
-    // What comes from a file comes in as an action, once the file is there.
-    const Begin = System.input("Begin", function* () {
-      const forest = yield* Forest;
-      if (forest._tag === "Ready" && (yield* Built).level === "") {
-        (yield* Action.Actions).enqueue(Build, forest.assets.layout);
-      }
-    });
-    const Rules = Plugin.make("Rules", {
-      handlers,
-    });
-    const Shown = Plugin.make("Shown", {
-      plugins: [Rules, Assets.plugin],
-      systems: [Assets.during(State.is(Level, "forest"), Forest), Begin],
-    });
-    const slow = makeSlowLoader();
-    const { hash, recording } = await Effect.runPromise(
-      Effect.gen(function* () {
-        const app = yield* App.make(App.define({ plugins: [Shown] }), {
-          checkpointEvery: 1,
-        });
-        const step = Driver.fixedStep(app, { hz: 10 });
-        step(0.1);
-        app.dispatch(Enter, {});
-        step(0.1);
-        step(0.1);
-        expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
-        slow.waiting
-          .get("/forest.json")!
-          .arrive(new TextEncoder().encode('{"walls":4,"name":"Forest"}'));
-        yield* Effect.promise(settle);
-        step(0.1);
-        expect((yield* app.read(Query.all(Wall))).count()).toBe(4);
-        step(0.1);
-        step(0.1);
-        // Issued once.
-        expect(
-          app.actionLog.filter(
-            (entry) => !Action.isCheckpoint(entry) && entry.name === "as/Build"
-          )
-        ).toEqual([
-          {
-            tick: 3,
-            name: "as/Build",
-            payload: { walls: 4, name: "Forest" },
-            queued: true,
-          },
-        ]);
-        return {
-          hash: (yield* app.read(World)).hash(),
-          recording: app.record(),
+        const drawnGame = makeGame();
+        const bare = makeGame();
+        const reached: string[] = [];
+        const services = {
+          World,
+          Time,
+          Frame,
+          Commands,
+          Events,
+          Random,
+          Actions: Action.Actions,
+          Devices: Input.Devices,
         };
-      }).pipe(Effect.provideService(Assets.Loader, slow.loader))
-    );
-    // The replay has the rules and nothing that loads or draws.
-    Effect.runSync(
+        // A loader that draws random numbers, as one that waits a random while
+        // before it tries again does, and looks for what the app provides.
+        const loader: Assets.LoaderShape = {
+          bytes: () =>
+            Effect.gen(function* () {
+              yield* EffectRandom.next;
+              for (const [name, key] of Object.entries(services)) {
+                const found = yield* Effect.serviceOption(
+                  key as Context.Key<unknown, unknown>
+                );
+                if (Option.isSome(found)) {
+                  reached.push(name);
+                }
+              }
+              yield* Effect.promise(settle);
+              yield* EffectRandom.next;
+              return new TextEncoder().encode('{"walls":1,"name":"Drawn"}');
+            }),
+        };
+        yield* Effect.gen(function* () {
+          const seen = yield* App.make(
+            App.define({ plugins: [drawnGame.Game] }),
+            { seed: 3 }
+          );
+          const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
+            seed: 3,
+          });
+          for (const app of [seen, unseen]) {
+            yield* app.dispatch(app === seen ? drawnGame.Go : bare.Go, {
+              to: "forest",
+            });
+            yield* app.tick(1);
+          }
+          // The loader draws at once, while the frame stage is running:
+          // not from the world, which is frozen and would say so.
+          yield* seen.frame();
+          yield* Effect.promise(settle);
+          yield* Effect.promise(settle);
+          yield* seen.frame();
+          expect(drawnGame.drawn.at(-1)).toBe(
+            "forest: forest Ready (Drawn, 26 bytes), cave Absent"
+          );
+          expect(reached).toEqual([]);
+          // The game that loaded is the game that did not, its random
+          // numbers among the rest.
+          const seenWorld = yield* seen.read(World);
+          const unseenWorld = yield* unseen.read(World);
+          expect(seenWorld.hash()).toBe(unseenWorld.hash());
+          yield* seen.tick(1);
+          yield* unseen.tick(1);
+          expect(seenWorld.hash()).toBe(unseenWorld.hash());
+        }).pipe(Effect.provideService(Assets.Loader, loader));
+      })
+  );
+
+  it.effect(
+    "cannot be asked for in the tick, where a replay would have nothing to say",
+    () =>
       Effect.gen(function* () {
+        const { Forest, Game } = makeGame();
+        // Nor loaded by any system: the only scope there is the app's, which
+        // would keep what each frame loaded until the app closed.
+        System.tick(
+          "Reload",
+          // @ts-expect-error a tick has no scope
+          function* () {
+            yield* Assets.load(Forest);
+          }
+        );
+        System.frame(
+          "Reload",
+          // @ts-expect-error a frame has no scope
+          function* () {
+            yield* Assets.load(Forest);
+          }
+        );
+        System.input(
+          "Reload",
+          // @ts-expect-error an input system has no scope
+          function* () {
+            yield* Assets.load(Forest);
+          }
+        );
+        System.tick(
+          "Cheat",
+          // @ts-expect-error assets are real time
+          function* () {
+            yield* Forest;
+          }
+        );
+        System.tick(
+          "Sneak",
+          // @ts-expect-error the store of assets is real time
+          function* () {
+            yield* Assets.Store;
+          }
+        );
+        yield* Effect.gen(function* () {
+          // The input stage may ask, as the frame stage may.
+          let status = "";
+          const Ask = System.input("Ask", function* () {
+            status = (yield* Forest)._tag;
+          });
+          const asking = yield* App.make(
+            App.define({ plugins: [Game], systems: [Ask] })
+          );
+          yield* asking.input();
+          expect(status).toBe("Absent");
+        }).pipe(Effect.provide(Assets.layerMemory(files)));
+      })
+  );
+
+  it.effect(
+    "reach the game as an action, issued once they are there, which a replay has without the file",
+    () =>
+      Effect.gen(function* () {
+        const Wall = Component.define("as/Wall", { at: Field.i32 });
+        const Built = Singleton.define(
+          "as/Built",
+          { level: Field.json<string>() },
+          { level: "" }
+        );
+        const Level = State.define("as/Stage", ["menu", "forest"]);
+        const Forest = Assets.bundle("as/ForestLayout", {
+          layout: Assets.json("/forest.json", Layout),
+        });
+        const Enter = Action.define("as/Enter", Schema.Struct({}));
+        const Build = Action.define("as/Build", Layout);
+        const handlers = [
+          Action.handler(Enter, function* () {
+            (yield* Level.sets).set("forest");
+          }),
+          Action.handler(Build, function* ({ name, walls }) {
+            const commands = yield* Commands.spawns(Wall);
+            for (let at = 0; at < walls; at++) {
+              commands.spawn(Wall.of({ at }));
+            }
+            (yield* Built.writes).level = name;
+          }),
+        ] as const;
+        // What comes from a file comes in as an action, once the file is there.
+        const Begin = System.input("Begin", function* () {
+          const forest = yield* Forest;
+          if (forest._tag === "Ready" && (yield* Built).level === "") {
+            (yield* Action.Actions).enqueue(Build, forest.assets.layout);
+          }
+        });
+        const Rules = Plugin.make("Rules", {
+          handlers,
+        });
+        const Shown = Plugin.make("Shown", {
+          plugins: [Rules, Assets.plugin],
+          systems: [Assets.during(State.is(Level, "forest"), Forest), Begin],
+        });
+        const slow = makeSlowLoader();
+        const { hash, recording } = yield* Effect.gen(function* () {
+          const app = yield* App.make(App.define({ plugins: [Shown] }), {
+            checkpointEvery: 1,
+          });
+          const step = Driver.fixedStep(app, { hz: 10 });
+          yield* step(0.1);
+          yield* app.dispatch(Enter, {});
+          yield* step(0.1);
+          yield* step(0.1);
+          expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
+          slow.waiting
+            .get("/forest.json")!
+            .arrive(new TextEncoder().encode('{"walls":4,"name":"Forest"}'));
+          yield* Effect.promise(settle);
+          yield* step(0.1);
+          expect((yield* app.read(Query.all(Wall))).count()).toBe(4);
+          yield* step(0.1);
+          yield* step(0.1);
+          // Issued once.
+          expect(
+            app.actionLog.filter(
+              (entry) =>
+                !Action.isCheckpoint(entry) && entry.name === "as/Build"
+            )
+          ).toEqual([
+            {
+              tick: 3,
+              name: "as/Build",
+              payload: { walls: 4, name: "Forest" },
+              queued: true,
+            },
+          ]);
+          return {
+            hash: (yield* app.read(World)).hash(),
+            recording: yield* app.record(),
+          };
+        }).pipe(Effect.provideService(Assets.Loader, slow.loader));
+        // The replay has the rules and nothing that loads or draws.
         const again = yield* Journal.replay(
           recording,
           App.define({ plugins: [Rules] }),
@@ -880,151 +905,156 @@ describe("a level's assets", () => {
         expect((yield* again.read(World)).hash()).toBe(hash);
         expect((yield* again.read(Query.all(Wall))).count()).toBe(4);
       })
-    );
-  });
+  );
 
-  it("are there again in a game that is loaded from a save", async () => {
-    const { Game, Go, drawn, log } = makeGame();
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("are there again in a game that is loaded from a save", () =>
+    Effect.gen(function* () {
+      const { Game, Go, drawn, log } = makeGame();
+      yield* Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Game] }));
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        app.frame();
-        const save = app.save();
+        yield* app.dispatch(Go, { to: "forest" });
+        yield* app.tick(1);
+        yield* app.frame();
+        const save = yield* Effect.exit(app.save());
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({ plugins: [Game] }), {
           save: save.value,
         });
         drawn.length = 0;
-        loaded.frame();
+        yield* loaded.frame();
         expect(drawn).toEqual([
           "forest: forest Ready (Forest, 3 bytes), cave Absent",
         ]);
         // Each app holds its own.
         expect(log).toEqual(["open /forest.png", "open /forest.png"]);
-      }).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-  });
+      }).pipe(Effect.provide(Assets.layerMemory(files)));
+    })
+  );
 
-  it("are kept by one system per bundle, whose condition may hold in several states", async () => {
-    const { Forest, Game, Go, Level } = makeGame();
-    await Effect.runPromise(
+  it.effect(
+    "are kept by one system per bundle, whose condition may hold in several states",
+    () =>
       Effect.gen(function* () {
-        // A second system for the same bundle is refused by its name.
-        const twice = yield* Effect.exit(
-          App.make(
+        const { Forest, Game, Go, Level } = makeGame();
+        yield* Effect.gen(function* () {
+          // A second system for the same bundle is refused by its name.
+          const twice = yield* Effect.exit(
+            App.make(
+              App.define({
+                plugins: [Game],
+                systems: [Assets.during(State.is(Level, "menu"), Forest)],
+              })
+            )
+          );
+          expect(Exit.isFailure(twice)).toBe(true);
+          const duplicate = Result.getOrThrow(Exit.findDefect(twice));
+          assert.instanceOf(duplicate, Error);
+          expect(duplicate.message).toMatch(
+            /Duplicate system name "Assets\.during\(as\/Forest\)"/
+          );
+          // Kept for two states by one condition that holds in both.
+          const log: string[] = [];
+          const Shared = Assets.bundle("as/Shared", {
+            font: tracked("/cave.png", log),
+          });
+          const app = yield* App.make(
             App.define({
               plugins: [Game],
-              systems: [Assets.during(State.is(Level, "menu"), Forest)],
+              systems: [
+                Assets.during(State.is(Level, "forest", "cave"), Shared),
+              ],
             })
-          )
-        );
-        expect(Exit.isFailure(twice)).toBe(true);
-        const duplicate = Result.getOrThrow(Exit.findDefect(twice));
-        assert.instanceOf(duplicate, Error);
-        expect(duplicate.message).toMatch(
-          /Duplicate system name "Assets\.during\(as\/Forest\)"/
-        );
-        // Kept for two states by one condition that holds in both.
-        const log: string[] = [];
-        const Shared = Assets.bundle("as/Shared", {
-          font: tracked("/cave.png", log),
+          );
+          for (const to of ["forest", "cave", "forest"] as const) {
+            yield* app.dispatch(Go, { to });
+            yield* app.tick(1);
+            yield* app.frame();
+          }
+          expect(log).toEqual(["open /cave.png"]);
+          yield* app.dispatch(Go, { to: "menu" });
+          yield* app.tick(1);
+          yield* app.frame();
+          expect(log).toEqual(["open /cave.png", "close /cave.png"]);
+        }).pipe(Effect.provide(Assets.layerMemory(files)));
+      })
+  );
+
+  it.effect(
+    "stay while anyone holds them: a system of the game's own can keep a bundle the level has left",
+    () =>
+      Effect.gen(function* () {
+        const { Forest, Game, Go, drawn, log } = makeGame();
+        let keep = false;
+        // Holds the forest while it is told to, whatever the level.
+        const Keep = System.frame("Keep", function* () {
+          const store = yield* Assets.Store;
+          if (keep) {
+            store.hold(Forest, "Keep");
+          } else {
+            store.drop(Forest, "Keep");
+          }
         });
-        const app = yield* App.make(
-          App.define({
-            plugins: [Game],
-            systems: [Assets.during(State.is(Level, "forest", "cave"), Shared)],
-          })
-        );
-        for (const to of ["forest", "cave", "forest"] as const) {
-          app.dispatch(Go, { to });
-          app.tick(1);
-          app.frame();
-        }
-        expect(log).toEqual(["open /cave.png"]);
-        app.dispatch(Go, { to: "menu" });
-        app.tick(1);
-        app.frame();
-        expect(log).toEqual(["open /cave.png", "close /cave.png"]);
-      }).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-  });
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({ plugins: [Game], systems: [Keep] })
+          );
+          const frame = Effect.fnUntraced(function* () {
+            yield* app.frame();
+            return drawn.at(-1)!;
+          });
+          // Nobody holds it, and dropping what is not held does nothing.
+          yield* frame();
+          yield* frame();
+          expect(log).toEqual([]);
+          yield* app.dispatch(Go, { to: "forest" });
+          yield* app.tick(1);
+          yield* frame();
+          keep = true;
+          yield* frame();
+          // Held twice, loaded once.
+          expect(log).toEqual(["open /forest.png"]);
+          yield* app.dispatch(Go, { to: "menu" });
+          yield* app.tick(1);
+          yield* frame();
+          yield* frame();
+          // The level has left it, and it is still held.
+          expect(yield* frame()).toBe(
+            "menu: forest Ready (Forest, 3 bytes), cave Absent"
+          );
+          expect(log).toEqual(["open /forest.png"]);
+          keep = false;
+          // The frame that drops it has it still; it is gone by the next.
+          yield* frame();
+          expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
+          expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+        }).pipe(Effect.provide(Assets.layerMemory(files)));
+      })
+  );
 
-  it("stay while anyone holds them: a system of the game's own can keep a bundle the level has left", async () => {
-    const { Forest, Game, Go, drawn, log } = makeGame();
-    let keep = false;
-    // Holds the forest while it is told to, whatever the level.
-    const Keep = System.frame("Keep", function* () {
-      const store = yield* Assets.Store;
-      if (keep) {
-        store.hold(Forest, "Keep");
-      } else {
-        store.drop(Forest, "Keep");
-      }
-    });
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const app = yield* App.make(
-          App.define({ plugins: [Game], systems: [Keep] })
-        );
-        const frame = (): string => {
-          app.frame();
-          return drawn.at(-1)!;
-        };
-        // Nobody holds it, and dropping what is not held does nothing.
-        frame();
-        frame();
-        expect(log).toEqual([]);
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        frame();
-        keep = true;
-        frame();
-        // Held twice, loaded once.
-        expect(log).toEqual(["open /forest.png"]);
-        app.dispatch(Go, { to: "menu" });
-        app.tick(1);
-        frame();
-        frame();
-        // The level has left it, and it is still held.
-        expect(frame()).toBe(
-          "menu: forest Ready (Forest, 3 bytes), cave Absent"
-        );
-        expect(log).toEqual(["open /forest.png"]);
-        keep = false;
-        // The frame that drops it has it still; it is gone by the next.
-        frame();
-        expect(frame()).toBe("menu: forest Absent, cave Absent");
-        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-      }).pipe(Effect.provide(Assets.layerMemory(files)))
-    );
-  });
-
-  it("fetch a file once for every bundle that names it", async () => {
-    const log: string[] = [];
-    const asked: string[] = [];
-    const Level = State.define("as/Shared", ["menu", "forest"]);
-    const Forest = Assets.bundle("as/Forest", {
-      backdrop: tracked("/forest.png", log),
-    });
-    const Raw = Assets.bundle("as/Raw", {
-      backdrop: Assets.bytes("/forest.png"),
-    });
-    const seen: string[] = [];
-    const Look = System.frame("Look", function* () {
-      seen.push(`${(yield* Forest)._tag} ${(yield* Raw)._tag}`);
-    });
-    const Enter = Action.define("as/EnterShared", Schema.Struct({}));
-    const counting: Assets.LoaderShape = {
-      bytes: (url) =>
-        Effect.suspend(() => {
-          asked.push(url);
-          return memory.bytes(url);
-        }),
-    };
-    await Effect.runPromise(
-      Effect.gen(function* () {
+  it.effect("fetch a file once for every bundle that names it", () =>
+    Effect.gen(function* () {
+      const log: string[] = [];
+      const asked: string[] = [];
+      const Level = State.define("as/Shared", ["menu", "forest"]);
+      const Forest = Assets.bundle("as/Forest", {
+        backdrop: tracked("/forest.png", log),
+      });
+      const Raw = Assets.bundle("as/Raw", {
+        backdrop: Assets.bytes("/forest.png"),
+      });
+      const seen: string[] = [];
+      const Look = System.frame("Look", function* () {
+        seen.push(`${(yield* Forest)._tag} ${(yield* Raw)._tag}`);
+      });
+      const Enter = Action.define("as/EnterShared", Schema.Struct({}));
+      const counting: Assets.LoaderShape = {
+        bytes: (url) =>
+          Effect.suspend(() => {
+            asked.push(url);
+            return fromMemory(url);
+          }),
+      };
+      yield* Effect.gen(function* () {
         const app = yield* App.make(
           App.define({
             plugins: [Assets.plugin],
@@ -1040,141 +1070,153 @@ describe("a level's assets", () => {
             ],
           })
         );
-        app.dispatch(Enter, {});
-        app.tick(1);
-        app.frame();
+        yield* app.dispatch(Enter, {});
+        yield* app.tick(1);
+        yield* app.frame();
         expect(seen.at(-1)).toBe("Ready Ready");
         expect(asked).toEqual(["/forest.png"]);
         expect(log).toEqual(["open /forest.png"]);
-      }).pipe(Effect.provideService(Assets.Loader, counting))
-    );
-  });
+      }).pipe(Effect.provideService(Assets.Loader, counting));
+    })
+  );
 
-  it("fetch again a file whose request got no answer, and are ready without the level being entered again", async () => {
-    const { Game, Go, drawn } = makeGame();
-    const asked: string[] = [];
-    const loader: Assets.LoaderShape = {
-      bytes: (url) =>
-        Effect.suspend(() => {
-          asked.push(url);
-          return url === "/forest.png" &&
-            asked.filter((one) => one === url).length === 1
-            ? Effect.fail(
-                new Assets.AssetFailed({
-                  url,
-                  message: "The server answered 503",
-                  transient: true,
-                })
-              )
-            : memory.bytes(url);
-        }),
-    };
-    await Effect.runPromise(
+  it.live(
+    "fetch again a file whose request got no answer, and are ready without the level being entered again",
+    () =>
       Effect.gen(function* () {
-        const app = yield* App.make(App.define({ plugins: [Game] }));
-        const frame = (): string => {
-          app.frame();
-          return drawn.at(-1)!;
+        const { Game, Go, drawn } = makeGame();
+        const asked: string[] = [];
+        const loader: Assets.LoaderShape = {
+          bytes: (url) =>
+            Effect.suspend(() => {
+              asked.push(url);
+              return url === "/forest.png" &&
+                asked.filter((one) => one === url).length === 1
+                ? Effect.fail(
+                    new Assets.AssetFailed({
+                      url,
+                      message: "The server answered 503",
+                      transient: true,
+                    })
+                  )
+                : fromMemory(url);
+            }),
         };
-        app.dispatch(Go, { to: "forest" });
-        app.tick(1);
-        expect(frame()).toBe("forest: forest Loading, cave Absent");
-        yield* Effect.promise(() =>
-          vi.waitFor(
-            () =>
-              expect(frame()).toBe(
-                "forest: forest Ready (Forest, 3 bytes), cave Absent"
-              ),
-            { timeout: 2000 }
-          )
-        );
-        expect(asked.filter((url) => url === "/forest.png")).toEqual([
-          "/forest.png",
-          "/forest.png",
-        ]);
-      }).pipe(Effect.provideService(Assets.Loader, loader))
-    );
-  });
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(App.define({ plugins: [Game] }));
+          const frame = Effect.fnUntraced(function* () {
+            yield* app.frame();
+            return drawn.at(-1)!;
+          });
+          yield* app.dispatch(Go, { to: "forest" });
+          yield* app.tick(1);
+          expect(yield* frame()).toBe("forest: forest Loading, cave Absent");
+          // Each frame draws what has arrived, a few milliseconds at a time
+          // for as long as two seconds.
+          const ready = "forest: forest Ready (Forest, 3 bytes), cave Absent";
+          let shown = yield* frame();
+          for (let i = 0; i < 400 && shown !== ready; i++) {
+            yield* Effect.promise(
+              () => new Promise((resolve) => setTimeout(resolve, 5))
+            );
+            shown = yield* frame();
+          }
+          expect(shown).toBe(ready);
+          expect(asked.filter((url) => url === "/forest.png")).toEqual([
+            "/forest.png",
+            "/forest.png",
+          ]);
+        }).pipe(Effect.provideService(Assets.Loader, loader));
+      })
+  );
 
-  it("are let go once, when the last bundle that has them is let go", async () => {
-    const log: string[] = [];
-    const backdrop = tracked("/forest.png", log);
-    const Forest = Assets.bundle("as/Forest", { backdrop });
-    const Grove = Assets.bundle("as/Grove", { backdrop });
-    const held = { forest: true, grove: true };
-    const Keep = System.frame("Keep", function* () {
-      const store = yield* Assets.Store;
-      for (const [bundle, keep] of [
-        [Forest, held.forest],
-        [Grove, held.grove],
-      ] as const) {
-        if (keep) {
-          store.hold(bundle, "Keep");
-        } else {
-          store.drop(bundle, "Keep");
-        }
-      }
-    });
-    const app = await Effect.runPromise(
-      App.make(App.define({ plugins: [Assets.plugin], systems: [Keep] })).pipe(
-        Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    app.frame();
-    expect(log).toEqual(["open /forest.png"]);
-    held.forest = false;
-    app.frame();
-    expect(log).toEqual(["open /forest.png"]);
-    held.grove = false;
-    app.frame();
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-    await Effect.runPromise(app.close);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-  });
-
-  it("fail as assets that could not be loaded when what makes them dies", async () => {
-    const Level = State.define("as/Mode", ["on"]);
-    const Cursed = Assets.bundle("as/Cursed", {
-      one: Assets.make("/forest.png", () => Effect.die(new Error("boom"))),
-    });
-    let status: Assets.Status<unknown> | undefined;
-    const Look = System.frame("Look", function* () {
-      status = yield* Cursed;
-    });
-    await Effect.runPromise(
+  it.effect(
+    "are let go once, when the last bundle that has them is let go",
+    () =>
       Effect.gen(function* () {
+        const log: string[] = [];
+        const backdrop = tracked("/forest.png", log);
+        const Forest = Assets.bundle("as/Forest", { backdrop });
+        const Grove = Assets.bundle("as/Grove", { backdrop });
+        const held = { forest: true, grove: true };
+        const Keep = System.frame("Keep", function* () {
+          const store = yield* Assets.Store;
+          for (const [bundle, keep] of [
+            [Forest, held.forest],
+            [Grove, held.grove],
+          ] as const) {
+            if (keep) {
+              store.hold(bundle, "Keep");
+            } else {
+              store.drop(bundle, "Keep");
+            }
+          }
+        });
         const app = yield* App.make(
-          App.define({
-            plugins: [Assets.plugin],
-            systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
-          })
-        );
-        app.frame();
-        expect(status?._tag).toBe("Failed");
-        expectFailed((status as { error: unknown }).error, "", "boom");
-      }).pipe(Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet)))
-    );
-  });
+          App.define({ plugins: [Assets.plugin], systems: [Keep] })
+        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        yield* app.frame();
+        expect(log).toEqual(["open /forest.png"]);
+        held.forest = false;
+        yield* app.frame();
+        expect(log).toEqual(["open /forest.png"]);
+        held.grove = false;
+        yield* app.frame();
+        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+        yield* app.close;
+        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+      })
+  );
 
-  it("are held by a plugin's layer for as long as the app, when they are loaded there", async () => {
-    const log: string[] = [];
-    const Common = Assets.bundle("as/Common", {
-      font: tracked("/forest.png", log),
-    });
-    class Fonts extends Context.Service<
-      Fonts,
-      Assets.Loaded<(typeof Common)["assets"]>
-    >()("as/Fonts") {}
-    const Ui = Plugin.make("Ui", {
-      layer: Layer.effect(Fonts, Assets.load(Common)),
-    });
-    const app = await Effect.runPromise(
-      App.make(App.define({ plugins: [Ui] })).pipe(
-        Effect.provide(Assets.layerMemory(files))
-      )
-    );
-    expect(log).toEqual(["open /forest.png"]);
-    await Effect.runPromise(app.close);
-    expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-  });
+  it.effect(
+    "fail as assets that could not be loaded when what makes them dies",
+    () =>
+      Effect.gen(function* () {
+        const Level = State.define("as/Mode", ["on"]);
+        const Cursed = Assets.bundle("as/Cursed", {
+          one: Assets.make("/forest.png", () => Effect.die(new Error("boom"))),
+        });
+        let status: Assets.Status<unknown> | undefined;
+        const Look = System.frame("Look", function* () {
+          status = yield* Cursed;
+        });
+        yield* Effect.gen(function* () {
+          const app = yield* App.make(
+            App.define({
+              plugins: [Assets.plugin],
+              systems: [Assets.during(State.is(Level, "on"), Cursed), Look],
+            })
+          );
+          yield* app.frame();
+          expect(status?._tag).toBe("Failed");
+          expectFailed((status as { error: unknown }).error, "", "boom");
+        }).pipe(
+          Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet))
+        );
+      })
+  );
+
+  it.effect(
+    "are held by a plugin's layer for as long as the app, when they are loaded there",
+    () =>
+      Effect.gen(function* () {
+        const log: string[] = [];
+        const Common = Assets.bundle("as/Common", {
+          font: tracked("/forest.png", log),
+        });
+        class Fonts extends Context.Service<
+          Fonts,
+          Assets.Loaded<(typeof Common)["assets"]>
+        >()("as/Fonts") {}
+        const Ui = Plugin.make("Ui", {
+          layer: Layer.effect(Fonts, Assets.load(Common)),
+        });
+        const app = yield* App.make(App.define({ plugins: [Ui] })).pipe(
+          Effect.provide(Assets.layerMemory(files))
+        );
+        expect(log).toEqual(["open /forest.png"]);
+        yield* app.close;
+        expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+      })
+  );
 });

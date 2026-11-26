@@ -259,8 +259,8 @@ export interface ManualSource extends Listener {
  *     Effect.provide(Input.layer(source))
  *   )
  *   source.press("Space")
- *   app.input()
- *   app.tick(1 / 60)
+ *   yield* app.input()
+ *   yield* app.tick(1 / 60)
  *
  * @category Testing
  */

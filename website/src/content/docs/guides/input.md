@@ -120,7 +120,7 @@ const Pick = System.input("game/Pick", function* () {
 
 ## Run the input stage
 
-A driver runs the input stage just before each tick. A tick doesn't read the devices, so a game that steps its app by hand calls `app.input()` before each `app.tick(delta)` that should receive them.
+A driver runs the input stage just before each tick. A tick doesn't read the devices, so a game that steps its app by hand runs `yield* app.input()` before each `yield* app.tick(delta)` that should receive them.
 
 - The stage reads the devices once per run. A frame with no tick due reads nothing, and the presses in between wait for the next tick, so a quick tap between two frames is never lost.
 - The world is read-only here, as in the frame stage. A system issues actions with `Actions.enqueue` and changes nothing itself. The app logs the actions and applies them at the start of the next tick.

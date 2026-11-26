@@ -17,7 +17,7 @@
  * records it with the save. Replaying that recording brings the game back to
  * the present, however long it has run:
  *
- *   const tail = app.record(save)
+ *   const tail = yield* app.record(save)
  *   const present = yield* Journal.replay(tail, game)
  */
 import { Cause, Data, Exit, Schema } from "effect";

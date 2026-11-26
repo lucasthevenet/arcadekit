@@ -95,9 +95,9 @@ const check = Effect.gen(function* () {
   for (let round = 0; round < 60; round++) {
     for (const seat of seats) {
       if (round < 40 && round % 5 === (seat.peer === "ada" ? 0 : 2)) {
-        seat.app.enqueue(Tip, { amount: 1 });
+        yield* seat.app.enqueue(Tip, { amount: 1 });
       }
-      seat.connected.tick();
+      yield* seat.connected.tick();
       yield* wait(5);
     }
   }
@@ -110,7 +110,9 @@ const check = Effect.gen(function* () {
     i++
   ) {
     yield* wait(30);
-    (ada.app.time.tick <= grace.app.time.tick ? ada : grace).connected.tick();
+    yield* (
+      ada.app.time.tick <= grace.app.time.tick ? ada : grace
+    ).connected.tick();
   }
   const purse = { ...(yield* ada.app.read(Purse)) };
   const hashOf = (app: typeof ada.app) =>

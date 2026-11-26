@@ -138,13 +138,13 @@ const program = Effect.gen(function* () {
         const step = Driver.fixedStep(app, { hz: 60, maxStepsPerCall: 1000 });
         const started = performance.now();
         for (let second = 1; second <= 3; second++) {
-          step(1);
+          yield* step(1);
           yield* Console.log(
             `t=${app.time.elapsed.toFixed(2)}s tick=${app.time.tick} entities=${world.entityCount} ` +
               `rock.y=${rockY()}`
           );
           if (second === 1) {
-            app.enqueue(Thaw, undefined);
+            yield* app.enqueue(Thaw, undefined);
           } // the rock starts falling
         }
         const { wave } = yield* app.read(Spray);
@@ -154,13 +154,13 @@ const program = Effect.gen(function* () {
 
         // 2. Turn-based: nothing happens until a player acts, then exactly one tick.
         const before = app.time.tick;
-        app.tick(1);
+        yield* app.tick(1);
         yield* Console.log(
           `turn-based step: tick ${before} -> ${app.time.tick}`
         );
 
         // 3. Real time is what Driver.run does next, from here.
-        app.enqueue(Launch, { speed: 30 });
+        yield* app.enqueue(Launch, { speed: 30 });
         noted.app = app;
         noted.ticks = app.time.tick;
         noted.frames = Sketch.sketch.frames;

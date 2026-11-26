@@ -212,6 +212,19 @@ export default defineConfig({
 
     // An expect that runs on some paths alone passes on the others.
     "vitest/no-conditional-expect": "error",
+    // A test that is an Effect is registered with @effect/vitest's it.effect
+    // or it.live, and an expect in it is in a test.
+    "vitest/no-standalone-expect": [
+      "error",
+      {
+        additionalTestBlockFunctions: [
+          "it.effect",
+          "it.effect.each",
+          "it.live",
+          "it.live.each",
+        ],
+      },
+    ],
     // A test with no expect checks nothing, unless through a helper that
     // expects, which is named expect<Something>.
     "vitest/expect-expect": [
@@ -281,6 +294,12 @@ export default defineConfig({
         "arcadekit/top-level-classes": "error",
         "arcadekit/no-unused-internal": "error",
       },
+    },
+    {
+      // A test of a package is an Effect itself, with it.effect, and runs
+      // none by hand.
+      files: ["packages/*/test/**/*.test.ts"],
+      rules: { "arcadekit/no-run-in-tests": "error" },
     },
     {
       // The code of the tick keeps what it changes in the world, except in

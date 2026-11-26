@@ -14,11 +14,11 @@
  *     delta: 1 / 60,
  *   })
  *
- *   session.app.enqueue(Move, { dx: 1 })      // applied on every peer
+ *   yield* session.app.enqueue(Move, { dx: 1 })   // applied on every peer
  *
  *   // What a transport and a driver usually do for it:
  *   session.receive(message)                  // a message from another peer
- *   session.tick()                            // true if the tick ran, false if it waits
+ *   yield* session.tick()                     // true if the tick ran, false if it waits
  *   for (const message of session.outgoing()) send(message)
  *
  * Everything that enters the app from outside goes through the session:
@@ -60,7 +60,7 @@
  * `Peer` is the session without its app, `Message` what the peers say to
  * each other, and `Drift` how they find that they have drifted apart.
  */
-import { Cause, Data, Effect, Exit } from "effect";
+import { Data, Effect } from "effect";
 
 import type * as App from "../App.ts";
 import { add, addString, finish } from "../ecs/hash.ts";
@@ -338,15 +338,15 @@ export interface SyncTest<E = never, HU = never> {
   readonly app: App.Steered<E, HU>;
   /**
    * Runs the input stage, then the tick twice from the same moment. It fails
-   * with `Save.SaveRefused` when the game can't be captured before the tick,
-   * and the tick doesn't run then. It throws `RewindDiverged` when the two
-   * runs differ.
+   * with what the game's systems fail with, with `Save.SaveRefused` when the
+   * game can't be captured before the tick, and the tick doesn't run then,
+   * and with `RewindDiverged` when the two runs differ.
    */
-  readonly tickExit: (delta: number) => Exit.Exit<void, E | Save.SaveRefused>;
-  /** Runs the tick as `tickExit` does, and throws what it fails with. */
-  readonly tick: (delta: number) => void;
+  readonly tick: (
+    delta: number
+  ) => Effect.Effect<void, E | Save.SaveRefused | RewindDiverged>;
   /** The app's frame stage, as `app.frame` runs it. */
-  readonly frame: (alpha?: number, delta?: number) => void;
+  readonly frame: (alpha?: number, delta?: number) => Effect.Effect<void, E>;
   /** How many ticks it has run twice. */
   readonly checked: number;
   /** Closes its app, as `app.close` closes an app. */
@@ -359,33 +359,25 @@ const twice = <E, HU>(
   reins: Reins<E>
 ): SyncTest<E, HU> => {
   let checked = 0;
-  const tickExit = (delta: number): Exit.Exit<void, E | Save.SaveRefused> => {
-    const heard = app.inputExit();
-    if (Exit.isFailure(heard)) {
-      return heard;
-    }
-    const moment = Timeline.capture(app, { stages: true });
-    if (Exit.isFailure(moment)) {
-      return Exit.failCause(moment.cause);
-    }
-    // The world's hash before the first system, and after each one, by
-    // where it was taken. A run that failed has none from there on.
-    const run = (): {
-      readonly exit: Exit.Exit<void, E>;
-      readonly hashes: number[];
-      readonly systems: (string | undefined)[];
-    } => {
-      const hashes: number[] = [];
-      const systems: (string | undefined)[] = [];
-      const exit = reins.tickExit(delta, (system) => {
+  // The world's hash before the first system, and after each one, by
+  // where it was taken. A run that failed has none from there on.
+  const run = Effect.fnUntraced(function* (delta: number) {
+    const hashes: number[] = [];
+    const systems: (string | undefined)[] = [];
+    const exit = yield* Effect.exit(
+      reins.tick(delta, (system) => {
         hashes.push(partsOf(app).world._fullHash());
         systems.push(system);
-      });
-      return { exit, hashes, systems };
-    };
-    const first = run();
-    Timeline.rewind(app, moment.value, { again: true });
-    const second = run();
+      })
+    );
+    return { exit, hashes, systems };
+  });
+  const tick = Effect.fnUntraced(function* (delta: number) {
+    yield* app.input();
+    const moment = yield* Timeline.capture(app, { stages: true });
+    const first = yield* run(delta);
+    yield* Timeline.rewind(app, moment, { again: true });
+    const second = yield* run(delta);
     const once = first.hashes;
     const again = second.hashes;
     const length = Math.min(once.length, again.length);
@@ -394,7 +386,7 @@ const twice = <E, HU>(
       at++;
     }
     if (at < length || once.length !== again.length) {
-      throw new RewindDiverged({
+      return yield* new RewindDiverged({
         tick: app.time.tick,
         // Where the two first differ, or where the run that went further
         // went on to and the other did not.
@@ -402,17 +394,11 @@ const twice = <E, HU>(
       });
     }
     checked++;
-    return second.exit;
-  };
+    return yield* second.exit;
+  });
   return {
     app,
-    tickExit,
-    tick(delta) {
-      const exit = tickExit(delta);
-      if (Exit.isFailure(exit)) {
-        throw Cause.squash(exit.cause);
-      }
-    },
+    tick,
     frame: app.frame,
     get checked() {
       return checked;
@@ -426,11 +412,11 @@ const twice = <E, HU>(
  * when a rewind runs it again, as in a session that runs ahead. It runs each
  * tick, rewinds, and runs the tick again from the same moment. It compares
  * the world's hash before the first system and after each one, and `tick`
- * throws `RewindDiverged`, naming the first system after which the hashes
- * differ.
+ * fails with `RewindDiverged`, naming the first system after which the
+ * hashes differ.
  *
  *   const test = yield* Session.syncTest(Duel, { seed: 1 })
- *   for (let i = 0; i < 600; i++) test.tick(1 / 60)
+ *   for (let i = 0; i < 600; i++) yield* test.tick(1 / 60)
  *
  * The rest of the game sees each tick once. The frame and input stages hear
  * each event once and see each change once, and the action log and the

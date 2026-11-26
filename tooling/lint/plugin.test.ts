@@ -105,6 +105,36 @@ new RuleTester().run("id-casts", plugin.rules["id-casts"], {
   })),
 });
 
+new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
+  valid: [
+    {
+      name: "a test that is an Effect yields what it runs",
+      code: `it.effect("ticks", () => Effect.gen(function* () { const app = yield* App.make(Game); yield* app.tick(1); }));`,
+    },
+    {
+      name: "a fiber started on a scheduler of its own",
+      code: `const fiber = Effect.runFork(busy, { scheduler });`,
+    },
+  ],
+  invalid: [
+    "Effect.runSync(App.make(Game));",
+    "await Effect.runPromise(App.make(Game));",
+    "const exit = Effect.runSyncExit(app.save());",
+    "const exit = await Effect.runPromiseExit(load);",
+    "Effect.runSyncWith(services)(app.read(World));",
+    "Effect.gen(function* () {}).pipe(Effect.runSync);",
+  ].map((code) => ({
+    name: code,
+    code,
+    errors: [
+      {
+        message:
+          /runs an Effect by hand\. A test is an Effect itself: write it with it\.effect/u,
+      },
+    ],
+  })),
+});
+
 const arcadekit = (file: string) => `packages/arcadekit/src/${file}`;
 
 new RuleTester().run("entry-imports", plugin.rules["entry-imports"], {

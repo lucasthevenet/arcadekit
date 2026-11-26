@@ -30,11 +30,11 @@ const program = Effect.gen(function* () {
     App.make(Game, { seed: 42, checkpointEvery: 1 }),
     (app) => app.close
   );
-  game.enqueue(Add, { points: 3 });
+  yield* game.enqueue(Add, { points: 3 });
   for (let i = 0; i < 10; i++) {
-    game.tick(1 / 60);
+    yield* game.tick(1 / 60);
   }
-  const bytes = Journal.encode(game.record()); // for a file
+  const bytes = Journal.encode(yield* game.record()); // for a file
 
   const recording = yield* Journal.decode(bytes); // fails on bytes that aren't one
   // The replay makes its app from how the recorded game began: its seed.
@@ -53,7 +53,7 @@ const program = Effect.gen(function* () {
 
 Each action holds its payload in JSON form and the tick it arrived at. Actions the simulation issues itself, such as a bot's move, aren't in the log, since the replay's own systems issue them again.
 
-`app.record()` returns a recording: how the game began, that log, the ticks it begins and ends at, the `delta` of every tick in between, kept as runs of ticks that took the same delta, and `endHash`, the world's hash where it ends. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes. A recording comes only from `app.record()` or `Journal.decode`: an object written by hand isn't one, and doesn't compile as one. To replay an edited recording, edit its bytes and decode them.
+`app.record()` gives a recording: how the game began, that log, the ticks it begins and ends at, the `delta` of every tick in between, kept as runs of ticks that took the same delta, and `endHash`, the world's hash where it ends. How the game began is its `seed`, or the `save` it was recorded since, in the words `App.make` takes. A recording comes only from `app.record()` or `Journal.decode`: an object written by hand isn't one, and doesn't compile as one. To replay an edited recording, edit its bytes and decode them.
 
 `Journal.replay(recording, game)` makes an app of the game from how the recorded game began, plays the recording in it, and returns the app where the recording ends.
 

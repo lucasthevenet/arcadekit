@@ -1,5 +1,5 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
-import { assert, describe, expect, it } from "vitest";
 
 import { entityIndex } from "../src/ecs/component.ts";
 import type { Terms } from "../src/ecs/query.ts";
@@ -1283,9 +1283,9 @@ const Tally = Component.define("ch/Tally", {
 const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 /** The tallies, read from outside the game. */
 const Tallied = Query.all(Tally);
-const tallyOf = (app: Pick<App.Any, "read">) => {
+const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
   let out: Record<string, number> = {};
-  Effect.runSync(app.read(Tallied)).each((tally) => {
+  (yield* app.read(Tallied)).each((tally) => {
     out = {
       moved: tally.moved,
       hurt: tally.hurt,
@@ -1295,7 +1295,7 @@ const tallyOf = (app: Pick<App.Any, "read">) => {
     };
   });
   return out;
-};
+});
 
 class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 const Push = Action.define(
@@ -1389,134 +1389,154 @@ const game = (
 > => App.make(Game, { checkpointEvery: options.checkpointEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
-const play = (app: App.Any, from: number, to: number): void => {
+const play = Effect.fnUntraced(function* (
+  app: App.App,
+  from: number,
+  to: number
+) {
   for (let tick = from; tick < to; tick++) {
-    app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 });
+    // Refused on every third tick, as the game says.
+    yield* Effect.exit(
+      app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 })
+    );
     if (tick % 4 === 0) {
-      app.enqueueByName("ch/Spawn", {});
+      yield* app.enqueueByName("ch/Spawn", {});
     }
     if (tick % 7 === 3) {
-      app.enqueueByName("ch/Cull", { slot: 1 });
+      yield* app.enqueueByName("ch/Cull", { slot: 1 });
     }
-    app.tick(1);
+    yield* app.tick(1);
   }
-};
+});
 
 describe("change queries in an app", () => {
-  it("give every system its own place: the same changes, each once", () => {
-    Effect.runSync(
+  it.effect(
+    "give every system its own place: the same changes, each once",
+    () =>
       Effect.gen(function* () {
         const app = yield* game();
-        app.tick(1);
+        yield* app.tick(1);
         // Tick 1: entities 2 and 5 drift (ids 1..6, tick 1). Count runs
         // for the first time and sees all six; Early saw six too.
-        expect(tallyOf(app)).toMatchObject({ moved: 6, early: 6, born: 0 });
-        app.tick(1);
+        expect(yield* tallyOf(app)).toMatchObject({
+          moved: 6,
+          early: 6,
+          born: 0,
+        });
+        yield* app.tick(1);
         // Tick 2: Early sees the two that drifted in tick 1, a tick late;
         // Count sees the two that drift in tick 2.
-        expect(tallyOf(app)).toMatchObject({ moved: 8, early: 8 });
-        app.dispatch(Push, { slot: 0, refuse: false });
-        app.dispatch(Spawn, {});
-        app.tick(1);
+        expect(yield* tallyOf(app)).toMatchObject({ moved: 8, early: 8 });
+        yield* app.dispatch(Push, { slot: 0, refuse: false });
+        yield* app.dispatch(Spawn, {});
+        yield* app.tick(1);
         // Early: the two that drifted in tick 2, one of which was also
         // pushed, and the one that was spawned. Count: the pushed one, the
         // spawned one, and the two that drift in tick 3.
-        expect(tallyOf(app)).toMatchObject({ early: 11, moved: 12, born: 1 });
-      })
-    );
-  });
-
-  it("do not show a refused action's writes to anyone", () => {
-    Effect.runSync(
-      Effect.gen(function* () {
-        const One = Plugin.make("ch/One", {
-          setup: Effect.map(Commands.spawns(Tally, Position), (commands) => {
-            commands.spawn(Tally);
-            commands.spawn(Position.of({ x: 0, y: 0 }));
-          }),
+        expect(yield* tallyOf(app)).toMatchObject({
+          early: 11,
+          moved: 12,
+          born: 1,
         });
-        const quiet = yield* App.make(
-          App.define({ plugins: [One], systems: [Count], handlers: [push] })
-        );
-        quiet.tick(1);
-        expect(tallyOf(quiet).moved).toBe(1);
-        expect(
-          Exit.isFailure(quiet.dispatch(Push, { slot: 0, refuse: true }))
-        ).toBe(true);
-        quiet.tick(1);
-        expect(tallyOf(quiet).moved).toBe(1);
-        quiet.dispatch(Push, { slot: 0, refuse: false });
-        quiet.tick(1);
-        expect(tallyOf(quiet).moved).toBe(2);
       })
-    );
-  });
+  );
 
-  it("give a handler a place of its own, apart from the systems'", () => {
-    const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
-    const inspect = Action.handler(Inspect, function* () {
-      return (yield* Moved).entities().length;
-    });
-    Effect.runSync(
-      Effect.gen(function* () {
-        const watched: number[] = [];
-        const Watch = System.tick("Watch", function* () {
-          watched.push((yield* Moved).entities().length);
-        });
-        const Three = Plugin.make("ch/Three", {
-          setup: Effect.map(Commands.spawns(Position), (commands) => {
-            for (let n = 0; n < 3; n++) {
-              commands.spawn(Position.of({ x: n, y: 0 }));
-            }
-          }),
-        });
-        const app = yield* App.make(
-          App.define({
-            plugins: [Three],
-            systems: [Watch],
-            handlers: [inspect, push],
-          })
-        );
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(3));
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(0));
-        app.dispatch(Push, { slot: 1, refuse: false });
-        app.tick(1);
-        expect(app.dispatch(Inspect, {})).toEqual(Exit.succeed(1));
-        app.tick(1);
-        // Each reads from its own place.
-        expect(watched).toEqual([3, 0]);
-      })
-    );
-  });
+  it.effect("do not show a refused action's writes to anyone", () =>
+    Effect.gen(function* () {
+      const One = Plugin.make("ch/One", {
+        setup: Effect.map(Commands.spawns(Tally, Position), (commands) => {
+          commands.spawn(Tally);
+          commands.spawn(Position.of({ x: 0, y: 0 }));
+        }),
+      });
+      const quiet = yield* App.make(
+        App.define({ plugins: [One], systems: [Count], handlers: [push] })
+      );
+      yield* quiet.tick(1);
+      expect((yield* tallyOf(quiet)).moved).toBe(1);
+      expect(
+        Exit.isFailure(
+          yield* Effect.exit(quiet.dispatch(Push, { slot: 0, refuse: true }))
+        )
+      ).toBe(true);
+      yield* quiet.tick(1);
+      expect((yield* tallyOf(quiet)).moved).toBe(1);
+      yield* quiet.dispatch(Push, { slot: 0, refuse: false });
+      yield* quiet.tick(1);
+      expect((yield* tallyOf(quiet)).moved).toBe(2);
+    })
+  );
 
-  it("replay, with refused actions among them, checkpoint by checkpoint", () => {
-    Effect.runSync(
+  it.effect("give a handler a place of its own, apart from the systems'", () =>
+    Effect.gen(function* () {
+      const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
+      const inspect = Action.handler(Inspect, function* () {
+        return (yield* Moved).entities().length;
+      });
+      const watched: number[] = [];
+      const Watch = System.tick("Watch", function* () {
+        watched.push((yield* Moved).entities().length);
+      });
+      const Three = Plugin.make("ch/Three", {
+        setup: Effect.map(Commands.spawns(Position), (commands) => {
+          for (let n = 0; n < 3; n++) {
+            commands.spawn(Position.of({ x: n, y: 0 }));
+          }
+        }),
+      });
+      const app = yield* App.make(
+        App.define({
+          plugins: [Three],
+          systems: [Watch],
+          handlers: [inspect, push],
+        })
+      );
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(3)
+      );
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(0)
+      );
+      yield* app.dispatch(Push, { slot: 1, refuse: false });
+      yield* app.tick(1);
+      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+        Exit.succeed(1)
+      );
+      yield* app.tick(1);
+      // Each reads from its own place.
+      expect(watched).toEqual([3, 0]);
+    })
+  );
+
+  it.effect(
+    "replay, with refused actions among them, checkpoint by checkpoint",
+    () =>
       Effect.gen(function* () {
         const app = yield* game();
-        play(app, 0, 40);
-        expect(tallyOf(app).moved).toBeGreaterThan(40);
-        expect(tallyOf(app).gone).toBeGreaterThan(2);
-        const played = app.record();
+        yield* play(app, 0, 40);
+        expect((yield* tallyOf(app)).moved).toBeGreaterThan(40);
+        expect((yield* tallyOf(app)).gone).toBeGreaterThan(2);
+        const played = yield* app.record();
         const again = yield* Journal.replay(played, Game, {
           checkpointEvery: 1,
         });
         expect((yield* again.read(World)).hash()).toBe(
           (yield* app.read(World)).hash()
         );
-        expect(tallyOf(again)).toEqual(tallyOf(app));
+        expect(yield* tallyOf(again)).toEqual(yield* tallyOf(app));
       })
-    );
-  });
+  );
 
-  it("are saved with a game: loaded, each system goes on from where it was", () => {
-    for (const savedAt of [0, 1, 2, 9, 23]) {
-      Effect.runSync(
-        Effect.gen(function* () {
+  it.effect(
+    "are saved with a game: loaded, each system goes on from where it was",
+    () =>
+      Effect.gen(function* () {
+        for (const savedAt of [0, 1, 2, 9, 23]) {
           const app = yield* game();
-          play(app, 0, savedAt);
+          yield* play(app, 0, savedAt);
           // Between ticks, with changes waiting for both systems.
-          app.dispatchByName("ch/Push", { slot: 2, refuse: false });
-          const save = app.save();
+          yield* app.dispatchByName("ch/Push", { slot: 2, refuse: false });
+          const save = yield* Effect.exit(app.save());
           if (Exit.isFailure(save)) {
             throw new Error("the save was refused");
           }
@@ -1528,76 +1548,89 @@ describe("change queries in an app", () => {
           expect(read.value).toEqual(save.value);
           // Once a tick has run, there is a place to go on from.
           expect(visitsIn(save.value).length > 0).toBe(savedAt > 0);
-          play(app, savedAt, savedAt + 12);
+          yield* play(app, savedAt, savedAt + 12);
           // The tail of the original's log replays in a game loaded from the
           // save that was read, and every checkpoint of it holds.
-          const played = app.record(read.value);
+          const played = yield* app.record(read.value);
           const loaded = yield* Journal.replay(played, Game, {
             checkpointEvery: 1,
           });
-          expect(tallyOf(loaded)).toEqual(tallyOf(app));
+          expect(yield* tallyOf(loaded)).toEqual(yield* tallyOf(app));
           expect((yield* loaded.read(World)).hash()).toBe(
             (yield* app.read(World)).hash()
           );
-        })
-      );
-    }
-  });
-
-  it("go on, under its new name, for a component a migration renamed", () => {
-    const Place = Component.define("ch/Place", { x: Field.f32, y: Field.f32 });
-    const Placed = Query.all(Place).pipe(
-      Query.changed(Place),
-      Query.writes(Place)
-    );
-    const Arrived = Query.all(Position).pipe(Query.added(Position));
-    const Landed = Query.all(Place).pipe(Query.added(Place));
-    const Look = Action.define("ch/Look", Schema.Struct({}));
-    const before = Action.handler(Look, function* () {
-      const counts = [
-        (yield* Moved).count(),
-        (yield* Hurt).count(),
-        (yield* Arrived).count(),
-      ];
-      // Counting is not visiting: these are.
-      (yield* Moved).entities();
-      (yield* Hurt).entities();
-      (yield* Arrived).entities();
-      return counts;
-    });
-    const after = Action.handler(Look, function* () {
-      return [
-        (yield* Placed).count(),
-        (yield* Hurt).count(),
-        (yield* Landed).count(),
-      ];
-    });
-    const Hit = Action.define("ch/Hit", Schema.Struct({ entity: EntityId }));
-    const hit = Action.handler(Hit, function* ({ entity }) {
-      const world = yield* World.writes(Health, Position);
-      world.set(entity, Health, { hp: 9 });
-      world.set(entity, Position, { x: 9 });
-    });
-    const made: Spawned[] = [];
-    const Four = Plugin.make("ch/Four", {
-      setup: Effect.map(Commands.spawns(Position, Health), (commands) => {
-        for (let n = 0; n < 4; n++) {
-          made.push(
-            commands.spawn(Position.of({ x: n, y: 0 }), Health.of({ hp: n }))
-          );
         }
-      }),
-    });
-    Effect.runSync(
+      })
+  );
+
+  it.effect(
+    "go on, under its new name, for a component a migration renamed",
+    () =>
       Effect.gen(function* () {
+        const Place = Component.define("ch/Place", {
+          x: Field.f32,
+          y: Field.f32,
+        });
+        const Placed = Query.all(Place).pipe(
+          Query.changed(Place),
+          Query.writes(Place)
+        );
+        const Arrived = Query.all(Position).pipe(Query.added(Position));
+        const Landed = Query.all(Place).pipe(Query.added(Place));
+        const Look = Action.define("ch/Look", Schema.Struct({}));
+        const before = Action.handler(Look, function* () {
+          const counts = [
+            (yield* Moved).count(),
+            (yield* Hurt).count(),
+            (yield* Arrived).count(),
+          ];
+          // Counting is not visiting: these are.
+          (yield* Moved).entities();
+          (yield* Hurt).entities();
+          (yield* Arrived).entities();
+          return counts;
+        });
+        const after = Action.handler(Look, function* () {
+          return [
+            (yield* Placed).count(),
+            (yield* Hurt).count(),
+            (yield* Landed).count(),
+          ];
+        });
+        const Hit = Action.define(
+          "ch/Hit",
+          Schema.Struct({ entity: EntityId })
+        );
+        const hit = Action.handler(Hit, function* ({ entity }) {
+          const world = yield* World.writes(Health, Position);
+          world.set(entity, Health, { hp: 9 });
+          world.set(entity, Position, { x: 9 });
+        });
+        const made: Spawned[] = [];
+        const Four = Plugin.make("ch/Four", {
+          setup: Effect.map(Commands.spawns(Position, Health), (commands) => {
+            for (let n = 0; n < 4; n++) {
+              made.push(
+                commands.spawn(
+                  Position.of({ x: n, y: 0 }),
+                  Health.of({ hp: n })
+                )
+              );
+            }
+          }),
+        });
         const app = yield* App.make(
           App.define({ plugins: [Four], handlers: [before, hit] })
         );
         const [, second] = made;
         assert(second !== undefined);
-        expect(app.dispatch(Look, {})).toEqual(Exit.succeed([4, 4, 4]));
-        app.dispatch(Hit, { entity: placedIn(yield* app.read(World), second) });
-        const save = app.save();
+        expect(yield* Effect.exit(app.dispatch(Look, {}))).toEqual(
+          Exit.succeed([4, 4, 4])
+        );
+        yield* app.dispatch(Hit, {
+          entity: placedIn(yield* app.read(World), second),
+        });
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1625,17 +1658,19 @@ describe("change queries in an app", () => {
         );
         // Only the entity hit since the last look counts as changed, and
         // none as added.
-        expect(loaded.dispatch(Look, {})).toEqual(Exit.succeed([1, 1, 0]));
+        expect(yield* Effect.exit(loaded.dispatch(Look, {}))).toEqual(
+          Exit.succeed([1, 1, 0])
+        );
       })
-    );
-  });
+  );
 
-  it("make a load fail, with the reason, when the changes of a save are damaged", () => {
-    Effect.runSync(
+  it.effect(
+    "make a load fail, with the reason, when the changes of a save are damaged",
+    () =>
       Effect.gen(function* () {
         const app = yield* game();
-        play(app, 0, 3);
-        const save = app.save();
+        yield* play(app, 0, 3);
+        const save = yield* Effect.exit(app.save());
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
         }
@@ -1673,6 +1708,5 @@ describe("change queries in an app", () => {
           Exit.isFailure(misshapen) ? Cause.squash(misshapen.cause) : undefined
         ).toMatchObject({ _tag: "LoadRefused", problem: "corrupt" });
       })
-    );
-  });
+  );
 });
