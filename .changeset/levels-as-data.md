@@ -1,0 +1,9 @@
+---
+"arcadekit": minor
+---
+
+A game's levels can be files. `Assets.family("game/Level", (level: number) => ({ layout: Assets.json(`/levels/${level}.json`, Layout) }))` makes a bundle for each level's number, `Levels.of(3)`, the same bundle each time. `Assets.during(key, family)` keeps the bundle of the key the game is at loaded, such as `Assets.during(Effect.map(Progress, ({ level }) => level), Levels)`, and lets go of the one before when the key changes. A game adds a level by adding its file.
+
+`Assets.onReady(bundle, rules, payload)`, and `Assets.onReady(family, key, rules, payload)` for a family, is a plugin that hands a loaded bundle to the rules: an input-stage system issues an action with a payload made from its assets, and `rules`, the game's own `Action.handler`, applies it. The world records what it was handed, by the bundle's or the family's name, with the family's key, so a save, a rewind and the hash hold the record. `rules` runs once for each handover the world records: a level whose file spawns nothing is handed over once, an app made from a save doesn't hand its level over again, a rewind to before a handover hands it over again once, and going from level 1 to level 2 and back hands each over as the game comes to it. In a session every peer whose bundle loads issues the handover, the first one applied counts on every peer, and a peer whose bundle fails to load holds nobody up. `Assets.forget(bundle)`, in code of the tick, makes the world forget a handover, so that the bundle is handed over again, as when a new run starts.
+
+Nothing breaks. The example page's `Begin` system, which checked that the sky was empty before it issued the action, is `Assets.onReady(Level, scatter, ({ layout }) => layout)`, and `Start` forgets the level so that a new game is handed it again.

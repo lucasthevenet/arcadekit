@@ -32,8 +32,10 @@ import {
   State,
   System,
   Time,
+  Timeline,
   World,
 } from "../src/index.ts";
+import { Session } from "../src/net/index.ts";
 
 const Layout = Schema.Struct({
   walls: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -1225,6 +1227,272 @@ describe("a level's assets", () => {
         expect(log).toEqual(["open /forest.png"]);
         yield* app.close;
         expect(log).toEqual(["open /forest.png", "close /forest.png"]);
+      })
+  );
+});
+
+describe("levels as data", () => {
+  // A game of levels, each a file: nothing in it names a level but by number.
+  const Walls = Schema.Struct({ walls: Schema.Array(Schema.Int) });
+  const Wall = Component.define("lv/Wall", { at: Field.i32 });
+  const Progress = Singleton.define(
+    "lv/Progress",
+    { level: Field.i32, builds: Field.i32 },
+    { level: 1, builds: 0 }
+  );
+  const Levels = Assets.family("lv/Level", (level: number) => ({
+    layout: Assets.json(`/levels/${level}.json`, Walls),
+  }));
+  const level = Effect.map(Progress, (progress) => progress.level);
+  const Build = Action.define(
+    "lv/Build",
+    Schema.Struct({ level: Schema.Int, walls: Schema.Array(Schema.Int) })
+  );
+  // A level replaces the one before: its walls go, and the new ones come.
+  const build = Action.handler(Build, function* ({ walls }) {
+    const commands = yield* Commands.spawns(Wall);
+    (yield* Query.all(Wall)).each((_, entity) => {
+      commands.despawn(entity);
+    });
+    for (const at of walls) {
+      commands.spawn(Wall.of({ at }));
+    }
+    (yield* Progress.writes).builds += 1;
+  });
+  const Go = Action.define("lv/Go", Schema.Struct({ level: Schema.Int }));
+  const LevelReady = Assets.onReady(Levels, level, build, ({ layout }, at) => ({
+    level: at,
+    walls: layout.walls,
+  }));
+  const Rules = Plugin.make("lv/Rules", {
+    plugins: [LevelReady],
+    handlers: [
+      Action.handler(Go, function* ({ level: to }) {
+        (yield* Progress.writes).level = to;
+      }),
+    ],
+  });
+  const Shown = Plugin.make("lv/Shown", {
+    plugins: [Rules],
+    systems: [Assets.during(level, Levels)],
+  });
+  const LevelGame = App.define({ plugins: [Shown] });
+  const makeLevels = () => App.make(LevelGame, { checkpointEvery: 1 });
+  const files = {
+    "/levels/1.json": '{"walls":[]}',
+    "/levels/2.json": '{"walls":[4,5]}',
+  };
+  /** A frame, what loads meanwhile, the input stage and a tick, as a driver runs them. */
+  const play = Effect.fnUntraced(function* (
+    app: Effect.Success<ReturnType<typeof makeLevels>>,
+    turns = 4
+  ) {
+    for (let turn = 0; turn < turns; turn++) {
+      yield* app.frame();
+      yield* Effect.promise(settle);
+      yield* app.input();
+      yield* app.tick(1);
+    }
+  });
+  const handedOver = (log: readonly Action.LogEntry[]) =>
+    log.flatMap((entry) =>
+      !Action.isCheckpoint(entry) &&
+      entry.name === "arcadekit/Assets.onReady(lv/Level)"
+        ? [entry.payload]
+        : []
+    );
+  const buildsOf = (app: Pick<App.Any, "read">) =>
+    Effect.map(app.read(Progress), (progress) => progress.builds);
+
+  it.effect(
+    "hands each level's file to the rules once, a level with no walls too, and again when the game comes back to it",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* makeLevels();
+        yield* play(app);
+        // The first level has no walls, and is handed over once all the same.
+        expect(handedOver(app.actionLog)).toEqual([
+          { key: 1, payload: { level: 1, walls: [] } },
+        ]);
+        expect(yield* buildsOf(app)).toBe(1);
+        yield* app.dispatch(Go, { level: 2 });
+        yield* play(app);
+        yield* app.dispatch(Go, { level: 1 });
+        yield* play(app);
+        expect(yield* buildsOf(app)).toBe(3);
+        expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
+      }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
+  );
+
+  it.effect("plays a level that is added as a file, and no code", () =>
+    Effect.gen(function* () {
+      const walls = Effect.map(
+        Query.all(Wall),
+        (query) => query.entities().length
+      );
+      for (const [given, wanted] of [
+        [files, 2],
+        [{ ...files, "/levels/3.json": '{"walls":[7]}' }, 3],
+      ] as const) {
+        yield* Effect.gen(function* () {
+          const app = yield* makeLevels();
+          yield* app.dispatch(Go, { level: 2 });
+          yield* play(app);
+          yield* app.dispatch(Go, { level: 3 });
+          yield* play(app);
+          expect(yield* buildsOf(app)).toBe(wanted - 1);
+          // With no third file, the game is still at the second level's walls.
+          expect(yield* app.read(walls)).toBe(wanted === 2 ? 2 : 1);
+        }).pipe(
+          Effect.provide(
+            Layer.merge(Assets.layer(Assets.makeMemory(given)), quiet)
+          )
+        );
+      }
+    })
+  );
+
+  it.effect(
+    "builds the same world on every machine, which a replay holds without the files",
+    () =>
+      Effect.gen(function* () {
+        const one = yield* makeLevels();
+        const two = yield* makeLevels();
+        for (const app of [one, two]) {
+          yield* play(app);
+          yield* app.dispatch(Go, { level: 2 });
+          yield* play(app);
+        }
+        const hash = (yield* one.read(World)).hash();
+        expect((yield* two.read(World)).hash()).toBe(hash);
+        expect((yield* one.read(Query.all(Wall))).count()).toBe(2);
+        const replayed = yield* Journal.replay(
+          yield* one.record(),
+          App.define({ plugins: [Rules] }),
+          { checkpointEvery: 1 }
+        );
+        expect((yield* replayed.read(World)).hash()).toBe(hash);
+      }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
+  );
+
+  it.effect(
+    "is not handed over again by an app made from a save of the level",
+    () =>
+      Effect.gen(function* () {
+        const one = yield* makeLevels();
+        yield* one.dispatch(Go, { level: 2 });
+        yield* play(one);
+        expect(yield* buildsOf(one)).toBe(1);
+        const loaded = yield* App.make(LevelGame, {
+          checkpointEvery: 1,
+          save: yield* one.save(),
+        });
+        // Its bundle loads again, and the world has what it holds already.
+        yield* play(loaded);
+        yield* play(one);
+        expect(handedOver(loaded.actionLog)).toEqual([]);
+        expect(yield* buildsOf(loaded)).toBe(1);
+        expect((yield* loaded.read(World)).hash()).toBe(
+          (yield* one.read(World)).hash()
+        );
+      }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
+  );
+
+  it.effect("is handed over again, once, after a rewind to before it was", () =>
+    Effect.gen(function* () {
+      const app = yield* makeLevels();
+      const before = yield* Timeline.capture(app);
+      yield* play(app);
+      expect(yield* buildsOf(app)).toBe(1);
+      yield* Timeline.rewind(app, before);
+      expect(yield* buildsOf(app)).toBe(0);
+      yield* play(app);
+      expect(yield* buildsOf(app)).toBe(1);
+      // And a rewind to after it hands nothing over.
+      const after = yield* Timeline.capture(app);
+      yield* play(app);
+      yield* Timeline.rewind(app, after);
+      yield* play(app);
+      expect(yield* buildsOf(app)).toBe(1);
+    }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
+  );
+
+  it.effect(
+    "is handed over again once the rules forget it, as a new run does",
+    () =>
+      Effect.gen(function* () {
+        const Sky = Assets.bundle("lv/Sky", {
+          layout: Assets.json("/levels/2.json", Walls),
+        });
+        const Again = Action.define("lv/Again");
+        const Runs = Plugin.make("lv/Runs", {
+          plugins: [
+            Assets.onReady(Sky, build, ({ layout }) => ({
+              level: 0,
+              walls: layout.walls,
+            })),
+          ],
+          handlers: [
+            Action.handler(Again, function* () {
+              yield* Assets.forget(Sky);
+            }),
+          ],
+          systems: [Assets.during(Effect.succeed(true), Sky)],
+        });
+        const app = yield* App.make(App.define({ plugins: [Runs] }));
+        yield* play(app);
+        expect(yield* buildsOf(app)).toBe(1);
+        yield* app.dispatch(Again, undefined);
+        yield* play(app);
+        expect(yield* buildsOf(app)).toBe(2);
+      }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
+  );
+
+  it.effect(
+    "reaches every peer of a session from whichever loaded it, when the first peer by name could not",
+    () =>
+      Effect.gen(function* () {
+        const peer = (
+          me: string,
+          others: readonly string[],
+          given: Readonly<Record<string, string>>
+        ) =>
+          Session.make(LevelGame, { seed: 1, me, others, delta: 1 }).pipe(
+            Effect.provide(
+              Layer.merge(Assets.layer(Assets.makeMemory(given)), quiet)
+            )
+          );
+        // The first peer by name has none of the files.
+        const peers = [
+          yield* peer("ada", ["edsger", "grace"], {}),
+          yield* peer("edsger", ["ada", "grace"], files),
+          yield* peer("grace", ["ada", "edsger"], files),
+        ];
+        for (let turn = 0; turn < 8; turn++) {
+          for (const peer of peers) {
+            yield* peer.frame(1);
+          }
+          yield* Effect.promise(settle);
+          for (const peer of peers) {
+            yield* peer.tick();
+          }
+          for (const from of peers) {
+            for (const message of from.outgoing()) {
+              for (const to of peers) {
+                if (to !== from) {
+                  to.receive(message);
+                }
+              }
+            }
+          }
+        }
+        const hashes = [];
+        for (const peer of peers) {
+          expect(peer.app.time.tick).toBeGreaterThan(2);
+          expect(yield* buildsOf(peer.app)).toBe(1);
+          hashes.push((yield* peer.app.read(World)).hash());
+        }
+        expect(new Set(hashes).size).toBe(1);
       })
   );
 });
