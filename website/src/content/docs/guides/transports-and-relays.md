@@ -55,7 +55,7 @@ const program = Driver.run(
       seed: 1,
       me: peer,
       others: ["grace"],
-      delta: 1 / 60,
+      hz: 60,
     });
     return yield* Transport.connect(session);
   })
@@ -85,32 +85,33 @@ The game ends for that peer when the socket closes for good: when it never opene
 
 ```ts
 import { Transport } from "arcadekit/net";
+import { Layer } from "effect";
 
 declare const channel: RTCDataChannel;
 channel.binaryType = "arraybuffer";
 
-const transport = Transport.fromWire({
-  send: (bytes) => channel.send(bytes),
-  listen(onData) {
-    const hear = ({ data }: MessageEvent<string | ArrayBuffer>) =>
-      onData(typeof data === "string" ? data : new Uint8Array(data));
-    channel.addEventListener("message", hear);
-    return () => channel.removeEventListener("message", hear);
-  },
+export const layer = Layer.succeed(Transport.Transport, {
+  listen: Transport.fromWire({
+    send: (bytes) => channel.send(bytes),
+    listen(onData) {
+      const hear = ({ data }: MessageEvent<string | ArrayBuffer>) =>
+        onData(typeof data === "string" ? data : new Uint8Array(data));
+      channel.addEventListener("message", hear);
+      return () => channel.removeEventListener("message", hear);
+    },
+  }),
 });
-
-export const layer = Transport.layer(transport);
 ```
 
-`Transport.fromWire(wire)` makes a transport over anything else that carries bytes and text.
+`Transport.fromWire(wire)` listens on anything else that carries bytes and text, in the scope it runs in, which is the connection's when it is a transport's `listen`.
 
-- Messages travel as the bytes `Message.encode` writes, and a relay's notices as the text `Message.encodeNotice` writes. The wire hands `onData` bytes as a `Uint8Array` and text as a string. What is neither a message nor a notice is dropped and counted in `transport.dropped`, since nothing that comes off a wire is trusted.
+- Messages travel as the bytes `Message.encode` writes, and a relay's notices as the text `Message.encodeNotice` writes. The wire hands `onData` bytes as a `Uint8Array` and text as a string. What is neither a message nor a notice is dropped, since nothing that comes off a wire is trusted.
 - The channel must deliver every message. A WebSocket does, and a data channel does once it is configured to.
-- `transport.close()` stops listening, and `send` and `receive` die from then on. A transport passed to `Transport.layer` is listened on already, and your game closes it.
+- It stops listening when its scope closes, and `send` and `receive` die from then on. Opening and closing the channel itself is the program's.
 - It authenticates no sender, unless whatever is at the other end of the channel does.
 - It doesn't tell the other peers that this one joined or left. Send them `Message.encodeNotice({ joined: me })` when the channel opens and `Message.encodeNotice({ left: me })` before it closes, or `connected.away` never lists a peer that is gone.
 
-For a channel that carries neither bytes nor text, pass a `Transport.Listener` of your own to `Transport.layer`. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Each of its calls returns an Effect, which fails with `Transport.Closed` once the channel is gone for good. Neither waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
+For a channel that carries neither bytes nor text, pass a `Transport.Listener` of your own to `Transport.layer`, which provides it already listened on, for your program to close. Its `receive` returns messages, and a `Message.Notice` for each peer that joins or leaves, if it knows of one. Each of its calls returns an Effect, which fails with `Transport.Closed` once the channel is gone for good. Neither waits, so a tick stays one synchronous step. Whatever listens behind it fills a buffer in its own time, and `receive` returns the buffer.
 
 ## Read more
 

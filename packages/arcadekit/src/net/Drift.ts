@@ -19,7 +19,8 @@
  *   drift.heard("grace", 0, [{ tick: 0, hash }]) // with grace's message for tick 0
  *   drift.compare(final, now)                    // Drifted, once they differ
  *
- * It knows no session and no network. `Peer` tells it which ticks are final.
+ * It knows no session and no network. A session tells it which ticks are
+ * final.
  */
 import { Data } from "effect";
 
@@ -71,7 +72,7 @@ export class Drifted extends Data.TaggedError("DriftDrifted")<{
   }
 }
 
-const parts: readonly (keyof Made)[] = ["game", "delta", "peers", "start"];
+const parts: readonly (keyof Made)[] = ["game", "hz", "peers", "start"];
 
 /** Returns the parts in which two peers were made differently. */
 const differences = (one: Made, other: Made): (keyof Made)[] =>
@@ -89,7 +90,7 @@ const list = (names: readonly string[]): string =>
 
 /**
  * The peers were not made alike. Another peer's first message says it was
- * made with another game, another `delta`, other names or another start than
+ * made with another game, another `hz`, other names or another start than
  * this one. It is found before either peer runs a tick it is sure of, and
  * every later tick of the session fails with it.
  *
@@ -114,8 +115,8 @@ export class Unlike extends Data.TaggedError("DriftUnlike")<{
         case "game": {
           return "they play another game: a system of the tick, a hook of a state or a handler that one has and the other hasn't, systems that run in another order, or another version. Give every peer the same App.define";
         }
-        case "delta": {
-          return `"${peer}" ticks ${mine.delta} seconds at a time and "${other}" ${theirs.delta}. Give every peer the same delta`;
+        case "hz": {
+          return `"${peer}" ticks ${mine.hz} times a second and "${other}" ${theirs.hz}. Give every peer the same hz`;
         }
         case "peers": {
           return `"${peer}" plays with ${list(mine.peers)}, and "${other}" with ${list(theirs.peers)}. Give every peer the same names`;

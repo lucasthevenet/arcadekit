@@ -84,7 +84,6 @@ export const MODULE_GROUPS: Readonly<Record<string, readonly ModuleGroup[]>> = {
         "net",
         "net/Drift",
         "net/Message",
-        "net/Peer",
         "net/Relay",
         "net/Session",
         "net/Transport",

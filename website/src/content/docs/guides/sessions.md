@@ -25,7 +25,7 @@ const program = Effect.gen(function* () {
       seed: 1, // or a save: how the game starts, as App.make takes it
       me: "ada", // this machine's player
       others: ["grace"], // everyone else: grace's machine has me: "grace", others: ["ada"]
-      delta: 1 / 60, // the seconds a tick simulates, the same everywhere
+      hz: 60, // the ticks a second, the same everywhere
     }),
     (made) => made.close // closes its app with the program's scope
   );
@@ -44,7 +44,7 @@ Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, s
 
 Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into bytes with `Message.encode` and back with `Message.decode`. Each returns an `Exit`, which fails with `Message.Invalid` for what isn't a message.
 
-- Make every peer alike: the same game, the same seed or save, the same `delta` and the same peer names. A peer made with another game, `delta`, names or starting tick stops every peer with `Drift.Unlike`. A different seed shows as `Drift.Drifted`. See [detecting drift](detecting-drift.md).
+- Make every peer alike: the same game, the same seed or save, the same `hz` and the same peer names. A peer made with another game, `hz`, names or starting tick stops every peer with `Drift.Unlike`. A different seed shows as `Drift.Drifted`. See [detecting drift](detecting-drift.md).
 - A session begins at whatever tick its app does, so a game can start from a save that every peer loaded.
 - Give each peer its own name as `me`, and every other peer's name in `others`, in any order. A name given twice, as `me` and in `others` or twice in `others`, doesn't compile when the compiler knows the names. When it knows them only as strings, `Session.make` throws.
 - Every peer sends one message per tick, usually empty, which tells the others it has nothing more for that tick.
@@ -61,7 +61,7 @@ const session =
     seed: 1,
     me: "ada",
     others: ["grace"],
-    delta: 1 / 60,
+    hz: 60,
     delay: 0, // how many ticks pass before a player's own action applies
     ahead: 8, // how many ticks it may run past what every peer has sent
   });
@@ -76,10 +76,10 @@ A session runs ahead with [rollback](../concepts/several-players.md#rollback-pre
 
 - A peer that has run `ahead` ticks past what every peer has sent waits, and `session.waitingFor` says for whom.
 - A delay of a tick or two spares the other peers a rewind for every move, at the cost of that much input lag for the local player. In lockstep, a delay of 0 would wait for the network on every tick, and a network slower than `delay` slows the game to its pace.
-- `session.confirmed` is the number of final ticks. Any later tick may still be resimulated. `session.rewinds` and `session.resimulated` measure the cost.
+- `session.confirmed` is the number of final ticks. Any later tick may still be resimulated. `session.stats.rewinds` and `session.stats.resimulated` measure the cost.
 - A message with no actions for a tick that already ran costs nothing, since the prediction was right.
 
-Before each tick it isn't sure of, the session captures the game with [`Timeline.capture`](capturing-and-rewinding.md). It releases the capture once every peer has sent their actions for that tick. `session.kept` is the number of captures it holds, never more than `ahead`.
+Before each tick it isn't sure of, the session captures the game with [`Timeline.capture`](capturing-and-rewinding.md). It releases the capture once every peer has sent their actions for that tick. `session.stats.kept` is the number of captures it holds, never more than `ahead`. `session.stats` holds what a debug overlay shows beside it: the messages held, those some peer hasn't heard, the checkpoints waiting for an answer, the rewinds and the ticks resimulated.
 
 - A tick every peer has already sent actions for isn't captured, so a fast network costs nothing.
 - Each capture is a snapshot of the whole world, and a rewind loads one. A very large world pays that cost on each uncertain tick.
@@ -87,25 +87,78 @@ Before each tick it isn't sure of, the session captures the game with [`Timeline
 
 ## Drive a session
 
-```ts sketch
+```ts
+import { App, Driver, Plugin } from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Relay, Session, Transport } from "arcadekit/net";
+import { Effect, Schedule } from "effect";
+
+const Duel = App.define({ plugins: [Plugin.make("game/Game", {})] });
+const status = document.querySelector("#status")!;
+const say = (text: string) =>
+  Effect.sync(() => {
+    status.textContent = text;
+  });
+
 const program = Driver.run(
   Effect.gen(function* () {
     const session = yield* Session.make(Duel, {
-      seed,
-      me,
-      others,
-      delta: 1 / 60,
+      seed: 1,
+      me: "ada",
+      others: ["grace"],
+      hz: 60,
     });
     return yield* Transport.connect(session);
-  })
-).pipe(Effect.provide(Transport.layerBroadcastChannel("game/room-7", me)));
+  }),
+  {
+    // Handed the connection before the first frame. What it forks lasts
+    // as long as the run.
+    ready: (online) =>
+      Effect.forkScoped(
+        Effect.repeat(
+          Effect.suspend(() =>
+            say(
+              online.waitingFor.length === 0
+                ? ""
+                : `Waiting for ${online.waitingFor.join(", ")}`
+            )
+          ),
+          Schedule.spaced("250 millis")
+        )
+      ),
+  }
+).pipe(
+  Effect.catchTags({
+    DriftDrifted: (drifted) =>
+      say(`The game went out of sync at tick ${drifted.tick}.`),
+    TransportLeft: (left) => say(`${left.peers.join(", ")} left the game.`),
+  }),
+  Effect.provide(
+    Transport.layerWebSocket(
+      Relay.address("wss://relay.example.com/rooms", {
+        room: "blue",
+        peer: "ada",
+      })
+    )
+  )
+);
+
+Browser.runMain(program, { target: document.querySelector("canvas")! });
 ```
 
-`Transport.connect` connects the session to a transport and returns what a driver steps in the session's place. The driver ticks it `1 / delta` times a second, the rate every peer is made with, and draws the game through it. A driver of a session takes neither `hz` nor `ticks`, and giving it either doesn't compile.
+`Transport.connect` connects the session to a transport and returns the session connected, which a driver steps in the session's place. The driver ticks it `hz` times a second, the rate every peer is made with, and draws the game through it. A driver of a session takes neither `hz` nor `ticks`, and giving it either doesn't compile.
 
-- `Transport.connect(session)` stands in for the session. Its `close` stops listening on the transport and closes the session. `Driver.run` closes it when it ends, as it closes an app.
+- The connection is the session and more: its `app`, `waitingFor`, `confirmed`, `drifted` and `stats` are the session's, and `away` lists the peers the transport said left. `Driver.run` hands it to `ready`, where a page reads what to show the player.
+- What ends the game is a failure of `Driver.run`, caught by its tag: `"DriftDrifted"` and `"DriftUnlike"` for peers that are [no longer playing one game](detecting-drift.md), `"TransportLeft"` for a peer that stayed away, `"TransportClosed"` for a socket closed for good, and `"SaveRefused"` for a game that can't be captured.
+- Its `close` stops listening on the transport and closes the session. `Driver.run` closes it when it ends, as it closes an app.
 - Key presses, the UI and `session.app.enqueue` all feed this peer's next message, as in a single-player game.
-- `session.tick()` takes no delta. Each tick simulates the session's `delta`.
+- `session.tick()` takes no delta. Each tick simulates `1 / hz` seconds.
+
+## Keep peers in step
+
+Two machines' clocks never run at quite the same rate. A peer whose clock runs fast would run ahead of the others until it had to wait for them, and they would rewind for each of its moves. `session.lead` says how many ticks a peer is ahead of the peer furthest behind it, from the messages that arrived. Each peer says in its messages how far ahead it found itself, so the time a message takes cancels out.
+
+A driver runs a session's ticks at half their rate while its `lead` is 2 or more, so the others catch up. A program that steps a session by hand reads `session.lead` and waits a tick itself.
 
 ## Prepare a game for online play
 

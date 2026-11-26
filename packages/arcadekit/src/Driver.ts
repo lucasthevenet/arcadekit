@@ -8,7 +8,7 @@
  *   yield* Driver.frames(app, { hz: 60 })            // in a page, once per repaint
  *   yield* Driver.interval(app, { hz: 60 })          // on a timer
  *
- * A session ticks by the `delta` all its peers are made with, so its driver
+ * A session ticks at the `hz` all its peers are made with, so its driver
  * takes no `hz`: `Driver.frames(session)`.
  *
  * What a driver steps returns an Effect from each step, and the driver
@@ -48,22 +48,28 @@ export interface Tickable<E = never> {
    * without it on every tick.
    */
   readonly settled?: boolean;
-  /** Absent. Something that ticks by a `delta` of its own is `Paced`. */
-  readonly delta?: never;
+  /** Absent. Something that ticks at an `hz` of its own is `Paced`. */
+  readonly hz?: never;
 }
 
 /**
- * Anything that ticks by a `delta` of its own: a session, or a session
- * connected to a transport. A driver runs it at `1 / delta` ticks a second,
- * and takes neither `hz` nor `ticks` for it.
+ * Anything that ticks at an `hz` of its own: a session, or a session
+ * connected to a transport. A driver runs it at `hz` ticks a second, and
+ * takes neither `hz` nor `ticks` for it.
  *
  * @typeParam E what its tick or its frame stage fails with
  *
  * @category Models
  */
 export interface Paced<E = never> {
-  /** The seconds each of its ticks simulates. */
-  readonly delta: number;
+  /** The ticks per second it runs at. */
+  readonly hz: number;
+  /**
+   * How many ticks it is ahead of the peers it plays with, as a session's
+   * `lead` says. While it is 2 or more, a driver runs its ticks at half their
+   * rate, so that the others catch up.
+   */
+  readonly lead?: number;
   /**
    * Runs its input stage, then its next tick if that tick can run. What it
    * succeeds with is the session's: whether the tick ran.
@@ -105,8 +111,8 @@ export interface StepOptions {
 }
 
 /**
- * Options for how a driver steps a session, which ticks at its own `delta`
- * and never rests.
+ * Options for how a driver steps a session, which ticks at its own `hz` and
+ * never rests.
  *
  * @category Options
  */
@@ -117,32 +123,40 @@ export interface PacedOptions {
    */
   readonly maxStepsPerCall?: number;
   /** Absent. Its type is the compiler's error for a driver given one. */
-  readonly hz?: "A session ticks 1 / delta times a second, the same on every peer: give its driver no hz.";
+  readonly hz?: "A session ticks at the hz it was made with, the same on every peer: give its driver no hz.";
   /** Absent. Its type is the compiler's error for a driver given one. */
   readonly ticks?: "A session ticks continuously, since the other peers wait for its messages: give its driver no ticks.";
 }
 
-/** How a driver steps what it is given: how long a tick is, and whether it rests. */
+/**
+ * How a driver steps what it is given: how long a tick is, whether it rests,
+ * and how far ahead of its peers it is.
+ */
 interface Pace<E> {
   readonly app: Tickable<E>;
   readonly dt: number;
   readonly maxSteps: number;
   readonly whenNeeded: boolean;
+  readonly lead: () => number;
 }
 
-/** Returns how a driver steps an app at `hz`, or a session at its own `delta`. */
+/** The lead at which a driver runs a session's ticks at half their rate. */
+const SLOW_AT = 2;
+
+/** Returns how a driver steps an app at `hz`, or a session at its own `hz`. */
 const paceOf = <E>(
   target: Tickable<E> | Paced<E>,
   options: StepOptions | PacedOptions | undefined
 ): Pace<E> => {
   const maxSteps = options?.maxStepsPerCall ?? 5;
-  if (target.delta !== undefined) {
+  if (target.hz !== undefined) {
     // A session reads its devices in its own tick.
     return {
       app: { tick: () => Effect.asVoid(target.tick()), frame: target.frame },
-      dt: target.delta,
+      dt: 1 / target.hz,
       maxSteps,
       whenNeeded: false,
+      lead: () => target.lead ?? 0,
     };
   }
   // The signatures give an app the options with `hz`.
@@ -152,6 +166,7 @@ const paceOf = <E>(
     dt: 1 / hz,
     maxSteps,
     whenNeeded: ticks === "whenNeeded",
+    lead: () => 0,
   };
 };
 
@@ -163,6 +178,7 @@ const stepper = <E>({
   dt,
   maxSteps,
   whenNeeded,
+  lead,
 }: Pace<E>): ((realDelta: number) => Effect.Effect<number, E>) => {
   let accumulator = 0;
   // Whether the call before this one found the game at rest.
@@ -188,7 +204,9 @@ const stepper = <E>({
         }
       }
       yield* app.tick(dt);
-      accumulator = Math.max(0, accumulator - dt);
+      // A session well ahead of its peers takes the time of two ticks for
+      // each, as GGPO's time sync has the peer that is ahead wait.
+      accumulator = Math.max(0, accumulator - (lead() >= SLOW_AT ? 2 : 1) * dt);
       steps++;
     }
     if (resting) {
@@ -227,8 +245,9 @@ const stepper = <E>({
  * With `ticks: "whenNeeded"`, it ticks only while the app isn't settled, and
  * rests in between, as `StepOptions` says.
  *
- * A session steps the same way, with ticks of its own `delta`, and takes
- * neither `hz` nor `ticks`: `Driver.fixedStep(session)`.
+ * A session steps the same way, at its own `hz`, and takes neither `hz` nor
+ * `ticks`: `Driver.fixedStep(session)`. While the session's `lead` is 2 or
+ * more, each of its ticks takes the time of two.
  *
  * @category Running
  */
@@ -269,7 +288,7 @@ const beat = <E>(pace: Pace<E>): Effect.Effect<never, E> =>
  * Each time the timer fires, it runs one `fixedStep` step: the input stage
  * and the ticks that are due, then the frame stage. If a tick or a frame
  * fails or dies, the timer stops and the effect fails or dies with it. A
- * session's timer fires once per tick of its own `delta`, and `interval`
+ * session's timer fires once per tick of its own `hz`, and `interval`
  * takes neither `hz` nor `ticks` for it.
  *
  * **When to use**
@@ -513,7 +532,7 @@ const loop = Effect.fnUntraced(function* <E>(pace: Pace<E>) {
  * It does not close the app it is given, which belongs to whatever made it.
  * `Driver.run` is the loop that makes its app and closes it.
  *
- * A session runs the ticks due at its own `delta`, and `frames` takes neither
+ * A session runs the ticks due at its own `hz`, and `frames` takes neither
  * `hz` nor `ticks` for it:
  *
  *   yield* Driver.frames(yield* Transport.connect(session))
@@ -641,7 +660,7 @@ const runMade = <
  * `NodeRuntime.runMain(Driver.run(...))` runs the same game under Node.
  *
  * Given an effect that makes a session connected to its transport, it runs
- * at the session's own `delta`, and takes neither `hz` nor `ticks`. It
+ * at the session's own `hz`, and takes neither `hz` nor `ticks`. It
  * closes the connection when it ends, and the connection's `close` closes
  * the session. It fails with what the session's tick fails with: what the
  * game's systems fail with, `Drift.Unlike`, `Drift.Drifted`,

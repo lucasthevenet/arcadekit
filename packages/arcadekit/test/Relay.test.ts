@@ -14,7 +14,7 @@ import { WebSocketServer } from "ws";
 import { Driver, Input, World } from "../src/index.ts";
 import { Message, Relay, Session, Transport } from "../src/net/index.ts";
 import { thrown, unwrap } from "./checks.ts";
-import { CoinGame, DELTA, moves, players, purseOf } from "./peers.ts";
+import { CoinGame, HZ, moves, players, purseOf } from "./peers.ts";
 import type { Peer } from "./peers.ts";
 
 const message = (from: string, tick: number, value = 0): Message.Message => ({
@@ -52,7 +52,7 @@ const seatAt = (url: string, name: string) =>
       checkpointEvery: 1,
       me: name,
       others: ["ada", "grace"].filter((other) => other !== name),
-      delta: DELTA,
+      hz: HZ,
     }).pipe(Effect.provide(Input.layer(source)));
     const connected = yield* Effect.acquireRelease(
       Transport.connect(session).pipe(
@@ -289,7 +289,7 @@ describe("what a member sent", () => {
       Message.encode({
         ...message("ada", 0, 3),
         checkpoints: [{ tick: 0, hash: 7 }],
-        made: { game: 3, delta: DELTA, peers: ["ada", "grace"], start: 0 },
+        made: { game: 3, hz: HZ, peers: ["ada", "grace"], start: 0 },
         heard: 0,
       })
     );
@@ -828,7 +828,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             expect(one.connected.away).toEqual([]);
             expect(two.connected.away).toEqual([]);
             // What both have heard is let go of.
-            expect(one.session.unheard).toBeLessThan(20);
+            expect(one.session.stats.unheard).toBeLessThan(20);
           })
         );
       })
@@ -846,7 +846,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
               seed: 5,
               me: "ada",
               others: ["grace"],
-              delta: DELTA,
+              hz: HZ,
               ahead: 0,
             });
             const connected = yield* Effect.acquireRelease(
@@ -887,7 +887,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             expect(connected.away).toEqual(["grace"]);
             // Ada waits for her, with what she has to say kept.
             expect(session.waitingFor).toEqual(["grace"]);
-            expect(session.unheard).toBeGreaterThan(0);
+            expect(session.stats.unheard).toBeGreaterThan(0);
           })
         );
       })
@@ -1024,7 +1024,7 @@ describe("the transport between machines, a WebSocket to a relay", () => {
           seed: 5,
           me: "ada",
           others: ["grace"],
-          delta: DELTA,
+          hz: HZ,
         });
         const connected = yield* Transport.connect(session).pipe(
           Effect.provide(Transport.layerWebSocket(url))
@@ -1319,7 +1319,7 @@ describe("the transport between machines, when its socket drops", () => {
                 seed: 5,
                 me: "ada",
                 others: ["grace"],
-                delta: DELTA,
+                hz: HZ,
               }),
               (session) => Transport.connect(session)
             )

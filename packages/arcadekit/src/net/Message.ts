@@ -62,8 +62,8 @@ export const Message = Schema.Struct({
        * a peer that draws the game and one that doesn't play it together.
        */
       game: Hash,
-      /** The seconds a tick simulates. */
-      delta: Schema.Finite,
+      /** The ticks per second the game runs at. */
+      hz: Schema.Finite,
       /** Every peer of the game, in order of name. */
       peers: Schema.Array(Schema.String),
       /** The tick the peer's game begins at. */
@@ -77,6 +77,18 @@ export const Message = Schema.Struct({
    * it says nothing of what its peer heard.
    */
   heard: Schema.optionalKey(Count),
+  /**
+   * The tick the peer was about to run when it sent this. The others read
+   * from it how far behind or ahead of them the peer is.
+   */
+  at: Schema.optionalKey(Count),
+  /**
+   * How many ticks the peer found itself ahead of the peer furthest behind
+   * it, when it sent this, by the last message it had from each. It counts
+   * the time a message takes too, which the others cancel out with their
+   * own.
+   */
+  lead: Schema.optionalKey(Schema.Int),
 });
 
 export type Message = typeof Message.Type;

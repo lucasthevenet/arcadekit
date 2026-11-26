@@ -11,7 +11,7 @@
  *     seed: 1,
  *     me: "ada",
  *     others: ["grace"],
- *     delta: 1 / 60,
+ *     hz: 60,
  *   })
  *
  *   yield* session.app.enqueue(Move, { dx: 1 })   // applied on every peer
@@ -57,12 +57,21 @@
  * it is resimulated, and the peers drift apart.
  * `Session.syncTest` finds such a tick in a test, with no second peer.
  *
- * `Peer` is the session without its app, `Message` what the peers say to
- * each other, and `Drift` how they find that they have drifted apart.
+ * A session holds no socket and no timer. A transport carries its messages,
+ * as the bytes `Message.encode` writes, and `Transport.connect` joins the
+ * two. Every message says how far its peer has heard the others, so a
+ * session keeps what it sent until every other peer has heard it, and
+ * `resend` returns it when a peer comes back after its socket dropped.
+ *
+ * A session's first message says what it was made with, `Message.Made`. A
+ * session that hears another was made otherwise stops with `Drift.Unlike`,
+ * and one whose world hashed differently from another's at the same tick
+ * stops with `Drift.Drifted`. `Drift` says how they find it.
  */
 import { Data, Effect } from "effect";
 
 import type * as App from "../App.ts";
+import type { Paced } from "../Driver.ts";
 import { add, addString, finish } from "../ecs/hash.ts";
 import { build } from "../internal/build.ts";
 import type { Reins } from "../internal/build.ts";
@@ -71,8 +80,9 @@ import { flatten } from "../internal/plugins.ts";
 import * as Plugin from "../Plugin.ts";
 import type * as Save from "../Save.ts";
 import * as Timeline from "../Timeline.ts";
+import type * as Drift from "./Drift.ts";
 import { build as buildPeer } from "./internal/peer.ts";
-import * as Peer from "./Peer.ts";
+import type { Message } from "./Message.ts";
 
 /**
  * Options for a session: how its game starts, as `App.make` takes it, this
@@ -96,8 +106,11 @@ export interface Options<
    * play with the same names.
    */
   readonly others: Others;
-  /** The seconds a tick simulates, the same on every peer. */
-  readonly delta: number;
+  /**
+   * The ticks per second the game runs at, the same on every peer, as
+   * `Driver.run` takes it for a game of one.
+   */
+  readonly hz: number;
   /**
    * How many ticks pass between issuing an action and applying it, a whole
    * number from 0 up. Each peer can use its own. A message has that long to
@@ -170,21 +183,133 @@ type Distinct<Me extends string, Others extends readonly string[]> = [
   : { readonly names: Repeated<Me, Others> };
 
 /**
- * One peer of a multiplayer game, with its app. A driver steps it at its own
- * `delta`, and takes neither `hz` nor `ticks` for it:
- * `Driver.frames(yield* Transport.connect(session))`. `Peer.Peer` documents
- * what it receives, sends and reports.
+ * One peer of a multiplayer game, with its app: what a driver steps, and
+ * what a transport carries messages for. A driver steps it at its own `hz`,
+ * and takes neither `hz` nor `ticks` for it:
+ * `Driver.frames(yield* Transport.connect(session))`.
  *
  * @typeParam E What a tick of its app can fail with.
  * @typeParam HU The actions its handlers accept.
  * @category Models
  */
-export interface Session<E = never, HU = never> extends Peer.Peer<E> {
+export interface Session<E = never, HU = never> extends Paced<
+  E | Drift.Unlike | Drift.Drifted | Save.Refused
+> {
   /**
    * The session's app, which the session steps: its world to read, its
    * `enqueue` for what this peer's player does, its saves and its recordings.
    */
   readonly app: App.Steered<E, HU>;
+  /** This peer's name. */
+  readonly me: string;
+  /**
+   * Every peer of the game, this one too, in the order their actions are
+   * applied.
+   */
+  readonly peers: readonly string[];
+  /** The ticks per second it runs at. */
+  readonly hz: number;
+  /** How many ticks pass between issuing an action and applying it. */
+  readonly delay: number;
+  /** How many ticks the session may run past what every peer has sent. */
+  readonly ahead: number;
+  /**
+   * Receives a message from another peer. Messages may arrive in any order and
+   * more than once. It drops a message it already has, and one from a name
+   * that isn't a peer of the game. A message with actions for a tick that ran
+   * without it makes the next tick go back and run again from there. What a
+   * first message says its peer was made with is compared with what this one
+   * was made with, whoever sent it.
+   */
+  readonly receive: (message: Message) => void;
+  /**
+   * Returns the messages to send to every other peer, and removes them, so
+   * the next call returns only newer ones. Every message must arrive, in any
+   * order.
+   */
+  readonly outgoing: () => readonly Message[];
+  /**
+   * Returns every message this peer has sent that some other peer hasn't said
+   * it heard, to send again when a peer joins the room again after its socket
+   * dropped, or this one does. It keeps them until every other peer has heard
+   * them. A peer drops a message that arrives twice.
+   */
+  readonly resend: () => readonly Message[];
+  /**
+   * Runs the next tick if this peer has every peer's message for it, and
+   * succeeds with whether it ran. First it runs the input stage, as a driver
+   * does before an app's tick, and what the devices issue goes into the
+   * message for the tick `delay` ticks ahead. Input issued while the session
+   * waits for a peer goes into its next message.
+   *
+   * A session that runs ahead runs a tick before every message for it is in,
+   * up to `ahead` ticks past what every peer has sent. Before that, it goes
+   * back over the ticks that a message with actions has since arrived for.
+   *
+   * The tick simulates `1 / hz` seconds. It fails with a system's error,
+   * `Drift.Unlike` once a peer has said it was made otherwise,
+   * `Drift.Drifted` once the peers have drifted apart, or `Save.Refused`
+   * when the game can't be captured before a tick it runs ahead. The tick
+   * doesn't run then.
+   */
+  readonly tick: () => Effect.Effect<
+    boolean,
+    E | Drift.Unlike | Drift.Drifted | Save.Refused
+  >;
+  /** The app's frame stage, for a driver to draw the game with. */
+  readonly frame: (alpha: number, delta?: number) => Effect.Effect<void, E>;
+  /**
+   * Why the session stopped, once it has: a peer was made otherwise than this
+   * one, or its world hashed differently from this one's at the same tick.
+   * Every later tick fails with it.
+   */
+  readonly drifted: Drift.Unlike | Drift.Drifted | undefined;
+  /** The peers whose message the next tick is still waiting for. */
+  readonly waitingFor: readonly string[];
+  /**
+   * The number of final ticks: every peer's messages for them have arrived, and
+   * the game has run with them. Later ticks are predictions, and may be
+   * resimulated differently. The frame stage draws and plays every tick as
+   * it runs, final or not: a system of it that must show only what is final
+   * checks this.
+   */
+  readonly confirmed: number;
+  /**
+   * How many ticks this peer is ahead of the peer furthest behind it. It is
+   * half of how far ahead this peer finds itself by that peer's last message,
+   * less how far ahead that peer found itself, so that the time a message
+   * takes cancels out. It is below 0 when every other peer is ahead. A driver
+   * runs a session's ticks at half their rate while its lead is 2 or more, so
+   * that a peer whose clock runs fast neither waits for the others nor makes
+   * them go back.
+   */
+  readonly lead: number;
+  /** What a debug overlay shows of how the session is doing. */
+  readonly stats: {
+    /**
+     * How many messages it holds, its own among them, for ticks that haven't
+     * run or aren't final yet.
+     */
+    readonly held: number;
+    /**
+     * How many moments the session holds to rewind to: one for each uncertain
+     * tick it ran, so never more than `ahead`. Each is a snapshot of the whole
+     * world. A tick every peer has already sent actions for isn't captured.
+     */
+    readonly kept: number;
+    /** How many messages this peer keeps that some other peer hasn't heard. */
+    readonly unheard: number;
+    /**
+     * How many of its checkpoints are waiting for a peer's hash. A checkpoint
+     * that is never answered, because no other peer records one at that tick,
+     * is discarded after 600 ticks.
+     */
+    readonly unanswered: number;
+    /** How many times the session has rewound. */
+    readonly rewinds: number;
+    /** How many ticks the session has resimulated in total. */
+    readonly resimulated: number;
+  };
   /**
    * Closes the session's app, as `app.close` closes an app. Whatever runs
    * the session closes it. The connection that `Transport.connect` makes
@@ -235,7 +360,7 @@ const simulates = (
 
 /**
  * Makes a session and the app it steps. Every peer of the game makes its
- * session alike: with the same game, the same seed or save, the same `delta`
+ * session alike: with the same game, the same seed or save, the same `hz`
  * and the same names.
  *
  * The session begins at whatever tick its app does, so a game can continue
@@ -248,12 +373,12 @@ const simulates = (
  *
  * - It throws when the options can't describe a game: a name given twice that
  *   the compiler knows only as `string`, a `delay` or an `ahead` that isn't a
- *   whole number of ticks, or a `delta` that isn't a finite number above 0.
+ *   whole number of ticks, or an `hz` that isn't a finite number above 0.
  * - A payload its schema rejects has no JSON form to send. Only the issuing
  *   peer refuses it, and the others never see it.
- * - Each peer is given its own game, seed, `delta` and names. Its first
+ * - Each peer is given its own game, seed, `hz` and names. Its first
  *   message says what it was made with: what the game simulates, the
- *   `delta`, the names, and the tick the game begins at. A peer made
+ *   `hz`, the names, and the tick the game begins at. A peer made
  *   otherwise stops every peer that hears it with `Drift.Unlike`, before any
  *   of them runs a tick it is sure of. What the game simulates is compared
  *   by name: the systems of the tick in the order they run, the hooks of its
@@ -289,7 +414,7 @@ export const make = <
           game: simulates(game, app.systemOrder),
           me: options.me,
           others: options.others,
-          delta: options.delta,
+          hz: options.hz,
           // A session that predicts nothing would wait for the network on
           // every tick with no delay.
           delay: options.delay ?? (ahead === 0 ? 2 : 0),

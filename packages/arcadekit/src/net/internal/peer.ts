@@ -7,11 +7,11 @@ import type * as Save from "../../Save.ts";
 import * as Timeline from "../../Timeline.ts";
 import * as Drift from "../Drift.ts";
 import type { Issued, Made, Message } from "../Message.ts";
-import type { Peer } from "../Peer.ts";
+import type { Session } from "../Session.ts";
 
 /**
  * What a peer is told of its game: what it simulates, as `Message.Made`'s
- * `game` hashes it, who it is, who plays, how long a tick is, and how far it
+ * `game` hashes it, who it is, who plays, how many ticks a second, and how far it
  * sends and runs ahead. `Session.Options` documents the rest.
  *
  * @internal
@@ -20,7 +20,7 @@ export interface Options {
   readonly game: number;
   readonly me: string;
   readonly others: readonly string[];
-  readonly delta: number;
+  readonly hz: number;
   readonly delay: number;
   readonly ahead: number;
 }
@@ -43,7 +43,8 @@ export type PeerApp<E> = Pick<
  * Makes the peer of an app that has been taken over for it: `take` is given
  * what receives each action issued from outside, and returns the reins of
  * the app. It is the one session there is: one that predicts no tick has an
- * `ahead` of 0. Its `close` closes the app.
+ * `ahead` of 0. Its `close` closes the app, and its `app` is the app it was
+ * given.
  *
  * @internal
  */
@@ -51,11 +52,8 @@ export const build = <E, A extends PeerApp<E>>(
   app: A,
   take: (issued: (name: string, payload: unknown) => void) => Reins<E>,
   options: Options
-): Peer<E> & {
-  readonly app: A;
-  readonly close: Effect.Effect<void>;
-} => {
-  const { ahead, delay, delta, game, me: peer } = options;
+): Omit<Session<E>, "app"> & { readonly app: A } => {
+  const { ahead, delay, game, hz, me: peer } = options;
   if (!Number.isSafeInteger(delay) || delay < 0) {
     throw new Error(
       `A session's delay is a whole number of ticks, 0 or more, and this one is ${delay}.`
@@ -66,11 +64,12 @@ export const build = <E, A extends PeerApp<E>>(
       `How far a session runs ahead is a whole number of ticks, 0 or more, and this one is ${ahead}.`
     );
   }
-  if (!(delta > 0) || !Number.isFinite(delta)) {
+  if (!(hz > 0) || !Number.isFinite(hz)) {
     throw new Error(
-      `A session's delta is the seconds a tick simulates, more than 0, and this one is ${delta}.`
+      `A session's hz is the ticks a second it runs at, more than 0, and this one is ${hz}.`
     );
   }
+  const delta = 1 / hz;
   const peers = [peer, ...options.others].toSorted(byName);
   if (new Set(peers).size !== peers.length) {
     throw new Error(
@@ -85,7 +84,7 @@ export const build = <E, A extends PeerApp<E>>(
   });
 
   const start = app.time.tick;
-  const made: Made = { game, delta, peers, start };
+  const made: Made = { game, hz, peers, start };
   // Per peer, the actions of each tick that may still have to be run.
   const held = new Map<string, Map<number, readonly Issued[]>>();
   // Per peer, the first tick its message is missing for: every one before
@@ -106,6 +105,22 @@ export const build = <E, A extends PeerApp<E>>(
   }
   // This peer's messages that some other peer hasn't heard, by tick.
   const kept = new Map<number, Message>();
+
+  // --- time sync: how far ahead of the others this peer runs ----------------
+  // Per other peer, the latest tick it said it was at, and how far ahead of
+  // the peer furthest behind it it found itself then.
+  const clock = new Map<string, number>();
+  const told = new Map<string, number>();
+  for (const name of acked.keys()) {
+    clock.set(name, start);
+    told.set(name, 0);
+  }
+  /**
+   * How far ahead of the peer furthest behind this one finds itself, the
+   * time a message takes and all. Below 0 when every other is ahead.
+   */
+  const advantage = (): number =>
+    Math.max(...Array.from(clock.values(), (at) => app.time.tick - at));
 
   /** Returns the first tick this peer is missing another peer's message for. */
   const heard = (): number => {
@@ -146,7 +161,9 @@ export const build = <E, A extends PeerApp<E>>(
         actions,
         ...(checkpoints.length === 0 ? {} : { checkpoints }),
         ...(tick === start ? { made } : {}),
-        ...(acked.size === 0 ? {} : { heard: heard() }),
+        ...(acked.size === 0
+          ? {}
+          : { heard: heard(), at: now, lead: advantage() }),
       };
       outbox.push(message);
       if (acked.size > 0) {
@@ -308,12 +325,17 @@ export const build = <E, A extends PeerApp<E>>(
     close: app.close,
     me: peer,
     peers,
-    delta,
+    hz,
     delay,
     ahead,
     receive(message) {
       if (message.made !== undefined) {
         drift.told(message.from, message.made);
+      }
+      const at = clock.get(message.from);
+      if (message.at !== undefined && at !== undefined && message.at >= at) {
+        clock.set(message.from, message.at);
+        told.set(message.from, message.lead ?? 0);
       }
       const said = acked.get(message.from);
       if (
@@ -368,9 +390,6 @@ export const build = <E, A extends PeerApp<E>>(
         heard: now,
       }));
     },
-    get unheard() {
-      return kept.size;
-    },
     tick: () => ticking,
     get drifted() {
       return drift.drifted;
@@ -380,29 +399,45 @@ export const build = <E, A extends PeerApp<E>>(
       const needed = app.time.tick - ahead;
       return peers.filter((name) => name !== peer && have.get(name)! <= needed);
     },
-    get held() {
-      let count = 0;
-      for (const turns of held.values()) {
-        count += turns.size;
-      }
-      return count;
-    },
-    get unanswered() {
-      return drift.unanswered;
-    },
     get confirmed() {
       return wrong === undefined
         ? Math.min(known(), app.time.tick)
         : Math.min(known(), wrong);
     },
-    get rewinds() {
-      return rewinds;
+    get lead() {
+      // Against each other peer, half the difference of how far ahead each
+      // found itself: the time a message takes is in both, and cancels.
+      let most: number | undefined;
+      for (const [name, at] of clock) {
+        const mine = app.time.tick - at;
+        const lead = (mine - told.get(name)!) / 2;
+        most = most === undefined ? lead : Math.max(most, lead);
+      }
+      return most ?? 0;
     },
-    get resimulated() {
-      return resimulated;
-    },
-    get kept() {
-      return moments.size;
+    stats: {
+      get held() {
+        let count = 0;
+        for (const turns of held.values()) {
+          count += turns.size;
+        }
+        return count;
+      },
+      get kept() {
+        return moments.size;
+      },
+      get unheard() {
+        return kept.size;
+      },
+      get unanswered() {
+        return drift.unanswered;
+      },
+      get rewinds() {
+        return rewinds;
+      },
+      get resimulated() {
+        return resimulated;
+      },
     },
     frame: app.frame,
   };

@@ -217,11 +217,6 @@
       "types": "./dist/net/Message.d.ts",
       "default": "./dist/net/Message.js"
     },
-    "./net/Peer": {
-      "source": "./src/net/Peer.ts",
-      "types": "./dist/net/Peer.d.ts",
-      "default": "./dist/net/Peer.js"
-    },
     "./net/Relay": {
       "source": "./src/net/Relay.ts",
       "types": "./dist/net/Relay.d.ts",

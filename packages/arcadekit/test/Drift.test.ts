@@ -4,15 +4,15 @@ import { Drift } from "../src/net/index.ts";
 
 /** Ada's side of a game of two, or of three, that begins at a tick. */
 const ada = (peers: readonly string[] = ["ada", "grace"], start = 0) =>
-  Drift.make({ peer: "ada", made: { game: 1, delta: 1 / 60, peers, start } });
+  Drift.make({ peer: "ada", made: { game: 1, hz: 60, peers, start } });
 
 describe("a peer's comparison of what the peers were made with", () => {
-  const made = { game: 1, delta: 1 / 60, peers: ["ada", "grace"], start: 0 };
+  const made = { game: 1, hz: 60, peers: ["ada", "grace"], start: 0 };
 
   it("holds nothing against a peer made the same, nor against its own word", () => {
     const drift = ada();
     drift.told("grace", made);
-    drift.told("ada", { ...made, delta: 1 });
+    drift.told("ada", { ...made, hz: 1 });
     expect(drift.drifted).toBeUndefined();
     expect(drift.compare(0, 0)).toBeUndefined();
   });
@@ -29,7 +29,7 @@ describe("a peer's comparison of what the peers were made with", () => {
       differ: ["game", "start"],
     });
     expect(drift.drifted).toEqual(unlike);
-    drift.told("edsger", { ...made, delta: 1 });
+    drift.told("edsger", { ...made, hz: 1 });
     drift.heard("grace", 0, [{ tick: 0, hash: 11 }]);
     expect(drift.compare(0, 0)).toEqual(unlike);
     expect(unlike.message).toMatch(
