@@ -2,6 +2,11 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
 
 import { entityIndex } from "../src/ecs/component.ts";
+import {
+  World as EcsWorld,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
 import type { Terms } from "../src/ecs/query.ts";
 import type { Spawned } from "../src/index.ts";
 import {
@@ -9,7 +14,6 @@ import {
   App,
   Commands,
   Component,
-  EcsWorld,
   EntityId,
   Field,
   Journal,
@@ -20,8 +24,6 @@ import {
   System,
   Time,
   World,
-  readSnapshot,
-  writeSnapshot,
 } from "../src/index.ts";
 import type {
   ComponentDef,

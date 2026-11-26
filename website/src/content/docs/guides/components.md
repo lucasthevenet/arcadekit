@@ -116,7 +116,8 @@ Inside the simulation, you name the components where you request what changes th
 A component added without a value is all zeros, unless it gives `initial`. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
 
 ```ts
-import { Component, EcsWorld, Field } from "arcadekit";
+import { Component, Field } from "arcadekit";
+import { World } from "arcadekit/ecs";
 
 const Size = Component.define(
   "game/Size",
@@ -124,7 +125,7 @@ const Size = Component.define(
   { initial: { width: 1, height: 1 } }
 );
 
-const world = new EcsWorld();
+const world = new World();
 world.spawn(Size); // 1 by 1
 ```
 
@@ -133,7 +134,8 @@ world.spawn(Size); // 1 by 1
 A component can **require** others. A spawn or an add of it gives the entity each one it lacks and wasn't given, bare or with the value written in `requires`:
 
 ```ts
-import { Component, EcsWorld, Field, Transform3d } from "arcadekit";
+import { Component, Field, Transform3d } from "arcadekit";
+import { World } from "arcadekit/ecs";
 
 const Rock = Component.define(
   "game/Rock",
@@ -146,7 +148,7 @@ const Rock = Component.define(
   }
 );
 
-const world = new EcsWorld();
+const world = new World();
 world.spawn(Rock); // at the origin, twice its size
 world.spawn(Rock, Transform3d.Position.of({ x: 4, y: 0, z: 0 })); // at 4
 ```

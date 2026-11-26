@@ -23,6 +23,7 @@ import type { SavedChanges } from "./ecs/changes.ts";
 import type { World, Moment as WorldMoment } from "./ecs/world.ts";
 import type { Told } from "./internal/outbox.ts";
 import { partsOf } from "./internal/parts.ts";
+import { taking } from "./internal/save.ts";
 import { READER } from "./internal/stage.ts";
 import * as Save from "./Save.ts";
 
@@ -96,7 +97,7 @@ export const capture = (
     const { time } = app;
     const { commands, events, world } = partsOf(app);
     return Exit.map(
-      Save.taking(commands, "capture", () => world._capture()),
+      taking(commands, "capture", () => world._capture()),
       (of): Moment =>
         new Held(
           time.tick,

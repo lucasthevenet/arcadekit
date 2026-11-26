@@ -10,6 +10,7 @@
 import { Context, Layer, Schema } from "effect";
 
 // In a game of your own these are "arcadekit/browser/Browser" and "arcadekit".
+import * as Audio from "../../src/browser/Audio.ts";
 import * as Browser from "../../src/browser/Browser.ts";
 import {
   Action,
@@ -183,7 +184,7 @@ const Level = Assets.bundle("page/Level", {
   layout: Assets.json("/level.json", Layout),
   star: Browser.image("/star.png"),
   // The level's own sound, loaded and let go with the rest of it.
-  caught: Browser.sound("/caught.wav"),
+  caught: Audio.sound("/caught.wav"),
 });
 const LevelAssets = Assets.during(State.is(Phase, "playing", "paused"), Level);
 

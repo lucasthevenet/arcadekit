@@ -3,23 +3,25 @@ import { Effect, Exit, Schema } from "effect";
 
 import { entityIndex } from "../src/ecs/component.ts";
 import {
+  CommandBuffer,
+  World as EcsWorld,
+  SnapshotError,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
+import {
   Action,
   App,
-  CommandBuffer,
   Commands,
   Component,
-  EcsWorld,
   EntityId,
   Field,
   Journal,
   Plugin,
   Query,
   Save,
-  SnapshotError,
   System,
   World,
-  readSnapshot,
-  writeSnapshot,
 } from "../src/index.ts";
 import type { Entity, RelationDef } from "../src/index.ts";
 

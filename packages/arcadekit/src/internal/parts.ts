@@ -1,7 +1,7 @@
 import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
-import type { EventBus } from "../Event.ts";
+import type { EventBus } from "./eventBus.ts";
 import type { TickDispatcher } from "./tickScheduler.ts";
 
 /**

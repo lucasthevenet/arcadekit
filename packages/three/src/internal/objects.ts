@@ -11,7 +11,7 @@ import { Scene } from "../Scene.ts";
 import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
 import type { Angle, Columns, Xy, Xyz, Xyzw } from "./columns.ts";
-import { Holdings } from "./holdings.ts";
+import { Holdings, heldIn } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
 import { isFlat, placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
@@ -362,15 +362,15 @@ export const objects = <O extends Object3D>(
   const place = placer(options);
   return System.frame(name, function* () {
     const kept = yield* Scene;
-    let held = kept._kept.get(name) as Objects<O> | undefined;
+    let held = heldIn(kept).kept.get(name) as Objects<O> | undefined;
     if (held === undefined) {
       held = new Objects(
         kept.scene,
         options,
         undefined,
-        new Holdings(kept._owned)
+        new Holdings(heldIn(kept).owned)
       );
-      kept._kept.set(name, held);
+      heldIn(kept).kept.set(name, held);
     }
     yield* place(held);
   });
@@ -389,15 +389,18 @@ export const bundledObjects = <B extends Entries, O extends Object3D>(
   const place = placer(options);
   return System.frame(name, function* () {
     const kept = yield* Scene;
-    let sourced = kept._kept.get(name) as FromAssets<Objects<O>> | undefined;
+    let sourced = heldIn(kept).kept.get(name) as
+      | FromAssets<Objects<O>>
+      | undefined;
     if (sourced === undefined) {
-      const { _owned, scene } = kept;
+      const { scene } = kept;
+      const { owned } = heldIn(kept);
       sourced = new FromAssets(
         yield* Assets.Store,
         options.from,
-        (assets) => new Objects(scene, options, assets, new Holdings(_owned))
+        (assets) => new Objects(scene, options, assets, new Holdings(owned))
       );
-      kept._kept.set(name, sourced);
+      heldIn(kept).kept.set(name, sourced);
     }
     const held = sourced.now();
     // Its assets are not there: there is nothing to make an object of.

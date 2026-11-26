@@ -18,8 +18,9 @@ import * as Action from "../Action.ts";
 import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
-import type { EventBus } from "../Event.ts";
-import type * as Journal from "../Journal.ts";
+import type { EventBus } from "./eventBus.ts";
+import { Intake, jsonOf, said } from "./intake.ts";
+import type { Log } from "./journal.ts";
 import type { Runner } from "./runner.ts";
 import { GameTime } from "./stage.ts";
 
@@ -33,8 +34,8 @@ export interface Parts {
   readonly commands: CommandBuffer<Spawned>;
   readonly events: EventBus;
   /** The actions queued for the next tick, a store of the world. */
-  readonly intake: Action.Intake;
-  readonly log: Journal.Log;
+  readonly intake: Intake;
+  readonly log: Log;
   readonly runner: Runner;
   readonly time: { readonly tick: number };
   /** The game's handlers, by the name of their action. */
@@ -156,7 +157,7 @@ export class Inbox {
       return Exit.fail(
         Action.InvalidPayload.make({
           action: name,
-          message: Action.said(Cause.squash(json.cause)),
+          message: said(Cause.squash(json.cause)),
         })
       );
     }
@@ -183,7 +184,7 @@ export class Inbox {
     const exit = this.enqueue(action, payload);
     if (Exit.isFailure(exit)) {
       throw new Error(
-        `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${Action.said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
+        `A system of the frame or input stage issued the action "${action.name}" with a payload its schema does not take: ${said(Cause.squash(exit.cause))}. It runs on one machine, so no other peer could hear of it: issue a payload the schema takes.`
       );
     }
   }
@@ -279,7 +280,7 @@ export class Inbox {
         continue;
       }
       if (entry !== undefined) {
-        entry.refused = Action.said(Cause.squash(exit.cause));
+        entry.refused = said(Cause.squash(exit.cause));
       }
       const error =
         Cause.hasDies(exit.cause) || Cause.hasInterrupts(exit.cause)
@@ -299,7 +300,7 @@ export class Inbox {
       const rejected = Exit.isSuccess(json)
         ? {
             action: name,
-            payload: Action.jsonOf(action),
+            payload: jsonOf(action),
             error: json.value,
             from,
           }
@@ -308,7 +309,7 @@ export class Inbox {
         defects.push(
           Exit.die(
             new Error(
-              `The handler for "${name}" failed with ${Action.said(error.value)}, which the error schema of its action does not take. Declare it in the error of Action.define(name, payload, { error }): a schema whose values have a _tag, such as a Schema.TaggedError or a Schema.TaggedStruct.`
+              `The handler for "${name}" failed with ${said(error.value)}, which the error schema of its action does not take. Declare it in the error of Action.define(name, payload, { error }): a schema whose values have a _tag, such as a Schema.TaggedError or a Schema.TaggedStruct.`
             )
           )
         );

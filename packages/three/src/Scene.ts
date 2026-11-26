@@ -17,8 +17,6 @@
 import { Context } from "effect";
 import type { Camera, Scene as ThreeScene } from "three";
 
-import type { Kept, Owned } from "./internal/holdings.ts";
-
 /**
  * The scene and its camera, as a system gets them from `yield* Three.Scene`.
  *
@@ -33,17 +31,6 @@ export interface SceneShape {
    * such as an `OrthographicCamera`.
    */
   camera: Camera;
-  /**
-   * The meshes and objects the systems of this module keep, by the name of
-   * the system that keeps them.
-   * @internal
-   */
-  readonly _kept: Map<string, Kept>;
-  /**
-   * How many systems draw with each geometry and material.
-   * @internal
-   */
-  readonly _owned: Map<Owned, number>;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   Schema,
 } from "effect";
 
+import { readSnapshot } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -30,7 +31,6 @@ import {
   System,
   Time,
   World,
-  readSnapshot,
 } from "../src/index.ts";
 import type { Rng } from "../src/index.ts";
 import { thrown } from "./checks.ts";

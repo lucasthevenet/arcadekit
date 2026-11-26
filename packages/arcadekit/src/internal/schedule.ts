@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import type * as Plugin from "../Plugin.ts";
 import type * as State from "../State.ts";
 import * as System from "../System.ts";
+import { order, spanLevel, unique } from "./system.ts";
 
 /**
  * A system as the app runs it. A turn checks the system's condition, then runs
@@ -66,7 +67,7 @@ export class Turn {
             return holds ? run : (idle ?? Effect.void);
           }),
       system.name,
-      { level: System.spanLevel }
+      { level: spanLevel }
     );
   }
 }
@@ -117,9 +118,9 @@ export const make = (
   systems: readonly Plugin.AnySystem[],
   trace: boolean
 ): Schedule => {
-  System.unique(systems);
+  unique(systems);
   const turns = (list: readonly Plugin.AnySystem[]): Turn[] =>
-    System.order(list).map((system) => new Turn(system, trace));
+    order(list).map((system) => new Turn(system, trace));
   // A hook runs when its state is entered or left, not with the rest.
   const staged = systems.filter((system) => system.trigger === undefined);
   const tick = turns(

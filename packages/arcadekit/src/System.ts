@@ -21,13 +21,14 @@
 import { Effect } from "effect";
 import type { Layer, Scope } from "effect";
 import { dual } from "effect/Function";
-import { pipeArguments } from "effect/Pipeable";
 import type { Pipeable } from "effect/Pipeable";
 
 import type { Actions } from "./Action.ts";
 import type { Devices, Gamepads, Keyboard, Pointer } from "./Input.ts";
+import { build, make, simulating } from "./internal/system.ts";
+import type { Intake } from "./internal/view.ts";
 import type { Access, Adds, Writes } from "./Query.ts";
-import { Sim } from "./Services.ts";
+import type { Sim } from "./Services.ts";
 import type {
   Commands,
   Events,
@@ -37,7 +38,7 @@ import type {
   World,
 } from "./Services.ts";
 import type { Player } from "./Sound.ts";
-import type { Intake, Port } from "./View.ts";
+import type { Port } from "./View.ts";
 
 /**
  * The stages of a tick, in the order they run.
@@ -81,8 +82,6 @@ export const isFrameStage = (
 /** Every stage, in the order they run when several run together. */
 type TickStage = (typeof stages)[number];
 type FrameStage = (typeof frameStages)[number];
-
-const everyStage: readonly Stage[] = [...stages, "input", ...frameStages];
 
 /**
  * What triggers a hook, the game entering or leaving one value of a state.
@@ -146,21 +145,6 @@ export interface System<
    */
   readonly trigger: Tr;
 }
-
-const build = <
-  E,
-  R,
-  N extends string,
-  St extends Stage,
-  Tr extends Trigger | undefined,
->(
-  parts: Omit<System<E, R, N, St, Tr>, "pipe">
-): System<E, R, N, St, Tr> => ({
-  ...parts,
-  pipe() {
-    return pipeArguments(this, arguments);
-  },
-});
 
 /**
  * What a generator's effects can fail with, as `Effect.gen` says it.
@@ -329,35 +313,6 @@ export type LayerGated<L extends Layer.Layer<never, unknown, unknown>> =
       : { readonly [K in typeof LAYER_MSG]: Refused<R, LayerBan> }
     : never;
 
-/** What `Sim` stands for. A system provides it, and nothing reads it. */
-const simulation = { "~arcadekit/Sim": true } as const;
-
-const generate = <Eff extends Effect.Effect<unknown, unknown, unknown>>(
-  body: () => Generator<Eff, void, never>
-): Effect.Effect<void, GenError<Eff>, Open<GenServices<Eff>>> =>
-  Effect.provideService(Effect.gen(body), Sim, simulation);
-
-const define = <
-  E,
-  R,
-  N extends string,
-  St extends Stage,
-  Tr extends Trigger | undefined,
->(
-  name: N,
-  stage: St,
-  run: Effect.Effect<void, E, R>,
-  trigger: Tr
-): System<E, R, N, St, Tr> =>
-  build({
-    name,
-    stage,
-    run,
-    condition: undefined,
-    idle: undefined,
-    trigger,
-  });
-
 /**
  * Defines a system of the tick, in the `"update"` stage.
  *
@@ -397,7 +352,7 @@ export function tick<
   name: N,
   body: () => Generator<Eff, void, never>
 ): System<GenError<Eff>, Open<GenServices<Eff>>, N, "update", undefined> {
-  return define(name, "update", generate(body), undefined);
+  return make(name, "update", body);
 }
 
 /**
@@ -426,31 +381,8 @@ export function frame<
   name: N,
   body: () => Generator<Eff, void, never>
 ): System<GenError<Eff>, Open<GenServices<Eff>>, N, "frame", undefined> {
-  return define(name, "frame", generate(body), undefined);
+  return make(name, "frame", body);
 }
-
-/**
- * A system whose body was checked by the caller. `Assets.during`,
- * `Sound.music` and `View.publish` check a generic effect, then build the
- * system here so the check is not repeated on the type parameter.
- *
- * @internal
- */
-export const raw = <
-  const N extends string,
-  const St extends Stage,
-  Eff extends Effect.Effect<unknown, unknown, unknown>,
->(
-  name: N,
-  stage: St,
-  body: () => Generator<Eff, void, never>
-): System<GenError<Eff>, Open<GenServices<Eff>>, N, St, undefined> =>
-  define<GenError<Eff>, Open<GenServices<Eff>>, N, St, undefined>(
-    name,
-    stage,
-    generate(body),
-    undefined
-  );
 
 /**
  * Defines a system of the input stage. It reads `Input.Devices` and enqueues
@@ -477,7 +409,7 @@ export function input<
   name: N,
   body: () => Generator<Eff, void, never>
 ): System<GenError<Eff>, Open<GenServices<Eff>>, N, "input", undefined> {
-  return define(name, "input", generate(body), undefined);
+  return make(name, "input", body);
 }
 
 type Group<St> = St extends TickStage
@@ -618,7 +550,7 @@ export const runIf: {
     condition: Effect.Effect<boolean, E2, R2>
   ): System<E | E2, R | Open<R2>, N, St, Tr> => {
     const earlier = self.condition;
-    const opened = Effect.provideService(condition, Sim, simulation);
+    const opened = simulating(condition);
     return build<E | E2, R | Open<R2>, N, St, Tr>({
       ...self,
       condition:
@@ -630,15 +562,6 @@ export const runIf: {
     });
   }
 );
-
-/**
- * Makes a system a hook, set off by `trigger` in place of the tick.
- * @internal
- */
-export const triggered = <E, R, N extends string, St extends Stage>(
-  self: System<E, R, N, St>,
-  trigger: Trigger
-): System<E, R, N, St, Trigger> => build({ ...self, trigger });
 
 /**
  * Gives a system something to do in place of running, each time its condition
@@ -698,7 +621,7 @@ export const otherwise: {
     self: System<E, R, N, St, Tr>,
     idle: Effect.Effect<void, E2, R2>
   ): System<E | E2, R | Open<R2>, N, St, Tr> => {
-    const opened = Effect.provideService(idle, Sim, simulation);
+    const opened = simulating(idle);
     return build<E | E2, R | Open<R2>, N, St, Tr>({
       ...self,
       idle:
@@ -713,39 +636,3 @@ export type {
   Misordered,
   Ordered,
 } from "./system/order.ts";
-
-/**
- * The level of the spans an app makes, as a program's
- * `Tracer.MinimumTraceLevel` sees them.
- * @internal
- */
-export const spanLevel = "Debug";
-
-/**
- * A system's name is its place in events and in what changed, so two
- * systems cannot share one.
- * @internal
- */
-export const unique = (systems: readonly System<unknown, unknown>[]): void => {
-  const names = new Set<string>();
-  for (const system of systems) {
-    if (names.has(system.name)) {
-      throw new Error(`Duplicate system name "${system.name}"`);
-    }
-    names.add(system.name);
-  }
-};
-
-/**
- * Sorts systems into run order: by stage, and within a stage in the order they
- * are listed.
- * @internal
- */
-export const order = (
-  systems: readonly System<unknown, unknown>[]
-): System<unknown, unknown>[] => {
-  unique(systems);
-  return everyStage.flatMap((stage) =>
-    systems.filter((system) => system.stage === stage)
-  );
-};

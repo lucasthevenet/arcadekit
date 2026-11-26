@@ -29,14 +29,6 @@ import type { AudioLike, MediaLike } from "./Audio.ts";
 import * as decode from "./internal/decode.ts";
 import * as page from "./internal/page.ts";
 
-export {
-  layerSound,
-  sound,
-  stream,
-  type AudioLike,
-  type MediaLike,
-} from "./Audio.ts";
-
 /**
  * A page's display, on which a frame is due once per repaint, with
  * `requestAnimationFrame`, and the game is hidden while the document is. It
@@ -100,10 +92,10 @@ export interface Options {
   readonly gamepads?: () => ArrayLike<GamepadLike | null>;
   /**
    * The page's sounds for its whole lifetime, by the name a cue or a track is
-   * played with, as `Browser.layerSound` takes them. Each is the URL of a
+   * played with, as `Audio.layerSound` takes them. Each is the URL of a
    * file, which is fetched and decoded, or a clip, such as
-   * `Browser.stream(url)` for a long piece of music. When omitted, the page
-   * still plays the sounds in a level's bundle, made with `Browser.sound`.
+   * `Audio.stream(url)` for a long piece of music. When omitted, the page
+   * still plays the sounds in a level's bundle, made with `Audio.sound`.
    * `false` means no sound at all. No audio context is created, and the game
    * is told that nothing is heard.
    */
@@ -149,7 +141,7 @@ export interface Options {
  * - Each app listens to the devices for itself, from when `App.make` makes
  *   the app until the app is closed, wherever the layer is provided. Reading
  *   the devices after the app is closed throws, with an error that says so.
- * - Unless `sounds` is `false`, its sound is that of `Browser.layerSound`.
+ * - Unless `sounds` is `false`, its sound is that of `Audio.layerSound`.
  *   `Sound.plugin` opens it when the app is made, wherever the layer is
  *   provided, and keeps it open until the app is closed. The apps made under
  *   the layer share it.

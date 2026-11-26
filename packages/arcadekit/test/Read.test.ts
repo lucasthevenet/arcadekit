@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
+import { World as EcsWorld } from "../src/ecs/index.ts";
 import {
   Action,
   App,
   Commands,
   Component,
-  EcsWorld,
   Event,
   Field,
   Journal,

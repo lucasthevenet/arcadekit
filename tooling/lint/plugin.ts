@@ -527,10 +527,11 @@ interface Problem {
   readonly message: string;
 }
 
-/** A package under packages/: its name and its folder. */
+/** A package under packages/: its name, its folder, and the source file of each of its entries. */
 interface Workspace {
   readonly name: string;
   readonly dir: string;
+  readonly entries: ReadonlySet<string>;
 }
 
 const isNode = (value: unknown): value is Node =>
@@ -650,7 +651,7 @@ const field = (value: unknown, key: string): unknown =>
     ? Reflect.get(value, key)
     : undefined;
 
-/** A package, by the name its package.json gives it. */
+/** A package, by the name its package.json gives it, and its entries by their `source` condition. */
 const workspaceOf = (dir: string): Workspace | undefined => {
   const manifest = join(dir, "package.json");
   if (!existsSync(manifest)) {
@@ -661,7 +662,17 @@ const workspaceOf = (dir: string): Workspace | undefined => {
   if (typeof name !== "string") {
     return undefined;
   }
-  return { name, dir };
+  const exported = field(json, "exports");
+  const entries = new Set(
+    (typeof exported === "object" && exported !== null
+      ? Object.values(exported)
+      : []
+    ).flatMap((target) => {
+      const source = field(target, "source");
+      return typeof source === "string" ? [join(dir, source)] : [];
+    })
+  );
+  return { name, dir, entries };
 };
 
 const sourceFiles = (dir: string): string[] =>
@@ -870,6 +881,29 @@ const memberSignature = (source: Source, member: ClassElement): Node[] => {
   }
 };
 
+/** The members a public declaration shows, with the name of each. */
+const membersOf = (
+  statement: ExportNamedDeclaration
+): readonly { readonly node: Node; readonly name: string }[] => {
+  const { declaration } = statement;
+  const members: readonly Node[] =
+    declaration?.type === "TSInterfaceDeclaration" ||
+    declaration?.type === "ClassDeclaration"
+      ? declaration.body.body
+      : declaration?.type === "TSTypeAliasDeclaration" &&
+          declaration.typeAnnotation.type === "TSTypeLiteral"
+        ? declaration.typeAnnotation.members
+        : [];
+  return members.flatMap((node) => {
+    const key = field(node, "key");
+    const name =
+      field(key, "type") === "Identifier"
+        ? field(key, "name")
+        : field(key, "value");
+    return typeof name === "string" ? [{ node, name }] : [];
+  });
+};
+
 /** The types an export shows a game, in its signature. */
 const publicTypes = (
   source: Source,
@@ -1006,7 +1040,42 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
   const report = (file: string, problem: Problem): void => {
     problems.set(file, [...(problems.get(file) ?? []), problem]);
   };
+  const entryFiles = new Set(
+    workspaces.flatMap((workspace) => [...workspace.entries])
+  );
   for (const source of sources.values()) {
+    if (entryFiles.has(source.file)) {
+      for (const internals of source.internals.values()) {
+        for (const internal of internals) {
+          report(source.file, {
+            start: internal.start,
+            end: internal.end,
+            message: `${internal.name} is @internal, but ${source.path} is an entry, which a game imports: an entry's own file exports only what a game uses. Move it to the internal/ folder beside the module and import it from there, or make it public and give it a doc comment.`,
+          });
+        }
+      }
+      for (const statement of source.publics) {
+        if (statement.type !== "ExportNamedDeclaration") {
+          continue;
+        }
+        for (const { node, name } of membersOf(statement)) {
+          if (
+            source.isInternalDoc(node) &&
+            !(
+              "accessibility" in node &&
+              (node.accessibility === "private" ||
+                node.accessibility === "protected")
+            )
+          ) {
+            report(source.file, {
+              start: node.start,
+              end: node.end,
+              message: `${name} is @internal, but it is a member of a public export of the entry ${source.path}, so a game that holds one can call it. Keep it off the public type, in a WeakMap of the module or on an object of an internal/ file, or make it public and say what it does.`,
+            });
+          }
+        }
+      }
+    }
     const reexporting = (internal: Internal, name: Node): void =>
       report(source.file, {
         start: name.start,
@@ -1080,7 +1149,9 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
  * What is @internal stays out of what a game imports, as Effect's `no-unused-internal` rule
  * keeps it (packages/tools/oxc in Effect's repository), ported here: Effect's package is
  * private: an @internal export a public signature names, one a public module exports again, and
- * one no source uses. Where an @internal export is declared is left to the module, as in Effect.
+ * one no source uses. Beyond Effect's, an entry's own file, which a package.json names by its
+ * `source` condition, declares no @internal export and no @internal member of a public export:
+ * what a game sees after `State.` or on what a system yields is what it may use.
  * It reads the sources of every package, again whenever one has changed, since what it finds
  * in a file depends on the others. A test is no source, so what only a test uses is unused.
  * Like Effect's, it reads a signature that is written out: an export made by a call, such as
@@ -1091,7 +1162,7 @@ const noUnusedInternal: Rule = {
     type: "problem",
     docs: {
       description:
-        "What is @internal is named by no public signature or export, and used by a source.",
+        "What is @internal is named by no public signature or export, is declared in no entry's file, and is used by a source.",
     },
   },
   create: (context) => {

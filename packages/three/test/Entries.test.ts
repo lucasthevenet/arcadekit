@@ -1,4 +1,5 @@
 import * as Arcadekit from "arcadekit";
+import { World } from "arcadekit/ecs";
 import { describe, expect, it } from "vitest";
 
 import * as Main from "../src/index.ts";
@@ -238,7 +239,7 @@ describe("the entries of @arcadekit/three", () => {
 
   it("is built on the game's own arcadekit, not on a copy of it", () => {
     // The components it draws from are the ones the game's world knows.
-    const world = new Arcadekit.EcsWorld();
+    const world = new World();
     const entity = world.spawn(
       Arcadekit.Transform3d.Position.of({ x: 1, y: 2, z: 3 })
     );

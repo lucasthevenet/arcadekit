@@ -30,7 +30,7 @@
  *     return level.value === "menu" ? "menu-theme" : { track: "forest-theme", volume: 0.6 }
  *   })
  *
- * A level's own sounds are assets of its bundle, made with `Browser.sound(url)`
+ * A level's own sounds are assets of its bundle, made with `Audio.sound(url)`
  * in a page. They load and are released with the rest of the bundle:
  *
  *   const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak, chirp }) => [
@@ -50,6 +50,7 @@ import type { Scope } from "effect";
 
 import * as Assets from "./Assets.ts";
 import type * as Event from "./Event.ts";
+import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
 import type { Events } from "./Services.ts";
 import * as System from "./System.ts";
@@ -63,7 +64,7 @@ import * as System from "./System.ts";
  * **Details**
  *
  * Whatever loads a clip makes it for the output that will play it, such as the
- * `Browser.sound(url)` asset in a page. `name` is what a log or a recorder
+ * `Audio.sound(url)` asset in a page. `name` is what a log or a recorder
  * calls it. `data` is what the output plays, and only the output reads it.
  *
  * @category Models
@@ -153,7 +154,7 @@ const nowhere: Output = { open: Effect.succeed(silent) };
  *
  * **Details**
  *
- * A page provides its own output with `Browser.layerSound(files)`, or with the
+ * A page provides its own output with `Audio.layerSound(files)`, or with the
  * `sounds` option of `Browser.runMain`. A test provides a speaker that records
  * what it was asked, `Sound.layer(Sound.makeRecorder())`.
  *
@@ -345,16 +346,6 @@ export interface PlayerShape {
    */
   readonly play: (cue: Playable, options?: Options) => void;
   /**
-   * Forgets what the last frame asked for, which a failed frame never played.
-   * @internal
-   */
-  readonly _begin: () => void;
-  /**
-   * Plays what was asked for since the frame began.
-   * @internal
-   */
-  readonly _flush: () => void;
-  /**
    * Sets what a channel should play: a track, which loops or with `once` plays
    * to its end, or `undefined` for silence. Setting the same track and volume
    * again does nothing, so a system can set it every frame. Setting another
@@ -398,6 +389,16 @@ export class Player extends Context.Service<Player, PlayerShape>()(
   "arcadekit/Sound.Player"
 ) {}
 
+/**
+ * What `Sound.plugin`'s player does around a frame, by the player: forget what
+ * the last frame asked for, which a failed frame never played, and play what
+ * was asked for since the frame began.
+ */
+const frames = new WeakMap<
+  PlayerShape,
+  { readonly begin: () => void; readonly flush: () => void }
+>();
+
 const playerLayer = Layer.effect(
   Player,
   Effect.gen(function* () {
@@ -435,7 +436,7 @@ const playerLayer = Layer.effect(
     // What a frame's systems have asked to hear, by the cue: one sound for
     // each, however many asked and whichever system they were.
     const asked = new Map<Playable, { volume: number; rate: number }>();
-    return {
+    const player: PlayerShape = {
       audible: speaker !== silent,
       play(cue, options) {
         const volume = Math.max(0, options?.volume ?? 1);
@@ -445,34 +446,6 @@ const playerLayer = Layer.effect(
         } else if (volume > already.volume) {
           already.volume = volume;
           already.rate = options?.rate ?? 1;
-        }
-      },
-      _begin() {
-        for (const told of channels.values()) {
-          told.said = false;
-        }
-        asked.clear();
-      },
-      _flush() {
-        for (const [channel, told] of channels) {
-          if (!told.said) {
-            continue;
-          }
-          const { next, nextOnce, nextVolume } = told;
-          if (
-            told.track === next &&
-            told.volume === nextVolume &&
-            told.once === nextOnce
-          ) {
-            continue;
-          }
-          told.track = next;
-          told.volume = nextVolume;
-          told.once = nextOnce;
-          speaker.music(channel, next, nextVolume, told.nextFade, nextOnce);
-        }
-        for (const [cue, how] of asked) {
-          speaker.play(cue, how.volume, how.rate);
         }
       },
       music(channel, track, options) {
@@ -528,17 +501,48 @@ const playerLayer = Layer.effect(
         }
       },
     };
+    frames.set(player, {
+      begin() {
+        for (const told of channels.values()) {
+          told.said = false;
+        }
+        asked.clear();
+      },
+      flush() {
+        for (const [channel, told] of channels) {
+          if (!told.said) {
+            continue;
+          }
+          const { next, nextOnce, nextVolume } = told;
+          if (
+            told.track === next &&
+            told.volume === nextVolume &&
+            told.once === nextOnce
+          ) {
+            continue;
+          }
+          told.track = next;
+          told.volume = nextVolume;
+          told.once = nextOnce;
+          speaker.music(channel, next, nextVolume, told.nextFade, nextOnce);
+        }
+        for (const [cue, how] of asked) {
+          speaker.play(cue, how.volume, how.rate);
+        }
+      },
+    });
+    return player;
   })
 );
 
 /** Forgets what the last frame asked to hear, before any system asks. */
 const Begin = System.frame("arcadekit/Sound.Begin", function* () {
-  (yield* Player)._begin();
+  frames.get(yield* Player)?.begin();
 }).pipe(System.inStage("preFrame"));
 
 /** Plays what the frame's systems asked to hear, once they have all run. */
 const Flush = System.frame("arcadekit/Sound.Flush", function* () {
-  (yield* Player)._flush();
+  frames.get(yield* Player)?.flush();
 }).pipe(System.inStage("postFrame"));
 
 /**
@@ -591,9 +595,9 @@ export type CueOf<P> =
  * @category Models
  */
 export interface Line {
-  /** @internal */
+  /** The event it plays a cue for. */
   readonly event: Event.EventDef<unknown>;
-  /** @internal */
+  /** What it plays for an event's payload, or nothing. */
   readonly pick: (payload: never) => Playable | Cue | undefined;
 }
 
@@ -825,7 +829,7 @@ export function music<Eff extends Effect.Effect<unknown, unknown, unknown>>(
 ): System.System<System.GenError<Eff>, System.GenServices<Eff> | Player> {
   const pick = Effect.gen(body);
   const channel = options.channel ?? MUSIC;
-  return System.raw(name, "frame", function* () {
+  return makeSystem(name, "frame", function* () {
     const player = yield* Player;
     if (!player.audible) {
       return;

@@ -48,9 +48,9 @@ import type { Scope } from "effect";
 import * as Action from "./Action.ts";
 import type { World as EcsWorld } from "./ecs/world.ts";
 import * as Field from "./Field.ts";
+import { whole } from "./internal/handed.ts";
 import * as Plugin from "./Plugin.ts";
 import { Time, World } from "./Services.ts";
-import { whole } from "./services/handed.ts";
 import * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
 
@@ -785,7 +785,10 @@ type PayloadArgument<P> = undefined extends P
  * @category Models
  */
 export interface Binding {
-  /** @internal */
+  /**
+   * Issues its action with `enqueue` if the devices did what it waits for, as
+   * `Input.bind` calls it in each input stage.
+   */
   readonly fire: (devices: Sample, enqueue: Enqueue) => void;
 }
 

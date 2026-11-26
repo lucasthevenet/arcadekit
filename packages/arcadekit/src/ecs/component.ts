@@ -1017,42 +1017,18 @@ export type LiteralName<N extends string> = N &
  * Defines components: a component with data, a tag, a relation to another
  * entity, or a singleton.
  *
+ * **When to use**
+ *
+ * Use in a program of the storage core alone. In a game, the `Component`
+ * module of `arcadekit` defines components, relations and tags, and
+ * `Singleton.define` defines a singleton.
+ *
  * @category Constructors
  */
 export const Component = {
   /**
-   * Defines a component with data. Each numeric field is a column of a typed
-   * array.
-   *
-   * `name` is the component's identity in a world and in a save, a literal
-   * the compiler reads: a name typed `string` doesn't compile. Prefix it
-   * with the feature it belongs to, as in `"physics/Position"`. A world that
-   * meets two different components with the same name throws when it meets
-   * the second. `storage: "sparse"` keeps the component in a set of its own,
-   * for one that is added and removed often or that few entities have.
-   *
-   * A component added or spawned bare, with no value, is all zeros. Give
-   * `initial` to a component whose zeros are wrong, such as a size:
-   * `{ initial: { x: 1, y: 1 } }`.
-   *
-   * `requires` lists the components a spawn or an add of this one fills in
-   * when the entity lacks them, each bare or with a value:
-   *
-   *   const Rock = Component.define("game/Rock", { hp: Field.i32 }, {
-   *     requires: [Transform3d.Position, Transform3d.Scale.of({ x: 2, y: 2, z: 2 })],
-   *   })
-   *
-   * - What they require is filled in too. Of two values for one component,
-   *   the one given at the spawn wins, then one written in `requires` over
-   *   one it inherits, then the later.
-   * - An add fills in only what the entity lacks, so adding the component
-   *   again gives back a requirement that was removed. Removing a required
-   *   component is allowed, and leaves this one.
-   * - `Commands.spawns` names what it fills in, for the order of systems.
-   * - A relation can't be required, and neither can a singleton.
-   * - A save holds what was filled in, and loading one fills nothing in. A
-   *   replay recorded before a component required something drifts from a
-   *   game that fills it in.
+   * Defines a component with data. `Component.define` of `arcadekit` says
+   * how.
    */
   define: <
     const N extends string,
@@ -1086,31 +1062,9 @@ export const Component = {
     initial,
   }),
   /**
-   * Defines a relation, a component that points at another entity, its
-   * `target`, and stays correct when that entity is despawned.
-   *
-   *   const ChildOf = Component.relation("scene/ChildOf", { onTargetDespawn: "despawn" })
-   *   world.spawn(Position.of({ x: 0, y: 0 }), ChildOf.of({ target: parent }))
-   *
-   * `onTargetDespawn` says what a target's despawn does to the entities that
-   * point at it. `"despawn"` despawns them too, as children go with their
-   * parent. `"remove"` removes the relation from them and leaves them alive,
-   * as for a relation to a target or an owner. Either way, nothing is left
-   * pointing at a despawned entity.
-   *
-   * `fields` are the relation's own fields, beside `target`, and are written
-   * like any others. The target is not:
-   *
-   * - To change the target, add the relation again, as in
-   *   `add(entity, ChildOf.of({ target }))`. The target is read-only in
-   *   `each`, in `set` and in its raw column, so an assignment doesn't
-   *   compile.
-   * - The target must be alive. A relation given bare, with no target,
-   *   doesn't compile, on `Commands` or on the world. Given a target that is
-   *   already despawned, the world does at once what that despawn would have
-   *   done: the holder is despawned, or the relation isn't added.
-   * - An entity has one target per relation. For another kind of link, define
-   *   another relation.
+   * Defines a relation, a component that points at another entity and stays
+   * correct when that entity is despawned. `Component.relation` of
+   * `arcadekit` says how.
    */
   relation: <
     const N extends string,
@@ -1135,8 +1089,8 @@ export const Component = {
         : { storage: options.storage, relation: options.onTargetDespawn }
     ),
   /**
-   * Defines a tag, a component with no fields. A query uses a tag only to
-   * filter entities. `requires` is as `Component.define` takes it.
+   * Defines a tag, a component with no fields. `Component.tag` of `arcadekit`
+   * says how.
    */
   tag: <
     const N extends string,

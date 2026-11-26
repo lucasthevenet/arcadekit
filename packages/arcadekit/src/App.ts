@@ -53,6 +53,7 @@ import * as Action from "./Action.ts";
 import type { Entity } from "./ecs/component.ts";
 import type { Placed } from "./ecs/spawned.ts";
 import { build } from "./internal/build.ts";
+import { versionOf } from "./internal/save.ts";
 import * as Journal from "./Journal.ts";
 import * as Plugin from "./Plugin.ts";
 import * as Save from "./Save.ts";
@@ -676,7 +677,7 @@ export const define = <
   plugins: options.plugins ?? ([] as unknown as readonly [...P]),
   systems: options.systems ?? ([] as unknown as readonly [...S]),
   handlers: options.handlers ?? ([] as unknown as readonly [...H]),
-  version: Save.versionOf(options.version),
+  version: versionOf(options.version),
   migrations: options.migrations ?? [],
 });
 

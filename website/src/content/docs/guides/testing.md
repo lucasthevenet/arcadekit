@@ -87,7 +87,7 @@ it.effect("plays nothing when nothing happens", () =>
 
 `Sound.makeRecorder()` is a speaker that plays nothing and records what it was asked: cues in `played`, what each music channel was told in `scored`, and what each channel is playing now in `playing`.
 
-In a test, replace a sound that a page loads with `Browser.sound(url)` by an asset made with `Assets.make` that produces `Sound.clip(name)`. Replace a sound that a page streams with `Browser.stream(url)` by `Sound.clip(name)` itself. The recorder records each by that name.
+In a test, replace a sound that a page loads with `Audio.sound(url)` by an asset made with `Assets.make` that produces `Sound.clip(name)`. Replace a sound that a page streams with `Audio.stream(url)` by `Sound.clip(name)` itself. The recorder records each by that name.
 
 ## Run the frame stage by hand
 

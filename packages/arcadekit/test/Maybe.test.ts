@@ -3,12 +3,12 @@ import { Effect, Exit, Schema } from "effect";
 
 import type { ReadonlyColumnsOf } from "../src/ecs/component.ts";
 import { entityIndex } from "../src/ecs/index.ts";
+import { World as EcsWorld } from "../src/ecs/index.ts";
 import type { RowOf } from "../src/ecs/relation.ts";
 import {
   Action,
   App,
   Component,
-  EcsWorld,
   Field,
   Query,
   Timeline,

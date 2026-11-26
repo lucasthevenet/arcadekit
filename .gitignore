@@ -3,3 +3,4 @@ dist
 *.local
 .vitest
 .alchemy
+.claude/worktrees

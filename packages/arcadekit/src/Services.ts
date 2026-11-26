@@ -26,8 +26,8 @@ import type { Spawned } from "./ecs/spawned.ts";
 import type { World as EcsWorld } from "./ecs/world.ts";
 import type { ReadingEvents } from "./Event.ts";
 import type { Devices } from "./Input.ts";
+import { writing } from "./internal/handed.ts";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
-import { writing } from "./services/handed.ts";
 import type * as Singleton from "./Singleton.ts";
 
 /**

@@ -21,7 +21,7 @@ export const decodeOffline = (data: ArrayBuffer): Promise<unknown> =>
   new OfflineAudioContext(1, 1, 44_100).decodeAudioData(data);
 
 /**
- * Makes a sound asset: `Browser.sound`.
+ * Makes a sound asset: `Audio.sound`.
  *
  * @internal
  */
