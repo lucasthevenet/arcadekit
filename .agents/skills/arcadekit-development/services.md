@@ -17,7 +17,7 @@ How a new service of the package is shaped. What the ones it has do is in their 
 - **What a page has one of, whatever runs in it, is shared by those that open it**: the layer's service counts who holds it, starts it for the first and closes it with the last, as `Browser.layerSound` does with the page's audio. The count is in the service the layer builds, and neither in a module's variable nor in the layer's scope.
 - **A new service comes with what a test works it by**, as `Driver.makeManualDisplay`, `Input.makeManualSource` and `Transport.makeHub` are.
 - **Do not build a layer by hand** with `Layer.build`. `App.make` is the one place that does.
-- **`Effect.runSync` and `Effect.runPromise` are for tests and benchmarks.** Inside a program, an Effect is yielded, never run.
+- **`Effect.runSync` and `Effect.runPromise` are for benchmarks and the entry point of a program.** Inside a program, and in a test, which is `it.effect`, an Effect is yielded, never run.
 
 ```ts sketch
 export class Audio extends Context.Service<
