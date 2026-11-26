@@ -33,6 +33,7 @@ import type {
 } from "./Input.ts";
 import { build, make, simulating } from "./internal/system.ts";
 import type { Intake } from "./internal/view.ts";
+import type { Installed } from "./Plugin.ts";
 import type { Access, Adds, Writes } from "./Query.ts";
 import type { Sim } from "./Services.ts";
 import type {
@@ -198,10 +199,10 @@ type Refused<R, Ban> =
 
 /**
  * What the tick may require: the built-in services of the simulation, and
- * what yielding a query, a singleton, a state or an event puts there, and
- * the state of the devices and of the controls that `Input.plugin` keeps in
- * the world. A resource
- * requires nothing. A service of the game's own would keep what no
+ * what yielding a query, a singleton, a state or an event puts there, the
+ * state of the devices and of the controls that `Input.plugin` keeps in
+ * the world, and the plugin that keeps a component the commands spawn. A
+ * resource requires nothing. A service of the game's own would keep what no
  * save, rewind or refused action sees.
  */
 type TickBan = Only<
@@ -217,6 +218,7 @@ type TickBan = Only<
   | Pointer
   | Gamepads
   | Declared<string>
+  | Installed<string>
 >;
 type FrameBan =
   | Sim
