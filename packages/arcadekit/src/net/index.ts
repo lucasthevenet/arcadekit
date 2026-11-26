@@ -10,6 +10,7 @@
  * for a program that wants only that module. A relay server imports
  * `arcadekit/net/Relay`, and loads no session.
  *
+ * - `Lobby`: where peers agree on who plays, a seed and settings first.
  * - `Session`: one peer of a game, with the app it makes and steps.
  * - `Transport`: what carries a session's messages to the other peers.
  * - `Relay`: the rules of a server that passes messages on between peers.
@@ -17,6 +18,7 @@
  * - `Drift`: peers that are no longer playing the same game.
  */
 export * as Drift from "./Drift.ts";
+export * as Lobby from "./Lobby.ts";
 export * as Message from "./Message.ts";
 export * as Relay from "./Relay.ts";
 export * as Session from "./Session.ts";

@@ -64,16 +64,18 @@ import type { Session } from "./Session.ts";
  * @category Models
  */
 export interface Listener {
-  /** Sends a message to every other peer. */
-  readonly send: (message: Message.Message) => Effect.Effect<void, Closed>;
+  /** Sends a message, or an aside, to every other peer. */
+  readonly send: (
+    message: Message.Message | Message.Aside
+  ) => Effect.Effect<void, Closed>;
   /**
    * Returns the messages that have arrived since the last call, in arrival
-   * order, and removes them: the next call returns only newer ones. A
-   * transport through a relay or a `BroadcastChannel` also returns notices of
-   * who joined and who left.
+   * order, and removes them: the next call returns only newer ones, asides
+   * among them. A transport through a relay or a `BroadcastChannel` also
+   * returns notices of who joined and who left.
    */
   readonly receive: () => Effect.Effect<
-    readonly (Message.Message | Message.Notice)[],
+    readonly (Message.Message | Message.Aside | Message.Notice)[],
     Closed
   >;
 }
@@ -258,6 +260,10 @@ const joined = <E, HU>(
   const ticking = Effect.gen(function* () {
     let again = false;
     for (const arrived of yield* transport.receive()) {
+      if ("topic" in arrived) {
+        // Not the game's: a lobby's word, late.
+        continue;
+      }
       if ("from" in arrived) {
         // Whoever speaks is there, whatever the relay said before.
         away.delete(arrived.from);
@@ -346,23 +352,34 @@ export interface Wire {
  * as a whole number and every payload in its JSON form, so one that isn't a
  * message is a defect.
  */
-const bytesOf = (message: Message.Message): Uint8Array<ArrayBuffer> => {
-  const bytes = Message.encode(message);
+const bytesOf = (
+  message: Message.Message | Message.Aside
+): Uint8Array<ArrayBuffer> => {
+  const bytes =
+    "topic" in message ? Message.encodeAside(message) : Message.encode(message);
   if (Exit.isFailure(bytes)) {
     throw Cause.squash(bytes.cause);
   }
   return bytes.value;
 };
 
-/** What a frame from another peer is: a message in bytes, a relay's notice in text, or neither. */
+/**
+ * What a frame from another peer is: a message or an aside in bytes, a
+ * relay's notice in text, or neither.
+ */
 const arrival = (
   data: string | Uint8Array
-): Message.Message | Message.Notice | undefined => {
-  const read: Exit.Exit<Message.Message | Message.Notice, Message.Invalid> =
-    typeof data === "string"
-      ? Message.decodeNotice(data)
-      : Message.decode(data);
-  return Exit.isSuccess(read) ? read.value : undefined;
+): Message.Message | Message.Aside | Message.Notice | undefined => {
+  if (typeof data === "string") {
+    const notice = Message.decodeNotice(data);
+    return Exit.isSuccess(notice) ? notice.value : undefined;
+  }
+  const message = Message.decode(data);
+  if (Exit.isSuccess(message)) {
+    return message.value;
+  }
+  const aside = Message.decodeAside(data);
+  return Exit.isSuccess(aside) ? aside.value : undefined;
 };
 
 /**
@@ -390,7 +407,7 @@ export const fromWire = (
   wire: Wire
 ): Effect.Effect<Listener, never, Scope.Scope> =>
   Effect.gen(function* () {
-    let inbox: (Message.Message | Message.Notice)[] = [];
+    let inbox: (Message.Message | Message.Aside | Message.Notice)[] = [];
     let open = true;
     yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -842,12 +859,16 @@ export const makeHub = (options: HubOptions = {}): Hub => {
               .filter((flight) => flight.at <= now)
               .toSorted((a, b) => a.at - b.at || a.order - b.order);
             if (due.length === 0) {
-              return [] as (Message.Message | Message.Notice)[];
+              return [] as (Message.Message | Message.Aside | Message.Notice)[];
             }
             const left = mine.filter((flight) => flight.at > now);
             mine.length = 0;
             mine.push(...left);
-            const arrived: (Message.Message | Message.Notice)[] = [];
+            const arrived: (
+              | Message.Message
+              | Message.Aside
+              | Message.Notice
+            )[] = [];
             for (const flight of due) {
               const one = arrival(flight.data);
               if (one !== undefined) {

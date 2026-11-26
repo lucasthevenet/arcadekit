@@ -264,10 +264,10 @@ export const join = (
  * other member of its room.
  *
  * The forwarded bytes are the very bytes the member sent, unchanged, once the
- * relay has decoded them as a message. It refuses text, since a message
- * comes as bytes, bytes that aren't a message, whole and nothing more, a
- * message longer than `maxLength` bytes, and a message that claims to be from
- * anyone but the member that sent it. The host then closes the socket with
+ * relay has decoded them as a message or a `Message.Aside`. It refuses text,
+ * since a message comes as bytes, bytes that are neither, whole and nothing
+ * more, a message longer than `maxLength` bytes, and a message or an aside
+ * that claims to be from anyone but the member that sent it. The host then closes the socket with
  * the refusal's `code`.
  *
  * @category Hosting
@@ -299,18 +299,20 @@ export const forward = (
     );
   }
   const message = Message.decode(bytes);
-  if (Exit.isFailure(message)) {
+  const said: Exit.Exit<{ readonly from: string }, Message.Invalid> =
+    Exit.isSuccess(message) ? message : Message.decodeAside(bytes);
+  if (Exit.isFailure(said)) {
     return refuse(
       "not a message",
-      `"${from.peer}" sent something that is not a message.`,
+      `"${from.peer}" sent something that is neither a message nor an aside.`,
       400,
       1007
     );
   }
-  if (message.value.from !== from.peer) {
+  if (said.value.from !== from.peer) {
     return refuse(
       "speaks for another",
-      `"${from.peer}" sent a message that says it is from "${message.value.from}". A peer speaks for itself.`,
+      `"${from.peer}" sent a message that says it is from "${said.value.from}". A peer speaks for itself.`,
       403,
       1008
     );

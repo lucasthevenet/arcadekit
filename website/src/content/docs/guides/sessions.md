@@ -44,6 +44,7 @@ Everything a multiplayer game needs is in `arcadekit/net`, not in `arcadekit`, s
 
 Pass each message from another peer to `session.receive(message)`. Usually a [transport](transports-and-relays.md) carries messages both ways and a driver steps the session, so your game never calls these itself. To carry messages some other way, turn them into bytes with `Message.encode` and back with `Message.decode`. Each returns an `Exit`, which fails with `Message.Invalid` for what isn't a message.
 
+- A game begins with its peers agreeing on who plays, a seed and its settings, in a [lobby](lobbies.md): `Session.make(Duel, { ...start, hz: 60 })` with what `lobby.start` succeeds with.
 - Make every peer alike: the same game, the same seed or save, the same `hz` and the same peer names. A peer made with another game, `hz`, names or starting tick stops every peer with `Drift.Unlike`. A different seed shows as `Drift.Drifted`. See [detecting drift](detecting-drift.md).
 - A session begins at whatever tick its app does, so a game can start from a save that every peer loaded.
 - Give each peer its own name as `me`, and every other peer's name in `others`, in any order. A name given twice, as `me` and in `others` or twice in `others`, doesn't compile when the compiler knows the names. When it knows them only as strings, `Session.make` throws.

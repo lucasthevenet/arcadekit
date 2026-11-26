@@ -1,8 +1,9 @@
 /**
  * Checks a relay, wherever it runs: two peers of a small game play through
- * it and have to end on the same world, the relay has to refuse a name that
- * is taken and a message in another's name, and it has to tell a room who
- * joined it and who left.
+ * it and have to end on the same world, two peers that know only the room
+ * meet in its lobby, agree on a map and a seed, and play the same game, the
+ * relay has to refuse a name that is taken and a message in another's name,
+ * and it has to tell a room who joined it and who left.
  *
  *   pnpm --filter arcadekit relay:check ws://localhost:8787
  *
@@ -11,10 +12,10 @@
  * `examples/relay-cloudflare` with `/rooms` after it, or one of your own.
  */
 import { NodeRuntime, NodeSocket } from "@effect/platform-node";
-import { Console, Effect, Result, Schema } from "effect";
+import { Console, Effect, Fiber, Random, Result, Schema } from "effect";
 
 import { Action, App, Field, Singleton, World } from "../src/index.ts";
-import { Message, Relay, Session, Transport } from "../src/net/index.ts";
+import { Lobby, Message, Relay, Session, Transport } from "../src/net/index.ts";
 
 const base = process.argv[2];
 if (base === undefined) {
@@ -128,6 +129,107 @@ const check = Effect.gen(function* () {
   }
   yield* Console.log(
     `✓ two peers played ${ada.app.time.tick} ticks through it and hold the same world (${ada.session.stats.rewinds + grace.session.stats.rewinds} rewinds)`
+  );
+
+  // --- two peers that know only the room meet in its lobby ------------------
+  // Each names itself, and nobody gives a seed: the lobby makes one.
+  const lobbyRoom = `${room}-lobby`;
+  const Settings = Schema.Struct({ map: Schema.String });
+  const met = [];
+  for (let i = 0; i < 2; i++) {
+    const me = `peer-${(yield* Random.nextIntBetween(0, 2_147_483_647)).toString(36)}`;
+    const lobby = yield* Lobby.join({
+      me,
+      players: 2,
+      settings: Settings,
+    }).pipe(
+      Effect.provide(
+        Transport.layerWebSocket(
+          Relay.address(base, { room: lobbyRoom, peer: me })
+        )
+      )
+    );
+    met.push(lobby);
+  }
+  const [first, second] = met as [(typeof met)[0], (typeof met)[0]];
+  const starting = [
+    yield* Effect.forkChild(first.start),
+    yield* Effect.forkChild(second.start),
+  ];
+  yield* first.set({ map: "dunes" });
+  for (let i = 0; i < 200 && second.settings === undefined; i++) {
+    yield* wait(10);
+  }
+  yield* first.ready();
+  yield* second.ready();
+  const starts = [];
+  for (const fiber of starting) {
+    starts.push(
+      yield* Fiber.join(fiber).pipe(
+        Effect.timeoutOrElse({
+          duration: "10 seconds",
+          orElse: () =>
+            Effect.die(new Error("the peers in the lobby never agreed")),
+        })
+      )
+    );
+  }
+  const [one, two] = starts as [(typeof starts)[0], (typeof starts)[0]];
+  if (
+    one.seed !== two.seed ||
+    one.settings.map !== "dunes" ||
+    two.settings.map !== "dunes"
+  ) {
+    return yield* Effect.die(
+      new Error(
+        `the peers in the lobby did not agree: ${JSON.stringify(starts)}`
+      )
+    );
+  }
+  const played = [];
+  for (const [at, lobby] of met.entries()) {
+    const session = yield* Session.make(App.define({ handlers: [tip] }), {
+      ...starts[at]!,
+      checkpointEvery: 1,
+      hz: 30,
+    });
+    played.push({
+      session,
+      connected: yield* Effect.acquireRelease(
+        lobby.connect(session),
+        (made) => made.close
+      ),
+    });
+  }
+  for (let round = 0; round < 40; round++) {
+    for (const seat of played) {
+      yield* seat.connected.tick();
+      yield* wait(5);
+    }
+  }
+  const [a, b] = played as [(typeof played)[0], (typeof played)[0]];
+  for (
+    let i = 0;
+    i < 200 &&
+    (a.session.app.time.tick !== b.session.app.time.tick ||
+      a.session.confirmed < a.session.app.time.tick - 1);
+    i++
+  ) {
+    yield* wait(30);
+    yield* (
+      a.session.app.time.tick <= b.session.app.time.tick ? a : b
+    ).connected.tick();
+  }
+  if (
+    a.session.app.time.tick !== b.session.app.time.tick ||
+    (yield* hashOf(a.session.app)) !== (yield* hashOf(b.session.app))
+  ) {
+    return yield* Effect.die(
+      new Error("the peers that met in the lobby did not play the same game")
+    );
+  }
+  yield* Console.log(
+    `✓ two peers that knew only the room met in its lobby, agreed on a map and the seed ${one.seed}, and played ${a.session.app.time.tick} ticks of the same game`
   );
 
   // --- a name that is taken ---------------------------------------------------

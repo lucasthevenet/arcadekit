@@ -212,6 +212,11 @@
       "types": "./dist/net/Drift.d.ts",
       "default": "./dist/net/Drift.js"
     },
+    "./net/Lobby": {
+      "source": "./src/net/Lobby.ts",
+      "types": "./dist/net/Lobby.d.ts",
+      "default": "./dist/net/Lobby.js"
+    },
     "./net/Message": {
       "source": "./src/net/Message.ts",
       "types": "./dist/net/Message.d.ts",

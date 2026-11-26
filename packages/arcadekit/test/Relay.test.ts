@@ -32,9 +32,9 @@ const notice = (told: Message.Notice): string => Message.encodeNotice(told);
 
 /** The messages among what arrived, without the relay's notices. */
 const messagesIn = (
-  arrived: readonly (Message.Message | Message.Notice)[]
+  arrived: readonly (Message.Message | Message.Aside | Message.Notice)[]
 ): Message.Message[] =>
-  arrived.filter((one): one is Message.Message => "from" in one);
+  arrived.filter((one): one is Message.Message => "tick" in one);
 
 /** A peer whose session is joined to a transport, which steps it. */
 interface Seat extends Peer {
@@ -343,6 +343,30 @@ describe("what a member sent", () => {
       expect(refused.reason, what).toBe("not a message");
       expect(refused.code, what).toBe(1007);
     }
+  });
+
+  it("is passed on when it is an aside, as a message is, and refused in another's name", () => {
+    const said: Message.Aside = {
+      from: "ada",
+      topic: "arcadekit/Lobby",
+      body: { n: 0, part: 7 },
+    };
+    const sent = unwrap(Message.encodeAside(said));
+    expect(Relay.forward(ada, sent, [ada, grace, linus])).toEqual(
+      Exit.succeed([{ to: grace, data: sent }])
+    );
+    expect(Message.decodeAside(sent)).toEqual(Exit.succeed(said));
+    // An aside is no message, and a message no aside.
+    expect(Exit.isFailure(Message.decode(sent))).toBe(true);
+    expect(
+      Exit.isFailure(
+        Message.decodeAside(unwrap(Message.encode(message("ada", 0))))
+      )
+    ).toBe(true);
+    const forged = unwrap(Message.encodeAside({ ...said, from: "grace" }));
+    expect(refusal(Relay.forward(ada, forged, [ada, grace])).reason).toBe(
+      "speaks for another"
+    );
   });
 
   it("is refused when it is longer than the relay takes, in bytes", () => {

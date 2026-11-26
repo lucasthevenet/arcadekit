@@ -129,6 +129,7 @@ export const OUTLINE: readonly (Group & {
     label: "Several players",
     items: [
       "guides/sessions",
+      "guides/lobbies",
       "guides/detecting-drift",
       "guides/transports-and-relays",
       "guides/hosting-a-relay",
