@@ -88,7 +88,7 @@ The simulation can't tell whether its devices are read. A game played from a key
 - `App.make` listens to the devices in the app's own scope, and stops when the app is closed. The devices are heard for as long as the app is open, wherever `Browser.layer` is provided. Each app listens for itself. Reading the devices after the app is closed throws an error that says so.
 - A test, a tool, or on-screen controls use `Input.makeManualSource()`, or `Test.make`, which makes the game with one. Drive it by hand with `press`, `release`, `tap`, and `move`. See [testing](testing.md).
 
-Reading the devices when nothing changed costs 1.4 µs per tick. A tick in which a key went down or up costs 5.2 µs in total, for the read, the action, and the tick that applies it.
+What reading the devices costs a tick is in [performance](performance.md#idle-ticks-and-frames).
 
 ## Read more
 
