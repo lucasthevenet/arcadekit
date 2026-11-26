@@ -37,7 +37,7 @@ const { mount } =
   new URLSearchParams(location.search).get("ui") === "react"
     ? await import("./uiReact.ts")
     : await import("./uiDom.ts");
-const ui = View.layer(Catch, (bridge) =>
+const ui = View.mount(Catch, (bridge) =>
   mount(document.querySelector("#ui")!, bridge)
 );
 

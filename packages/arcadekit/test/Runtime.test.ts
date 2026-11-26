@@ -427,12 +427,12 @@ describe("the built-in services", () => {
       (service) => service.key
     );
     expect(keys).toEqual([
-      "arcadekit/World",
-      "arcadekit/Time",
-      "arcadekit/Commands",
-      "arcadekit/Events",
-      "arcadekit/Random",
-      "arcadekit/Actions",
+      "arcadekit/Services.World",
+      "arcadekit/Services.Time",
+      "arcadekit/Services.Commands",
+      "arcadekit/Services.Events",
+      "arcadekit/Services.Random",
+      "arcadekit/Action.Actions",
     ]);
   });
 

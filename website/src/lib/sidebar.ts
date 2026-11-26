@@ -133,7 +133,11 @@ export const OUTLINE: readonly (Group & {
       "guides/hosting-a-relay",
     ],
   },
-  { topic: "guides", label: "Testing", items: ["guides/testing"] },
+  {
+    topic: "guides",
+    label: "Testing",
+    items: ["guides/testing", "guides/testing-peers"],
+  },
   { topic: "guides", label: "Debugging", items: ["guides/debugging"] },
   {
     topic: "guides",

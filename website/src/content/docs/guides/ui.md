@@ -104,14 +104,14 @@ import { mount } from "./ui";
 
 const Arcade = App.define({ plugins: [Game] });
 
-const ui = View.layer(Arcade, (bridge) => mount(document.body, bridge));
+const ui = View.mount(Arcade, (bridge) => mount(document.body, bridge));
 
 Browser.runMain(Driver.run(Arcade, { hz: 60 }).pipe(Effect.provide(ui)), {
   target: document.querySelector("canvas")!,
 });
 ```
 
-`View.layer(game, mount)` gives the app a UI. When the app is made, `View.plugin` makes the bridge and calls `mount` with it. If `mount` returns a function, the app calls it when it closes, to take the UI off the page. Each app made under the layer hands out a bridge of its own. A game that doesn't list `View.plugin`, itself or through one of its plugins, doesn't compile here, since its app would hand out no bridge.
+`View.mount(game, mount)` gives the app a UI. When the app is made, `View.plugin` makes the bridge and calls `mount` with it. If `mount` returns a function, the app calls it when it closes, to take the UI off the page. Each app made under the layer hands out a bridge of its own. A game that doesn't list `View.plugin`, itself or through one of its plugins, doesn't compile here, since its app would hand out no bridge.
 
 Give the layer and the app the same game. A layer provided to the app of another game hands out a bridge that can send an action the app has no handler for, and the app's input stage then throws.
 
@@ -119,7 +119,7 @@ The UI sees every view at its initial value until the first frame publishes it.
 
 The next tick applies what the UI sends. Under a driver, that tick runs in the frame the action was sent in or the one after. A game that steps its app by hand runs a tick itself when its UI has sent something.
 
-Without `View.layer` the app has no UI, which is what a server, a replay, and most tests have. Given the same actions, a game with a UI and the same game without one have the same hash, log, and save.
+Without `View.mount` the app has no UI, which is what a server, a replay, and most tests have. Given the same actions, a game with a UI and the same game without one have the same hash, log, and save.
 
 ## Use the bridge from React
 

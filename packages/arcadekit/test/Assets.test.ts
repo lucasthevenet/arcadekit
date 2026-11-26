@@ -72,11 +72,11 @@ const files = {
   "/notes.txt": "héllo",
 };
 
-/** A file of `files`, as the loader `Assets.layerMemory` makes of them reads it. */
+/** A file of `files`, as the loader `Assets.makeMemory` makes of them reads it. */
 const fromMemory = (url: string) =>
   Effect.service(Assets.Loader).pipe(
     Effect.flatMap((loader) => loader.bytes(url)),
-    Effect.provide(Assets.layerMemory(files))
+    Effect.provide(Assets.layer(Assets.makeMemory(files)))
   );
 
 /** A loader whose files arrive when the test says so. */
@@ -186,7 +186,7 @@ describe("an asset", () => {
       const scope = Scope.makeUnsafe();
       const loaded = yield* Assets.load(Forest).pipe(
         Scope.provide(scope),
-        Effect.provide(Assets.layerMemory(files))
+        Effect.provide(Assets.layer(Assets.makeMemory(files)))
       );
       expect(loaded).toEqual({
         backdrop: { at: "/forest.png", size: 3 },
@@ -210,7 +210,7 @@ describe("an asset", () => {
           expect(log).toEqual(["open /forest.png"]);
           return backdrop.size;
         })
-      ).pipe(Effect.provide(Assets.layerMemory(files)));
+      ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
       expect(size).toBe(3);
       expect(log).toEqual(["open /forest.png", "close /forest.png"]);
     })
@@ -227,7 +227,7 @@ describe("an asset", () => {
         });
         const exit = yield* Effect.exit(
           Effect.scoped(Assets.load(Broken))
-        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         expect(Exit.isFailure(exit)).toBe(true);
         const error = Cause.squash(
           (exit as Exit.Failure<never, unknown>).cause
@@ -245,7 +245,7 @@ describe("an asset", () => {
               Assets.bundle("as/Odd", { file: Assets.bytes("toString") })
             )
           )
-        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         expectFailed(
           Cause.squash((inherited as Exit.Failure<never, unknown>).cause),
           "toString",
@@ -265,7 +265,11 @@ describe("an asset", () => {
               })
             )
           )
-        ).pipe(Effect.provide(Assets.layerMemory({ "/layout.json": file })));
+        ).pipe(
+          Effect.provide(
+            Assets.layer(Assets.makeMemory({ "/layout.json": file }))
+          )
+        );
       const failure = Effect.fnUntraced(function* (file: string | Uint8Array) {
         const exit = yield* tryLoad(file);
         expect(Exit.isFailure(exit)).toBe(true);
@@ -292,7 +296,9 @@ describe("an asset", () => {
         )
       ).pipe(
         Effect.provide(
-          Assets.layerMemory({ "/notes.txt": new Uint8Array([0xff, 0xfe]) })
+          Assets.layer(
+            Assets.makeMemory({ "/notes.txt": new Uint8Array([0xff, 0xfe]) })
+          )
         )
       );
       expect(Exit.isFailure(exit)).toBe(true);
@@ -445,7 +451,7 @@ describe("a level's assets", () => {
             );
             expect(log.at(-1)).toBe("open /forest.png");
           })
-        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         // The program's scope has closed the app: what was still loaded went
         // with it.
         expect(log.at(-1)).toBe("close /forest.png");
@@ -498,7 +504,7 @@ describe("a level's assets", () => {
           yield* go("menu");
           expect(seen).toEqual(["Absent", "Ready", "Absent"]);
           expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-        }).pipe(Effect.provide(Assets.layerMemory(files)));
+        }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
       })
   );
 
@@ -656,7 +662,7 @@ describe("a level's assets", () => {
         const seen = yield* App.make(
           App.define({ plugins: [drawnGame.Game] }),
           { checkpointEvery: 1 }
-        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         const unseen = yield* App.make(App.define({ plugins: [bare.Game] }), {
           checkpointEvery: 1,
         }).pipe(Effect.provideService(Assets.Loader, counting));
@@ -812,7 +818,7 @@ describe("a level's assets", () => {
           );
           yield* asking.input();
           expect(status).toBe("Absent");
-        }).pipe(Effect.provide(Assets.layerMemory(files)));
+        }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
       })
   );
 
@@ -927,7 +933,7 @@ describe("a level's assets", () => {
         ]);
         // Each app holds its own.
         expect(log).toEqual(["open /forest.png", "open /forest.png"]);
-      }).pipe(Effect.provide(Assets.layerMemory(files)));
+      }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
     })
   );
 
@@ -975,7 +981,7 @@ describe("a level's assets", () => {
           yield* app.tick(1);
           yield* app.frame();
           expect(log).toEqual(["open /cave.png", "close /cave.png"]);
-        }).pipe(Effect.provide(Assets.layerMemory(files)));
+        }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
       })
   );
 
@@ -1027,7 +1033,7 @@ describe("a level's assets", () => {
           yield* frame();
           expect(yield* frame()).toBe("menu: forest Absent, cave Absent");
           expect(log).toEqual(["open /forest.png", "close /forest.png"]);
-        }).pipe(Effect.provide(Assets.layerMemory(files)));
+        }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
       })
   );
 
@@ -1154,7 +1160,7 @@ describe("a level's assets", () => {
         });
         const app = yield* App.make(
           App.define({ plugins: [Assets.plugin], systems: [Keep] })
-        ).pipe(Effect.provide(Assets.layerMemory(files)));
+        ).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))));
         yield* app.frame();
         expect(log).toEqual(["open /forest.png"]);
         held.forest = false;
@@ -1191,7 +1197,9 @@ describe("a level's assets", () => {
           expect(status?._tag).toBe("Failed");
           expectFailed((status as { error: unknown }).error, "", "boom");
         }).pipe(
-          Effect.provide(Layer.mergeAll(Assets.layerMemory(files), quiet))
+          Effect.provide(
+            Layer.mergeAll(Assets.layer(Assets.makeMemory(files)), quiet)
+          )
         );
       })
   );
@@ -1212,7 +1220,7 @@ describe("a level's assets", () => {
           layer: Layer.effect(Fonts, Assets.load(Common)),
         });
         const app = yield* App.make(App.define({ plugins: [Ui] })).pipe(
-          Effect.provide(Assets.layerMemory(files))
+          Effect.provide(Assets.layer(Assets.makeMemory(files)))
         );
         expect(log).toEqual(["open /forest.png"]);
         yield* app.close;

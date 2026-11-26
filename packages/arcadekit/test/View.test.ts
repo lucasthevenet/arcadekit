@@ -127,7 +127,7 @@ const play = Effect.fnUntraced(function* (
   const made = App.make(game, { seed, checkpointEvery: 1 });
   return yield* mount === undefined
     ? made
-    : made.pipe(Effect.provide(View.layer(game, mount)));
+    : made.pipe(Effect.provide(View.mount(game, mount)));
 });
 
 /** Plays the game above with a UI, and returns the app and the bridge it handed the UI. */
@@ -259,7 +259,7 @@ describe("a view", () => {
         const Boards = App.define({ plugins: [View.plugin], systems: [Show] });
         const kept = keeper();
         const app = yield* App.make(Boards).pipe(
-          Effect.provide(View.layer(Boards, kept.mount))
+          Effect.provide(View.mount(Boards, kept.mount))
         );
         const ui = kept.ui();
         const { heard } = listen(ui, Board);
@@ -298,7 +298,7 @@ describe("a view", () => {
         const Lucky = App.define({ plugins: [Game, Chance] });
         const kept = keeper();
         const app = yield* App.make(Lucky).pipe(
-          Effect.provide(View.layer(Lucky, kept.mount))
+          Effect.provide(View.mount(Lucky, kept.mount))
         );
         const ui = kept.ui();
         const a = listen(ui, Hud);
@@ -443,7 +443,7 @@ describe("a view", () => {
         const Gated = App.define({ plugins: [Rules] });
         const kept = keeper<typeof Start | typeof Quit>();
         const app = yield* App.make(Gated).pipe(
-          Effect.provide(View.layer(Gated, kept.mount))
+          Effect.provide(View.mount(Gated, kept.mount))
         );
         const { heard } = listen(kept.ui(), Menu);
         for (let i = 0; i < 5; i++) {
@@ -679,7 +679,7 @@ describe("a view", () => {
         const Reset = App.define({ plugins: [Rules, begun({ gold: 9 })] });
         const kept = keeper<typeof Start | typeof Quit>();
         const app = yield* App.make(Reset).pipe(
-          Effect.provide(View.layer(Reset, kept.mount))
+          Effect.provide(View.mount(Reset, kept.mount))
         );
         const { heard } = listen(kept.ui(), Hud);
         for (const action of [Start, Quit, Start]) {
@@ -711,7 +711,7 @@ describe("a view", () => {
         const Gated = App.define({ plugins: [Rules, begun({ gold: 9 })] });
         const kept = keeper();
         const app = yield* App.make(Gated).pipe(
-          Effect.provide(View.layer(Gated, kept.mount))
+          Effect.provide(View.mount(Gated, kept.mount))
         );
         const { heard } = listen(kept.ui(), Hud);
         const ui = kept.ui();
@@ -754,7 +754,7 @@ describe("a view", () => {
         const kept = keeper();
         const made = App.make(Reset);
         const app = yield* made.pipe(
-          Effect.provide(View.layer(Reset, kept.mount))
+          Effect.provide(View.mount(Reset, kept.mount))
         );
         const ui = kept.ui();
         const { heard } = listen(ui, Hud);
@@ -809,7 +809,7 @@ describe("a view", () => {
         const Owned = App.define({ plugins: [View.plugin], systems: [Own] });
         const kept = keeper();
         const app = yield* App.make(Owned).pipe(
-          Effect.provide(View.layer(Owned, kept.mount))
+          Effect.provide(View.mount(Owned, kept.mount))
         );
         const { heard } = listen(kept.ui(), Hud);
         yield* app.frame();
@@ -858,7 +858,7 @@ describe("what the UI sends", () => {
         const app = yield* App.make(Funded, {
           seed: 1,
           checkpointEvery: 1,
-        }).pipe(Effect.provide(View.layer(Funded, kept.mount)));
+        }).pipe(Effect.provide(View.mount(Funded, kept.mount)));
         const ui = kept.ui();
         ui.send(Buy, { price: 3 });
         ui.send(Start, {});
@@ -877,7 +877,7 @@ describe("what the UI sends", () => {
         ).toEqual(["vw/Buy", "vw/Start"]);
         // A replay with a UI of its own that is sending things is told what
         // the log says and nothing else.
-        const sending = View.layer(Funded, (other) => {
+        const sending = View.mount(Funded, (other) => {
           other.send(Buy, { price: 1 });
           other.send(Buy, { price: 1 });
         });
@@ -996,7 +996,7 @@ describe("what the UI sends", () => {
         const start = { seed: 11, checkpointEvery: 1 } as const;
         const kept = keeper<Sends>();
         const app = yield* App.make(Kept, start).pipe(
-          Effect.provide(View.layer(Kept, kept.mount))
+          Effect.provide(View.mount(Kept, kept.mount))
         );
         const ui = kept.ui();
         const hashes: number[] = [];
@@ -1055,14 +1055,14 @@ describe("what the UI sends", () => {
           plugins: [View.plugin],
           handlers: [Action.handler(Buy, function* () {})],
         });
-        View.layer(Shop, (shop) => {
+        View.mount(Shop, (shop) => {
           shop.send(
             // @ts-expect-error the game has no handler for vw/Ping
             Ping
           );
         });
         // @ts-expect-error a bridge is handed out by the app of a game
-        View.layer(Game, () => {});
+        View.mount(Game, () => {});
       })
   );
 
@@ -1076,7 +1076,7 @@ describe("what the UI sends", () => {
         });
         const app = yield* App.make(Played).pipe(
           Effect.provide(
-            View.layer(Larger, (ui) => {
+            View.mount(Larger, (ui) => {
               ui.send(Unknown, {});
             })
           )
@@ -1134,7 +1134,7 @@ describe("the bridge", () => {
           seed: 4,
           checkpointEvery: 1,
           verifyFrames: true,
-        }).pipe(Effect.provide(View.layer(Watched, kept.mount)));
+        }).pipe(Effect.provide(View.mount(Watched, kept.mount)));
         const watched = yield* seen;
         const ui = kept.ui();
         listen(ui, Hud);
@@ -1172,7 +1172,7 @@ describe("the bridge", () => {
         };
         pings = 0;
         const app = yield* App.make(Played).pipe(
-          Effect.provide(View.layer(Played, mountMenu))
+          Effect.provide(View.mount(Played, mountMenu))
         );
         yield* app.input();
         yield* app.tick(1);
@@ -1181,7 +1181,7 @@ describe("the bridge", () => {
           shop.get(Menu);
         };
         // @ts-expect-error the game has no handler for vw/Unknown
-        View.layer(Played, mountShop);
+        View.mount(Played, mountShop);
         // A bridge with no actions reads the views, and sends nothing.
         const reads: View.Bridge = (yield* playWithUi()).ui;
         expect(reads.get(Menu)).toEqual({ phase: "title" });
@@ -1197,7 +1197,7 @@ describe("the bridge", () => {
         const said: string[] = [];
         const made = App.make(Played).pipe(
           Effect.provide(
-            View.layer(Played, (ui) => {
+            View.mount(Played, (ui) => {
               said.push(`mounted at ${JSON.stringify(ui.get(Menu))}`);
               return () => {
                 said.push("unmounted");
@@ -1226,9 +1226,9 @@ describe("the bridge", () => {
       handlers: [Action.handler(Start, function* () {})],
     });
     // @ts-expect-error View.plugin is not among the game's plugins
-    View.layer(Alone, () => {});
+    View.mount(Alone, () => {});
     // Listed through one of the game's plugins, as Played lists it.
-    expectTypeOf(View.layer(Played, () => {})).toExtend<Layer.Layer<never>>();
+    expectTypeOf(View.mount(Played, () => {})).toExtend<Layer.Layer<never>>();
   });
 
   it("is what a plugin's systems need: a game that publishes and leaves out View.plugin does not compile", () => {

@@ -109,7 +109,7 @@ A frame or input-stage system of your own can keep a bundle loaded with `(yield*
 
 ## Choose where files come from
 
-`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layerMemory({ "/forest.json": "..." })`. A loader of your own marks a failure worth trying again with `transient: true` on its `Assets.Failed`.
+`Assets.Loader` fetches the files. By default it uses `fetch`, and cancels the request when the load is interrupted. In a page, `Browser.runMain` and `Browser.layer` read a path against the document's base, as `fetch` does, so a page with a `<base href>` loads from there. A test serves its files from memory with `Assets.layer(Assets.makeMemory({ "/forest.json": "..." }))`. A loader of your own marks a failure worth trying again with `transient: true` on its `Assets.Failed`.
 
 ## Read more
 

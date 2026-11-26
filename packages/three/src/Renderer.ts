@@ -45,17 +45,66 @@ export interface RendererShape {
  *
  * **Details**
  *
- * A test provides a renderer that draws nothing, or one that records what it
- * was asked, and inspects the scene. Three.js builds the scene under Node as it
- * does in a page.
- *
- *   Layer.succeed(Three.Renderer, { render(scene, camera) {} })
+ * A test provides a renderer that records what it was asked and draws
+ * nothing, `Three.layer(Three.makeRecorder())`, and inspects the scene. Three.js
+ * builds the scene under Node as it does in a page.
  *
  * @category Services
  */
 export class Renderer extends Context.Service<Renderer, RendererShape>()(
-  "arcadekit/three/Renderer"
+  "@arcadekit/three/Renderer.Renderer"
 ) {}
+
+/**
+ * Returns a layer that provides a renderer made by hand, such as
+ * `Three.makeRecorder()` in a test, as `Three.Renderer`.
+ *
+ *   App.make(game).pipe(Effect.provide(Three.layer(Three.makeRecorder())))
+ *
+ * **When to use**
+ *
+ * Use for a renderer that needs no canvas. For one of Three.js's own
+ * renderers on a page, use `Three.layerWebGL` or `Three.layerRenderer`, which
+ * fit it to its canvas and dispose of it.
+ *
+ * @category Layers
+ */
+export const layer = (renderer: RendererShape): Layer.Layer<Renderer> =>
+  Layer.succeed(Renderer, renderer);
+
+/**
+ * A renderer that draws nothing and records what it was asked, from
+ * `Three.makeRecorder()`.
+ *
+ * @category Testing
+ */
+export interface Recorder extends RendererShape {
+  /** Every scene it was asked to render, with its camera, oldest first. */
+  readonly rendered: { readonly scene: ThreeScene; readonly camera: Camera }[];
+}
+
+/**
+ * Makes a renderer that draws nothing and records each scene it is asked to
+ * render, for a test or a tool. Three.js builds the scene under Node as it does
+ * in a page, so a test finds what was drawn in it: an instanced mesh is named
+ * after its system.
+ *
+ *   const renderer = Three.makeRecorder()
+ *   const app = yield* App.make(game).pipe(Effect.provide(Three.layer(renderer)))
+ *   yield* app.frame()
+ *   renderer.rendered[0]?.scene.getObjectByName("game/Rocks")
+ *
+ * @category Testing
+ */
+export const makeRecorder = (): Recorder => {
+  const rendered: { scene: ThreeScene; camera: Camera }[] = [];
+  return {
+    rendered,
+    render(scene, camera) {
+      rendered.push({ scene, camera });
+    },
+  };
+};
 
 /**
  * The parts of a Three.js renderer that `Three.layerRenderer` uses.

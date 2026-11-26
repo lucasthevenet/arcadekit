@@ -25,7 +25,7 @@
  *
  *   Browser.runMain(
  *     Driver.run(Arcade, { hz: 60 }).pipe(
- *       Effect.provide(View.layer(Arcade, mount))
+ *       Effect.provide(View.mount(Arcade, mount))
  *     )
  *   )
  *
@@ -50,7 +50,7 @@ import { Context, Effect, Equal, Layer } from "effect";
 
 import * as Action from "./Action.ts";
 import { make as makeSystem } from "./internal/system.ts";
-import { Intake } from "./internal/view.ts";
+import { Intake, Ui } from "./internal/view.ts";
 import * as Plugin from "./Plugin.ts";
 import type * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
@@ -129,7 +129,7 @@ export interface Sent {
  * What the UI receives: the game's views, and a way to request the actions
  * `Sends`.
  *
- * An app hands one to the `mount` of `View.layer(game, mount)`, and its
+ * An app hands one to the `mount` of `View.mount(game, mount)`, and its
  * actions are every action the game has a handler for. A UI names the actions
  * it sends, as
  * `View.Bridge<typeof Start | typeof Quit>`, and is handed a bridge only if its
@@ -311,13 +311,6 @@ export class Port extends Context.Service<Port, PortShape>()(
   "arcadekit/View.Port"
 ) {}
 
-/** What the UI of an app is handed its bridge by, if it has a UI. */
-type Mount = (ui: Bridge<Action.Any>) => void | (() => void);
-
-const Ui = Context.Reference<Mount | undefined>("arcadekit/View.Ui", {
-  defaultValue: () => undefined,
-});
-
 const alone: PortValue = {
   watched: () => false,
   publish: () => false,
@@ -356,14 +349,14 @@ const Send = System.input("arcadekit/View.Send", function* () {
 });
 
 /**
- * Connects an app to its UI: with `View.layer`, it makes the bridge and hands
+ * Connects an app to its UI: with `View.mount`, it makes the bridge and hands
  * it to the UI when the app is made. A plugin whose systems are made with
  * `View.publish`, or whose UI sends actions, lists it in `plugins`.
  *
  * - The UI's requests are issued in the input stage, just before a tick, in the
  *   order they were sent, with `Actions.enqueue`: logged, and applied at the
  *   start of the tick.
- * - Without `View.layer`, the plugin does nothing.
+ * - Without `View.mount`, the plugin does nothing.
  *
  * @category Plugins
  */
@@ -387,7 +380,7 @@ type Listed<P extends readonly Plugin.Any[]> = [Port] extends [
  *   const Arcade = App.define({ plugins: [Game] })
  *   Browser.runMain(
  *     Driver.run(Arcade, { hz: 60 }).pipe(
- *       Effect.provide(View.layer(Arcade, (ui) => mountMenu(document.body, ui)))
+ *       Effect.provide(View.mount(Arcade, (ui) => mountMenu(document.body, ui)))
  *     )
  *   )
  *
@@ -413,7 +406,7 @@ type Listed<P extends readonly Plugin.Any[]> = [Port] extends [
  *
  * @category Layers
  */
-export function layer<
+export function mount<
   H extends readonly Action.AnyHandler[],
   P extends readonly Plugin.Any[],
 >(
@@ -427,9 +420,12 @@ export function layer<
     ui: Bridge<ActionOf<H[number] | Plugin.HandlerOf<P[number]>>>
   ) => void | (() => void)
 ): Layer.Layer<never>;
-// A layer takes nothing from its game but the type.
-export function layer(_game: unknown, mount: Mount): Layer.Layer<never> {
-  return Layer.succeed(Ui, mount);
+// It takes nothing from its game but the type.
+export function mount(
+  _game: unknown,
+  ui: (ui: Bridge<Action.Any>) => void | (() => void)
+): Layer.Layer<never> {
+  return Layer.succeed(Ui, ui);
 }
 
 /**

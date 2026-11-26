@@ -65,13 +65,20 @@ import type { Scene } from "./Scene.ts";
 export { Scene } from "./Scene.ts";
 export type { SceneShape } from "./Scene.ts";
 export {
+  layer,
   layerRenderer,
   layerWebGL,
+  makeRecorder,
   plugin,
   Render,
   Renderer,
 } from "./Renderer.ts";
-export type { FitOptions, RendererLike, RendererShape } from "./Renderer.ts";
+export type {
+  FitOptions,
+  Recorder,
+  RendererLike,
+  RendererShape,
+} from "./Renderer.ts";
 export { manager, texture } from "./Assets.ts";
 export type { TextureOptions } from "./Assets.ts";
 export { instances } from "./Instances.ts";

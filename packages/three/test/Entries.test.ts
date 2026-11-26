@@ -1,8 +1,10 @@
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as Arcadekit from "arcadekit";
 import { World } from "arcadekit/ecs";
-import { describe, expect, it } from "vitest";
+import { Context, Effect } from "effect";
 
 import * as Main from "../src/index.ts";
+import * as Three from "../src/Three.ts";
 
 // Vite gives a test the text of files, and the modules themselves: the
 // sources of the package, and its manifest. Declared here, since the tests
@@ -254,4 +256,56 @@ describe("the entries of @arcadekit/three", () => {
     // After everything a frame draws, whatever order it is listed in.
     expect(Main.Three.Render.stage).toBe("postFrame");
   });
+});
+
+// What a program provides from outside an app, with its module's `layer`
+// given the stand-in its module makes for a test, and what an app's plugin
+// provides itself. A new service joins one of them.
+const provided = [[Three.Renderer, Three.layer(Three.makeRecorder())]] as const;
+const byTheApp: readonly unknown[] = [Three.Scene];
+
+/** Every module an entry gives by its own name, as `@arcadekit/three/Scene`, and what it exports. */
+const named = Object.keys(manifest.exports)
+  .filter((subpath) => /\/[A-Z]\w*$/u.test(subpath))
+  .map((subpath) => ({
+    entry: `@arcadekit/three${subpath.slice(1)}`,
+    exports: Object.entries(modules[sourceOf(subpath)]!),
+  }));
+
+describe("a service", () => {
+  it("is keyed by the entry it is imported from and its name there, and is provided by its module's layer or by the app", () => {
+    const names = new Map<unknown, string[]>();
+    for (const { entry, exports } of named) {
+      for (const [name, value] of exports) {
+        if (Context.isKey(value)) {
+          names.set(value, [...(names.get(value) ?? []), `${entry}.${name}`]);
+        }
+      }
+    }
+    expect(names.size).toBe(provided.length + byTheApp.length);
+    const listed = new Set<unknown>([
+      ...provided.map(([service]) => service),
+      ...byTheApp,
+    ]);
+    for (const [service, wanted] of names) {
+      assert(Context.isKey(service));
+      expect(wanted, service.key).toContain(service.key);
+      expect(
+        listed.has(service),
+        `${service.key}: a service a program provides has a layer, X.layer(implementation), and a stand-in, X.make...(): add it to \`provided\` with both, or to \`byTheApp\` if a plugin provides it.`
+      ).toBe(true);
+    }
+  });
+
+  it.effect("a program provides is given by its module's layer", () =>
+    Effect.gen(function* () {
+      for (const [service, layer] of provided) {
+        const given: unknown = yield* Effect.provide(
+          Effect.service(service),
+          layer
+        );
+        expect(given, service.key).toBeDefined();
+      }
+    })
+  );
 });

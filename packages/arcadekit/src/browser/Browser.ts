@@ -137,7 +137,7 @@ export interface Options {
  *   each tick. Unplugging one releases all its inputs.
  * - An asset's path is read against the document's base, its `<base href>`,
  *   as `fetch` reads it, unless a loader of the game's own, such as
- *   `Assets.layerMemory`, is provided around this layer.
+ *   `Assets.layer(Assets.makeMemory(files))`, is provided around this layer.
  * - Each app listens to the devices for itself, from when `App.make` makes
  *   the app until the app is closed, wherever the layer is provided. Reading
  *   the devices after the app is closed throws, with an error that says so.

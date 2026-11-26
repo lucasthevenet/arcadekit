@@ -199,7 +199,7 @@ export interface LoaderShape {
  * Effect's `HttpClient` over `fetch`, available in pages and Node alike, which
  * reads a path against the page's address. `Browser.layer` reads a path
  * against the document's base instead, as `fetch` does. A test provides its
- * own files with `Assets.layerMemory`.
+ * own files with `Assets.layer(Assets.makeMemory(files))`.
  *
  * @category Services
  */
@@ -209,28 +209,38 @@ export const Loader: Context.Reference<LoaderShape> =
   });
 
 /**
- * A loader of in-memory files by URL, for a test or a tool. A file given as
- * text is encoded as UTF-8. A URL not in the list fails.
+ * Returns a layer that provides a loader, such as `Assets.makeMemory(files)`
+ * in a test, as `Assets.Loader`.
+ *
+ * @category Layers
+ */
+export const layer = (loader: LoaderShape): Layer.Layer<never> =>
+  Layer.succeed(Loader, loader);
+
+/**
+ * Makes a loader of in-memory files by URL, for a test or a tool. A file given
+ * as text is encoded as UTF-8. A URL not in the list fails.
+ *
+ *   Effect.provide(Assets.layer(Assets.makeMemory({ "/level.json": "{}" })))
  *
  * @category Testing
  */
-export const layerMemory = (
+export const makeMemory = (
   files: Readonly<Record<string, Uint8Array | string>>
-): Layer.Layer<never> =>
-  Layer.succeed(Loader, {
-    bytes: (url) =>
-      Effect.suspend(() => {
-        const file = Object.hasOwn(files, url) ? files[url] : undefined;
-        if (file === undefined) {
-          return Effect.fail(
-            new Failed({ url, message: "There is no such file." })
-          );
-        }
-        return Effect.succeed(
-          typeof file === "string" ? new TextEncoder().encode(file) : file
+): LoaderShape => ({
+  bytes: (url) =>
+    Effect.suspend(() => {
+      const file = Object.hasOwn(files, url) ? files[url] : undefined;
+      if (file === undefined) {
+        return Effect.fail(
+          new Failed({ url, message: "There is no such file." })
         );
-      }),
-  }) as Layer.Layer<never>;
+      }
+      return Effect.succeed(
+        typeof file === "string" ? new TextEncoder().encode(file) : file
+      );
+    }),
+});
 
 // --- a bundle: what is loaded, and let go, together -----------------------------------
 

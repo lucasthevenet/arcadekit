@@ -307,7 +307,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
       });
       const WithHud = App.define({ plugins: [View.plugin], systems: [Show] });
       // A UI that listens, so that a value published is told to someone.
-      const ui = View.layer(WithHud, (bridge) => {
+      const ui = View.mount(WithHud, (bridge) => {
         bridge.subscribe(Hud, () => {});
       });
       const made = App.make(WithHud, { checkpointEvery: 0 });
@@ -404,7 +404,7 @@ const atRest = (): number =>
         Effect.provide(
           Layer.merge(
             Input.layer(source),
-            View.layer(Resting, (ui) => {
+            View.mount(Resting, (ui) => {
               ui.subscribe(Shown, () => {});
             })
           )

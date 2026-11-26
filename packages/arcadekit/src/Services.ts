@@ -41,7 +41,7 @@ import type * as Singleton from "./Singleton.ts";
 export class Sim extends Context.Service<
   Sim,
   { readonly "~arcadekit/Sim": true }
->()("arcadekit/Sim") {}
+>()("arcadekit/Services.Sim") {}
 
 /** What `set` is told of a component its world was not asked for. */
 type Settable<C extends string, N extends string> = C extends N
@@ -135,7 +135,7 @@ export interface WritingWorld<N extends string> extends ReadingWorld {
  * @category Services
  */
 export class World extends Context.Service<World, ReadingWorld>()(
-  "arcadekit/World"
+  "arcadekit/Services.World"
 ) {
   /** Returns the world with a `set` for these components. */
   static readonly writes = <const D extends readonly ComponentDef[]>(
@@ -172,7 +172,7 @@ export interface TimeState {
  * @category Services
  */
 export class Time extends Context.Service<Time, Readonly<TimeState>>()(
-  "arcadekit/Time"
+  "arcadekit/Services.Time"
 ) {}
 
 /**
@@ -200,7 +200,7 @@ export interface FrameState {
  * @category Services
  */
 export class Frame extends Context.Service<Frame, Readonly<FrameState>>()(
-  "arcadekit/Frame"
+  "arcadekit/Services.Frame"
 ) {}
 
 /**
@@ -278,7 +278,7 @@ export interface Spawning<N extends string> {
  * @category Services
  */
 export class Commands extends Context.Service<Commands, Spawning<never>>()(
-  "arcadekit/Commands"
+  "arcadekit/Services.Commands"
 ) {
   /**
    * Returns the commands with a `spawn` and an `add` for these components.
@@ -302,7 +302,7 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
  * @category Services
  */
 export class Events extends Context.Service<Events, ReadingEvents>()(
-  "arcadekit/Events"
+  "arcadekit/Services.Events"
 ) {}
 
 /**
@@ -331,7 +331,7 @@ export class Events extends Context.Service<Events, ReadingEvents>()(
  * @category Services
  */
 export class Random extends Context.Service<Random, Rng>()(
-  "arcadekit/Random"
+  "arcadekit/Services.Random"
 ) {}
 
 /**
