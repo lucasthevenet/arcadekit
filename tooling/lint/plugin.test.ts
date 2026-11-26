@@ -80,6 +80,42 @@ new RuleTester().run("no-outside-state", plugin.rules["no-outside-state"], {
   ),
 });
 
+const between = {
+  "System.frame": (body: string) =>
+    `System.frame("Draw", function* () {\n${body}\n});`,
+  "System.input": (body: string) =>
+    `System.input("Listen", function* () {\n${body}\n});`,
+};
+
+new RuleTester().run(
+  "no-outside-state, between ticks",
+  plugin.rules["no-outside-state"],
+  {
+    valid: Object.entries(between).flatMap(([kind, wrap]) =>
+      [
+        // Drawing changes what is outside the game, which is what a frame is for.
+        "cache.set(1, 2); list.push(1); obj.a.b = 1; context.fillRect(0, 0, n, n);",
+        "let m = 0; m++; const kept = yield* Kept; kept.angle += 1;",
+      ].map((body) => ({
+        name: `${kind}: ${body}`,
+        code: outside + wrap(body),
+      }))
+    ),
+    invalid: Object.entries(between).flatMap(([kind, wrap]) =>
+      ["n++;", "n += 1;", "n = 2;"].map((body) => ({
+        name: `${kind}: ${body}`,
+        code: outside + wrap(body),
+        errors: [
+          {
+            message:
+              /^This sets n, a variable declared outside the frame or input system it is in: every app of the game shares it.*in a System\.local/u,
+          },
+        ],
+      }))
+    ),
+  }
+);
+
 new RuleTester().run("id-casts", plugin.rules["id-casts"], {
   valid: [
     {

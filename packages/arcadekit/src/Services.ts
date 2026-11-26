@@ -29,6 +29,7 @@ import type { Devices } from "./Input.ts";
 import { writing } from "./internal/handed.ts";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
 import type * as Singleton from "./Singleton.ts";
+import type { Locals } from "./System.ts";
 
 /**
  * In a system's requirements, says that the system changes the game other than
@@ -350,4 +351,5 @@ export type BuiltIn =
   | Random
   | Devices
   | Access
+  | Locals
   | Sim;

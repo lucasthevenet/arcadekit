@@ -237,14 +237,17 @@ const Motes = Three.instances("page/Motes", {
 const Deck = Assets.bundle("page/Deck", {
   face: Three.texture("/card.png"),
 });
-let deckOut = true;
-addEventListener("keydown", (event) => {
-  if (event.key === "c") {
-    deckOut = !deckOut;
+// Whether the deck is out is the page's, kept apart for each app: C, read
+// in the input stage, puts it away and brings it back.
+const DeckOut = System.local(() => ({ out: true }));
+const PutAway = System.input("page/PutAway", function* () {
+  if ((yield* Input.Devices).pressed.includes("KeyC")) {
+    const deck = yield* DeckOut;
+    deck.out = !deck.out;
   }
 });
 const KeepDeck = Assets.during(
-  Effect.sync(() => deckOut),
+  Effect.map(DeckOut, ({ out }) => out),
   Deck
 );
 
@@ -280,26 +283,29 @@ const Ships = Gltf.objects("page/Ships", {
 });
 
 // The camera goes round the box, in real time: it is no part of the game.
-let angle = 0;
+const Going = System.local(() => ({ angle: 0 }));
 const Orbit = System.frame("Orbit", function* () {
   const { camera } = yield* Three.Scene;
-  angle += (yield* Frame).delta * 0.1;
+  const going = yield* Going;
+  going.angle += (yield* Frame).delta * 0.1;
+  const { angle } = going;
   camera.position.set(Math.sin(angle) * 170, 40, Math.cos(angle) * 170);
   camera.lookAt(0, 0, 0);
 });
 
 const hud = document.querySelector("#hud") as HTMLElement;
-let shown = 0;
-let frames = 0;
+// When the text was last shown, and the frames drawn since.
+const Counted = System.local(() => ({ shown: 0, frames: 0 }));
 const Hud = System.frame("Hud", function* () {
   const { tick } = yield* Time;
-  frames++;
+  const counted = yield* Counted;
+  counted.frames++;
   const now = performance.now();
   // Twice a second: text that changes every frame is work nobody can read.
-  if (now - shown >= 500) {
-    hud.textContent = `${COUNT} motes · tick ${tick} · ${Math.round((frames * 1000) / (now - shown))} frames a second`;
-    shown = now;
-    frames = 0;
+  if (now - counted.shown >= 500) {
+    hud.textContent = `${COUNT} motes · tick ${tick} · ${Math.round((counted.frames * 1000) / (now - counted.shown))} frames a second`;
+    counted.shown = now;
+    counted.frames = 0;
   }
 });
 
@@ -314,7 +320,7 @@ const Look = Plugin.make("page/Look", {
       scene.add(new AmbientLight("#8090b0", 1.2), sun);
     })
   ),
-  systems: [KeepDeck, KeepFleet, Motes, Cards, Ships, Orbit, Hud],
+  systems: [PutAway, KeepDeck, KeepFleet, Motes, Cards, Ships, Orbit, Hud],
 });
 
 // --- the entry point -------------------------------------------------------------

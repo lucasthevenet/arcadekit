@@ -18,7 +18,7 @@
  * system would react a tick late to another doesn't compile. See
  * `System.Misordered`.
  */
-import { Effect } from "effect";
+import { Context, Effect, Effectable } from "effect";
 import type { Layer, Scope } from "effect";
 import { dual } from "effect/Function";
 import type { Pipeable } from "effect/Pipeable";
@@ -411,6 +411,86 @@ export function input<
 ): System<GenError<Eff>, Open<GenServices<Eff>>, N, "input", undefined> {
   return make(name, "input", body);
 }
+
+/**
+ * What an app keeps for the frame and the input stages, a value for each
+ * `System.local`, made the first time one of its systems asks. The app
+ * provides it to those two stages, and the tick has none.
+ *
+ * @category Services
+ */
+export class Locals extends Context.Service<
+  Locals,
+  {
+    /** Returns this app's value of a local, making it the first time. */
+    readonly get: <A>(local: Local<A>) => A;
+  }
+>()("arcadekit/System.Locals") {}
+
+/**
+ * What a frame or an input system keeps from one frame to the next, a value
+ * for each app, as `System.local` defines it. It is an Effect, and `yield*`
+ * returns this app's value, the same object on every frame until the app is
+ * closed.
+ *
+ * @typeParam A its value
+ *
+ * @category Models
+ */
+export class Local<A> extends Effectable.Class<A, never, Locals> {
+  private effect: Effect.Effect<A, never, Locals> | undefined;
+
+  constructor(
+    /** Makes an app's value, the first time a system of the app asks for it. */
+    readonly make: () => A,
+    /** Lets go of an app's value when the app is closed. */
+    readonly release: ((value: A) => void) | undefined
+  ) {
+    super();
+  }
+
+  asEffect(): Effect.Effect<A, never, Locals> {
+    return (this.effect ??= Effect.map(Effect.service(Locals), (locals) =>
+      locals.get(this)
+    ));
+  }
+}
+
+/**
+ * Defines what a frame or an input system keeps from one frame to the next,
+ * which is no part of the game: a camera's angle, an animation's clock, what
+ * a system last showed.
+ *
+ *   const Orbit = System.local(() => ({ angle: 0 }))
+ *
+ *   const Camera = System.frame("game/Camera", function* () {
+ *     const orbit = yield* Orbit
+ *     orbit.angle += (yield* Frame).delta
+ *   })
+ *
+ * **When to use**
+ *
+ * Use where a frame or an input system would keep a variable of its module,
+ * which every app of the game would share and none would let go of. Each app
+ * has its own value, made by `make` the first time one of its systems yields
+ * the local, and passed to `release` when the app is closed. Several systems
+ * that yield one local share its value, so an input system can set what a
+ * frame system, or the condition of `Assets.during`, reads.
+ *
+ * **Details**
+ *
+ * - The value is outside the world. A save, the hash, the log and a rewind
+ *   don't hold it, and a rewind leaves it as it is.
+ * - A system of the tick that yields a local doesn't compile, nor does an
+ *   action's handler, a state's hook or a plugin's setup. What the tick keeps
+ *   from one tick to the next is the game's, and is kept in the world.
+ *
+ * @category Constructors
+ */
+export const local = <A>(
+  make: () => A,
+  release?: (value: A) => void
+): Local<A> => new Local(make, release);
 
 type Group<St> = St extends TickStage
   ? TickStage

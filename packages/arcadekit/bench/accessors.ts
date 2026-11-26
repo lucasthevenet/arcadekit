@@ -482,10 +482,11 @@ const rollingBack = (): number =>
           world.set(entity, Position, { x: tick });
         }
       });
-      let sink = 0;
+      // What it drew, outside the app as a canvas is, so the loop is kept.
+      const drawn = { rows: 0 };
       const Draw = System.frame("Draw", function* () {
         (yield* Moved).eachChunk((start, end) => {
-          sink += end - start;
+          drawn.rows += end - start;
         });
       });
       const app = yield* App.make(
@@ -504,12 +505,13 @@ const rollingBack = (): number =>
           yield* app.frame(0);
         })
       );
-      void sink;
+      void drawn.rows;
       return ms;
     })
   );
 
-let sink = 0;
+/** What the systems below drew, outside the app as a canvas is, so their loops are kept. */
+const drawn = { sum: 0 };
 
 /** A system that draws: it fetches a query and the time, and with `reading` reads every column. */
 const drawer = <const I extends number>(i: I, reading: boolean) =>
@@ -521,7 +523,7 @@ const drawer = <const I extends number>(i: I, reading: boolean) =>
         const px = pos.x;
         const vx = vel.x;
         for (let n = start; n < end; n++) {
-          sink += px[n]! + vx[n]! * DT;
+          drawn.sum += px[n]! + vx[n]! * DT;
         }
       });
     }
@@ -557,7 +559,7 @@ const drawingRaw = (verify: boolean): number =>
         { verifyFrames: verify }
       );
       const ms = yield* measureEffect(() => app.frame(0.5));
-      void sink;
+      void drawn.sum;
       return ms;
     })
   );

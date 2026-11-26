@@ -113,6 +113,27 @@ const Gravity = System.tick("game/Gravity", function* () {
 
 [Ticks and frames](../concepts/ticks-and-frames.md) explains what each stage is for and what it may change.
 
+## Keep something from one frame to the next
+
+What a frame or an input system keeps between frames, such as a camera's angle, is no part of the game. `System.local` keeps it for each app:
+
+```ts
+import { Frame, System } from "arcadekit";
+
+const Orbit = System.local(() => ({ angle: 0 }));
+
+const Camera = System.frame("game/Camera", function* () {
+  const orbit = yield* Orbit;
+  orbit.angle += (yield* Frame).delta;
+});
+```
+
+- Each app has its own value, made the first time one of its systems yields the local, and let go of when the app closes. `System.local(make, release)` passes it to `release` then.
+- Every system that yields the local shares its value, so an input system can set what a frame system reads.
+- The value is outside the world: a save, the hash and a rewind leave it as it is.
+- A system of the tick, a hook or a handler that yields a local doesn't compile. What the tick keeps belongs in the world.
+- Keep it in a local and not in a variable of the module, which every app of the game would share, and none would let go of.
+
 ## Run a system only when a condition holds
 
 `System.runIf(condition)` runs a system only when the condition holds. A condition is any Effect that returns a boolean, and can read anything a system can. The most common one checks a [state](states.md):
