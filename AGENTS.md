@@ -46,6 +46,7 @@ A change is not done until it has been run and shown to work. Reasoning that it 
 | --- | --- |
 | Any code | `pnpm fix`, then `pnpm check`, `pnpm typecheck`, and the tests that cover it, `pnpm test <file>` |
 | The storage core or a query | Also `pnpm --filter arcadekit bench`, and `pnpm --filter arcadekit bench:compare <base checkout>` |
+| What an app's stages cost: the loop, a stage, a system one of arcadekit's plugins adds | Also `pnpm --filter arcadekit bench:compare <base checkout> --suite app` |
 | The loops of `@arcadekit/three` that draw | Also `pnpm --filter @arcadekit/three bench` |
 | A package's exports or build, or what a module imports | Also `pnpm build:packages && pnpm lint:packages` |
 | `website/`, or a doc comment | `pnpm --filter @arcadekit/website typecheck` and `pnpm build:docs` |
