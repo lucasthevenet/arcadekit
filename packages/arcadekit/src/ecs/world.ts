@@ -518,7 +518,9 @@ export class World {
 
   /** @internal */
   _place(entity: Entity, inputs: readonly ComponentInput[]): void {
-    this.retractAccessors();
+    if (this.handedOut.length > 0) {
+      this.retractAccessors();
+    }
     const index = entityIndex(entity);
     const placing: ComponentInput[] = [];
     const tableDefs: ComponentDef[] = [];
@@ -3004,7 +3006,9 @@ export class World {
         `World.${op}() called while a query is iterating. Queue it on a CommandBuffer and apply it after the loop.`
       );
     }
-    this.retractAccessors();
+    if (this.handedOut.length > 0) {
+      this.retractAccessors();
+    }
   }
 
   /** @internal A loop hands out accessors, which the world's next change of its entities retracts. */
@@ -3013,13 +3017,13 @@ export class World {
     this.handedOut.push(loop);
   }
 
+  // Asked for only when a loop is out, so that a spawn or a despawn with
+  // none makes no call: called each time, it measured 3% on `churn`.
   private retractAccessors(): void {
     const { handedOut } = this;
-    if (handedOut.length > 0) {
-      for (const loop of handedOut) {
-        retract(loop);
-      }
-      handedOut.length = 0;
+    for (const loop of handedOut) {
+      retract(loop);
     }
+    handedOut.length = 0;
   }
 }
