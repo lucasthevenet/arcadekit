@@ -9,12 +9,19 @@ import { CoinGame, DELTA, Drop, HZ, game } from "./peers.ts";
 
 const alone = { me: "ada", others: [], hz: HZ } as const;
 
-/** What the compiler says of a session's names, or that it says nothing. */
-type Said<Me extends string, Others extends readonly string[]> = [
-  Session.Repeated<Me, Others>,
-] extends [never]
-  ? "nothing"
-  : Session.Repeated<Me, Others>;
+/** What `Session.make` says of a session's names, or that it says nothing. */
+type Said<Me extends string, Others extends readonly string[]> = Parameters<
+  typeof Session.make<
+    readonly [],
+    readonly [],
+    readonly [],
+    undefined,
+    Me,
+    Others
+  >
+>[1] extends { readonly names: infer Message }
+  ? Message
+  : "nothing";
 
 const ME_TOO =
   '"ada" is me, and among the others too. Name only the other peers in others.';

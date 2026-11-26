@@ -162,15 +162,14 @@ type Twice<
  * The names a session is given twice, as a union of messages: this peer's
  * name among the others, or two others with one name. It is `never` when
  * every name is distinct. A name the compiler knows only as `string`, and a
- * list of others that isn't a tuple, are left out. `Session.make` refuses its
- * options with this message, at compile time.
- *
- * @category Type-level
+ * list of others that isn't a tuple, are left out.
  */
-export type Repeated<
-  Me extends string,
-  Others extends readonly string[],
-> = Twice<Me, Others, Named<Me>, never>;
+type Repeated<Me extends string, Others extends readonly string[]> = Twice<
+  Me,
+  Others,
+  Named<Me>,
+  never
+>;
 
 /**
  * What `Session.make` adds to its options: nothing when every name is its
