@@ -32,6 +32,8 @@ import type * as Action from "./Action.ts";
 import type { BuiltIn, Sim } from "./Services.ts";
 import type * as System from "./System.ts";
 
+declare const Types: unique symbol;
+
 /**
  * Any system, whatever its error and requirements.
  *
@@ -83,7 +85,7 @@ export interface Plugin<
   /** The plugins this one depends on. */
   readonly plugins: readonly Any[];
   /** Holds no value. It carries the plugin's types. */
-  readonly _types?: {
+  readonly [Types]?: {
     readonly TickE: TickE;
     readonly Han: Han;
     readonly Provided: Provided;

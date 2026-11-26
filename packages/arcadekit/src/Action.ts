@@ -97,7 +97,7 @@ export interface Refused<P, E> {
  *
  * @category Models
  */
-export interface Action<N extends string, P, E = unknown> {
+export interface Action<N extends string, in out P, out E = unknown> {
   readonly name: N;
   /**
    * Validates the payload and converts it to and from JSON. Derived from the
@@ -111,8 +111,6 @@ export interface Action<N extends string, P, E = unknown> {
   readonly error: Schema.Codec<E, unknown>;
   /** The event of the action's refusals, which `Action.rejected` returns. */
   readonly rejected: Event.Event<Refused<P, E>>;
-  /** Holds no value. It keeps the payload type on the action, invariant. */
-  readonly _P?: (payload: P) => P;
 }
 
 /** A schema whose values and encoded form each have a `_tag`. */
