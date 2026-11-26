@@ -33,7 +33,7 @@ Lockstep is rollback that never runs ahead. There is one session, `Session.make`
 
 ## Sessions take over the app
 
-A session makes its app and steps it, so nothing can advance one machine's game alone. `session.app` has no `tick` and no `dispatch`. What enters the app from outside goes to the session instead: `session.app.enqueue`, a key bound to an action, and a UI button all feed this peer's next message. Your game issues input the same way with one player or several.
+A session makes its app and steps it, so nothing can advance one machine's game alone. `session.app` has no `tick` and no `dispatch`. What enters the app from outside goes to the session instead: `session.app.enqueue`, what the input stage reads of the devices, and a UI button all feed this peer's next message. Your game issues input the same way with one player or several.
 
 Actions the simulation issues itself with `Actions`, such as a bot's move, aren't sent. Every peer's simulation issues them on its own.
 

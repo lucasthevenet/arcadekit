@@ -84,7 +84,7 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 
 - `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed. A view that the UI doesn't listen to is computed in the frame after `get` reads it, so `get` returns it a frame late.
 - `ui.subscribe(view, listener)` calls the listener each time the value changes, and returns a function that unsubscribes. It doesn't call the listener with the current value, so read that with `get`. A listener that throws fails the frame, like any bug in the frame stage, once every other listener has been notified.
-- `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for a key bound to it. A replay therefore needs no UI, and a button counts the same as a key.
+- `ui.send(action, payload)` requests an action. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for one an input system issues for a key. A replay therefore needs no UI, and a button counts the same as a key.
 
 A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
 

@@ -285,12 +285,14 @@ describe("a game that ticks when its player moves", () => {
       phase: (yield* Phase).value as string,
     };
   });
-  const Keys = Input.bind(
-    "st/Keys",
-    Input.onPress("ArrowRight", Move, { by: 1 })
-  );
+  const Step = Input.button("st/Step", ["ArrowRight"]);
+  const Keys = System.input("st/Keys", function* () {
+    if ((yield* Step).pressed) {
+      (yield* Action.Actions).enqueue(Move, { by: 1 });
+    }
+  });
   const Game = Plugin.make("st/Game", {
-    plugins: [Rules, View.plugin],
+    plugins: [Rules, View.plugin, Input.controls("st/Controls", [Step])],
     systems: [Show, Keys],
   });
   const Played = App.define({ plugins: [Game] });

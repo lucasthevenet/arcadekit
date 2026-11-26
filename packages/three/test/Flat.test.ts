@@ -90,13 +90,10 @@ const Rules = Plugin.make("fl/Rules", {
 });
 
 /** The input stage: a click aims at the place of the plane under it. */
+const Click = Input.button("fl/Click", [Input.pointerButton()]);
 const Aiming = System.input("fl/Aiming", function* () {
-  const devices = yield* Input.Devices;
-  if (devices.pressed.includes(Input.pointerButton())) {
-    const at = yield* Three.toPlane({
-      x: devices.axes.get(Input.pointerX) ?? 0,
-      y: devices.axes.get(Input.pointerY) ?? 0,
-    });
+  if ((yield* Click).pressed) {
+    const at = yield* Three.toPlane(yield* Input.Pointer);
     (yield* Action.Actions).enqueue(Aim, at);
   }
 });
@@ -114,7 +111,12 @@ const files = Assets.layer(
 
 const lookOf = (height: number, smooth = false) =>
   Plugin.make("fl/Look", {
-    plugins: [Three.plugin, Assets.plugin, Rules],
+    plugins: [
+      Three.plugin,
+      Assets.plugin,
+      Rules,
+      Input.controls("fl/Controls", [Click]),
+    ],
     systems: [
       Assets.during(Effect.succeed(true), Deck),
       Three.camera2d("fl/View", {

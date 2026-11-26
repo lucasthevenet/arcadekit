@@ -1384,7 +1384,7 @@ describe("the turns of a game kept by Timeline.keep", () => {
             now += 1000 / 60;
           }
         };
-        const press = (code: string) => {
+        const press = (code: Input.KeyCode) => {
           keys.press(code);
           rest();
           keys.release(code);
@@ -1395,12 +1395,13 @@ describe("the turns of a game kept by Timeline.keep", () => {
         ui!.subscribe(Where, () => {});
         rest();
         const hashes = [world.hash()];
-        for (const code of [
+        const path: readonly Input.KeyCode[] = [
           "ArrowRight",
           "ArrowDown",
           "ArrowRight",
           "ArrowDown",
-        ]) {
+        ];
+        for (const code of path) {
           press(code);
           hashes.push(world.hash());
         }

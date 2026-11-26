@@ -36,20 +36,30 @@ export const listen = (
       where.removeEventListener(type, listener as EventListener)
     );
   };
+  // A key whose code is none of the specification's, such as the empty code
+  // of a virtual keyboard, is no key a game can name, and is not heard.
   on(page, "keydown", (event: KeyboardEvent) => {
-    if (prevented.has(event.code)) {
+    const { code } = event;
+    if (!Input.isKeyCode(code)) {
+      return;
+    }
+    if (prevented.has(code)) {
       event.preventDefault();
     }
     // A key held down repeats; it went down once.
     if (!event.repeat) {
-      state.press(event.code);
+      state.press(code);
     }
   });
   on(page, "keyup", (event: KeyboardEvent) => {
-    if (prevented.has(event.code)) {
+    const { code } = event;
+    if (!Input.isKeyCode(code)) {
+      return;
+    }
+    if (prevented.has(code)) {
       event.preventDefault();
     }
-    state.release(event.code);
+    state.release(code);
   });
   // A page that loses the keyboard is not told when a key goes up.
   on(page, "blur", () => state.releaseAll((code) => !isPad(code)));
@@ -119,11 +129,13 @@ export const listen = (
   on(page, "pointercancel", letGo);
 
   // Gamepads send no events worth having: they are read when sampled.
-  let known = new Set<string>();
+  let knownButtons = new Set<Input.PadButtonCode>();
+  let knownAxes = new Set<Input.PadAxisCode>();
   const round = (value: number): number =>
     Math.abs(value) < deadzone ? 0 : Math.round(value * 100) / 100;
   const readPads = (): void => {
-    const seen = new Set<string>();
+    const buttons = new Set<Input.PadButtonCode>();
+    const axes = new Set<Input.PadAxisCode>();
     const pads = gamepads();
     for (let p = 0; p < pads.length; p++) {
       const pad = pads[p];
@@ -132,7 +144,7 @@ export const listen = (
       }
       for (let b = 0; b < pad.buttons.length; b++) {
         const code = Input.padButton(pad.index, b);
-        seen.add(code);
+        buttons.add(code);
         if (pad.buttons[b]!.pressed) {
           state.press(code);
         } else {
@@ -141,18 +153,23 @@ export const listen = (
       }
       for (let a = 0; a < pad.axes.length; a++) {
         const code = Input.padAxis(pad.index, a);
-        seen.add(code);
+        axes.add(code);
         state.move(code, round(pad.axes[a]!));
       }
     }
     // A gamepad that was unplugged lets go of everything.
-    for (const code of known) {
-      if (!seen.has(code)) {
+    for (const code of knownButtons) {
+      if (!buttons.has(code)) {
         state.release(code);
+      }
+    }
+    for (const code of knownAxes) {
+      if (!axes.has(code)) {
         state.move(code, 0);
       }
     }
-    known = seen;
+    knownButtons = buttons;
+    knownAxes = axes;
   };
   let stopped = false;
   return {

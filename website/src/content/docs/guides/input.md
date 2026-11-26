@@ -1,148 +1,175 @@
 ---
 title: "Input"
-description: "Keyboard, pointer and gamepad input reaches your game as actions, through the same log as all outside input, so replays need no devices."
+description: "A game names what its player does as controls bound to keys, pointer buttons and gamepads, and its rules read the controls. Bindings change while it runs, and what the controls said reaches the game through its log, so replays need no devices."
 ---
 
-**Input** is what the keyboard, the pointer, and the gamepads report. It reaches the game as actions, through the same log as every other input from outside the game, so a replay needs no devices. A game reads input with bindings, from the device state, or both.
+**Input** is what the keyboard, the pointer, and the gamepads report. A game names what its player does, a **control**, binds it to the devices, and reads the control in its systems, which know nothing of keys. What the controls say reaches the game as an action, through the same log as every other input from outside the game, so a replay needs no devices and no bindings.
 
-## Bind devices to actions
-
-`Input.bind` maps the devices to your game's own actions. It makes an input-stage system, which runs before each tick:
+## Declare the controls
 
 ```ts
-import { Action, Input, Plugin } from "arcadekit";
-import { Schema } from "effect";
+import { Input, Plugin, Singleton, System, Time, Field } from "arcadekit";
 
-const Fire = Action.define("game/Fire", Schema.Struct({ x: Schema.Finite }));
-const TogglePause = Action.define("game/TogglePause", Schema.Struct({}));
+const Jump = Input.button("game/Jump", ["Space", Input.padButton(0, 0)]);
+const Move = Input.stick("game/Move", {
+  left: ["KeyA", "ArrowLeft"],
+  right: ["KeyD", "ArrowRight"],
+  up: ["KeyW", "ArrowUp"],
+  down: ["KeyS", "ArrowDown"],
+  pad: Input.padStick(0, "left"),
+});
 
-const fire = Action.handler(Fire, function* ({ x }) {});
-const togglePause = Action.handler(TogglePause, function* () {});
-
-const Controls = Input.bind(
-  "game/Controls",
-  Input.onPress(["KeyP", Input.padButton(0, 9)], TogglePause, {}),
-  Input.onPress(Input.pointerButton(), Fire, (devices) => ({
-    x: devices.axes.get(Input.pointerX) ?? 0,
-  }))
+const Hero = Singleton.define(
+  "game/Hero",
+  { x: Field.f32, y: Field.f32, jumps: Field.i32 },
+  { x: 0, y: 0, jumps: 0 }
 );
 
+const Walk = System.tick("game/Walk", function* () {
+  const hero = yield* Hero.writes;
+  const { delta } = yield* Time;
+  const move = yield* Move; // { x, y }: y up, of length 1 at most
+  hero.x += move.x * 5 * delta;
+  hero.y += move.y * 5 * delta;
+  if ((yield* Jump).pressed) {
+    hero.jumps += 1;
+  }
+});
+
 const Game = Plugin.make("game/Game", {
-  systems: [Controls],
-  handlers: [fire, togglePause],
+  plugins: [Input.controls("game/Controls", [Jump, Move])],
+  systems: [Walk],
 });
 ```
 
-- `Input.onPress` issues an action when one of its codes is pressed, `Input.onRelease` when one is released, and `Input.onMove` when one moves. Given several codes, a binding issues its action once when any of them fires.
-- The payload is a value, or a function of the devices for an action that needs the pointer's position. The compiler checks the payload against the action.
-- Handlers know nothing about keys. You can change the keys without changing the game or its replays. The log records `Fire`, not the button that issued it.
-- `Input.bind` fixes the bindings when it makes the system. To let players choose their keys, [write an input system](#write-an-input-system-of-your-own) that looks the bindings up.
+- `Input.button(name, codes)` is held while any of its codes is down. `yield*` gives `{ held, pressed, released }`. Pressing a second of its codes while one is held is no new press.
+- `Input.axis(name, { negative, positive, pad })` is a number from -1 to 1: 1 while a `positive` button is held, -1 while a `negative` one is, 0 while both or neither are, plus a gamepad's axis.
+- `Input.stick(name, { left, right, up, down, pad })` is a direction `{ x, y }`, with y up and of length 1 at most, so two keys held together make a diagonal of length 1. A gamepad's stick counts once it is `deadzone` from its center, 0.2 by default in any direction, and counts from 0 there.
+- `Input.controls(name, controls)` declares a game's controls, and installs `Input.plugin`. A game that reads a control it doesn't declare doesn't compile: `App.make` requires `Input.Declared<"game/Jump">` from outside. Several plugins can each declare their own, and two controls of one name are refused when the app is made.
+- A control's name is its feature, a slash, and what it is, as for a component. No device's code has a slash, so the compiler refuses a name without one.
 
-## Read the device state
+Before each tick, the input stage works out what every control says of the devices, and reports what changed as one action, `Input.Report`, beside the devices' own state. The log records `"game/Jump"` going down, so a replay plays the same game whatever its bindings. The app logs the action only when something changed, so holding a key logs nothing.
 
-`Input.plugin` keeps the device state in the world, for any system to read:
+## Read a control in each stage
+
+A control is read the same way in every stage, and each stage is told what it can use:
+
+| Stage | `held`, an axis, a stick | `pressed` and `released` |
+| --- | --- | --- |
+| The tick, and an action's handler | What the world holds this tick | Changed in this tick |
+| The frame stage | What the world holds | Changed since the last frame |
+| The input stage | What this run's sample says, with the app's bindings | Changed since the last sample |
+
+- In the tick, `pressed` and `released` are true during the one tick that first sees the change. Every system of that tick sees them, and so do the handlers of the actions that the tick applies.
+- A frame system sees each press and each release once, in the first frame drawn after its tick, whether a tick has several frames or a frame has several ticks. After a [rewind](capturing-and-rewinding.md), the ticks run again are new to it, as their events are. After a rewind with `{ again: true }`, as a [rollback session](sessions.md) makes on every wrong prediction, a press the last frame showed isn't shown again, and one that only the ticks run again have is shown once.
+- A button pressed and released between two ticks is both pressed and released in the same tick, and isn't held. A held button released and pressed again between two ticks is both released and pressed, and is held.
+- The state is a singleton of the world. It is saved with the game, restored when an action is refused, and included in the hash once something has been pressed. A game nobody has touched hashes the same as one with no input at all.
+- The devices override a save. When a game is loaded from a save in which a key was held, and the key isn't down now, the first sample releases it.
+- The state describes one player's devices. For several players, on one machine or several, [write an input system](devices.md#write-an-input-system-of-your-own) that issues actions that carry the player.
+
+## Rebind a control
 
 ```ts
-import { Input, Plugin, System } from "arcadekit";
+import { Input, System } from "arcadekit";
 
-const Steer = System.tick("game/Steer", function* () {
-  const keys = yield* Input.Keyboard;
-  const pointer = yield* Input.Pointer;
-  const left = keys.down("ArrowLeft"); // held
-  const jump = keys.pressed("Space"); // went down this tick
-  const aim = pointer.down() ? { x: pointer.x, y: pointer.y } : undefined;
-});
+const Jump = Input.button("game/Jump", ["Space", Input.padButton(0, 0)]);
 
-const Game = Plugin.make("game/Game", {
-  plugins: [Input.plugin],
-  systems: [Steer],
+// R, then the key the jump is to be.
+const Asking = System.local(() => ({ asking: false }));
+
+const Settings = System.input("game/Settings", function* () {
+  const menu = yield* Asking;
+  const { pressed } = yield* Input.Devices;
+  if (!menu.asking) {
+    menu.asking = pressed.includes("KeyR");
+    return;
+  }
+  const key = pressed.find(Input.isKeyCode);
+  if (key !== undefined) {
+    yield* Input.rebind(Jump, [key, Input.padButton(0, 0)]);
+    menu.asking = false;
+  }
 });
 ```
 
-- `Input.plugin` provides `Input.Keyboard`, `Input.Pointer`, and `Input.Gamepads`, which `Input.Gamepad(index)` reads. A game that reads them and leaves out the plugin doesn't compile.
-- `Input.Keyboard` has `down`, `pressed`, and `released`. `Input.Pointer` has `x`, `y`, and the same three for a button, the primary button by default. `Input.Gamepad(index)` has `axis(n)` and the same three for a button.
-- `pressed` and `released` are true during the one tick that first sees the change. Every system of that tick sees them, and so do the handlers of the actions that the tick applies. The handler of an action bound to a key sees the press that issued it.
-- A frame system reads what changed since the last frame. It sees each press and each release once, in the first frame drawn after its tick, whether a tick has several frames or a frame has several ticks. After a [rewind](capturing-and-rewinding.md), the ticks run again are new to it, as their events are. After a rewind with `{ again: true }`, as a [rollback session](sessions.md) makes on every wrong prediction, a press the last frame showed isn't shown again, and one that only the ticks run again have is shown once.
-- A key pressed and released between two ticks is both pressed and released in the same tick, and isn't down. A held key released and pressed again between two ticks is both released and pressed in the same tick, and is down.
-- A button pressed twice between two samples of the devices counts as one press.
-- The changes since the last tick form one action, `Input.Report`. The app logs it only when something changed, so holding a key logs nothing.
-- The device state is a singleton. It is saved with the game, restored when an action is refused, and included in the hash once something has been pressed. A game nobody has touched hashes the same as one with no input at all.
-- The devices override a save. When a game is loaded from a save in which a key was held, and the key isn't down now, the first sample releases it.
-- The device state describes one player's devices. For several players, on one machine or several, bind each player's devices to actions that carry the player.
+- `Input.rebind(control, bindings)` takes effect at the next sample of the devices. A frame or an input system rebinds, and a system of the tick that rebinds doesn't compile.
+- Bindings are settings, not the game. They are outside the world, so a save, the hash, the log and a rewind leave them as they are. Each app has its own, made from what each control was declared with, and let go of when it is closed.
+- `Input.rebind(Jump, Jump.bindings)` puts back what the control was declared with. `Input.bindingsOf(Jump)` gives what it is bound to now, for a menu that shows the player's keys.
+- A control bound to a key that is down is held from the next sample on, and goes down then.
 
-Bindings don't require `Input.plugin`, and a game can use both.
+## Keep the player's keys from a settings menu
+
+A settings menu runs in the page's UI, outside every system. It rebinds through `Input.settingsOf`, and keeps the keys in a [setting](settings.md), which the next visit to the page reads when the game starts:
+
+```ts
+import { App, Driver, Input, Setting } from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Effect } from "effect";
+
+const Jump = Input.button("game/Jump", ["Space", Input.padButton(0, 0)]);
+const Controls = Input.controls("game/Controls", [Jump]);
+const Game = App.define({ plugins: [Controls] });
+
+// The keys the player chose, in the bindings' JSON form.
+const JumpKeys = Setting.define("game/JumpKeys", Jump.schema, Jump.bindings);
+const choose = document.querySelector<HTMLButtonElement>("#jump-on-k")!;
+
+Browser.runMain(
+  Driver.run(Game, {
+    hz: 60,
+    ready: (app) =>
+      Effect.gen(function* () {
+        const settings = Input.settingsOf(app, Controls);
+        // The game starts with the keys kept last time.
+        yield* settings.rebind(Jump, yield* JumpKeys);
+        const run = Effect.runForkWith(yield* Effect.context<Setting.Store>());
+        // The menu makes K the jump, now and after a reload.
+        choose.onclick = () =>
+          run(
+            Effect.andThen(
+              settings.rebind(Jump, ["KeyK"]),
+              Setting.set(JumpKeys, ["KeyK"])
+            )
+          );
+      }),
+  }).pipe(Effect.provide(Setting.layer(Browser.settings("mygame")))),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+- `Input.settingsOf(app, Controls)` gives `rebind` and `bindingsOf` to code outside the game's systems. It takes only the controls the plugin declares, and throws for an app made without the plugin. They are the bindings `Input.rebind` changes from a system: what one changes, the other reads.
+- `Jump.schema` is the schema of the control's bindings. A setting of it keeps them as JSON, and a kept text that names no key reads as the bindings the control was declared with.
+- The bindings stay outside the world: rebinding changes no save, no hash and no log.
 
 ## Name keys, buttons, and axes
 
-A key's code is the browser's `KeyboardEvent.code`, such as `"KeyA"`, `"Space"`, or `"ArrowLeft"`. Other codes come from `Input.pointerButton(n)`, `Input.padButton(pad, n)`, and `Input.padAxis(pad, n)`. The pointer's position is the axes `Input.pointerX` and `Input.pointerY`, in CSS pixels from the top left of the `target` passed to `Browser.runMain`. If your canvas is drawn at a different size from its CSS size, convert the position yourself. A gamepad button is either down or up.
+A key's code is the browser's `KeyboardEvent.code`, such as `"KeyA"`, `"Space"`, or `"ArrowLeft"`: where the key is, whatever its layout prints on it. `Input.KeyCode` lists them, so a code spelt wrong doesn't compile, in a control's bindings, in `Input.Keyboard`, or in `preventDefault`. `Input.isKeyCode` checks a string that comes from elsewhere. Other codes come from `Input.pointerButton(n)`, `Input.padButton(pad, n)`, `Input.padAxis(pad, n)`, and `Input.padStick(pad, "left")`. The pointer's position is the axes `Input.pointerX` and `Input.pointerY`, in CSS pixels from the top left of the `target` passed to `Browser.runMain`.
 
-## Write an input system of your own
+A gamepad with the browser's standard mapping numbers its buttons and axes as follows. A button is either down or up, triggers included.
 
-An input-stage system can read both the devices and the world, and issue any action. Picking the card under the pointer needs both:
+| Button | Xbox | PlayStation |  | Button | Xbox | PlayStation |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | A | Cross |  | 9 | Menu | Options |
+| 1 | B | Circle |  | 10 | Left stick pressed | L3 |
+| 2 | X | Square |  | 11 | Right stick pressed | R3 |
+| 3 | Y | Triangle |  | 12 | D-pad up | D-pad up |
+| 4 | LB | L1 |  | 13 | D-pad down | D-pad down |
+| 5 | RB | R1 |  | 14 | D-pad left | D-pad left |
+| 6 | LT | L2 |  | 15 | D-pad right | D-pad right |
+| 7 | RT | R2 |  | 16 | Xbox | PS |
+| 8 | View | Share |  |  |  |  |
 
-```ts
-import {
-  Action,
-  Component,
-  EntityId,
-  Field,
-  Input,
-  Query,
-  System,
-} from "arcadekit";
-import { Schema } from "effect";
+| Axis | What it is                   | -1   | 1     |
+| ---- | ---------------------------- | ---- | ----- |
+| 0    | The left stick, across       | Left | Right |
+| 1    | The left stick, up and down  | Up   | Down  |
+| 2    | The right stick, across      | Left | Right |
+| 3    | The right stick, up and down | Up   | Down  |
 
-const Card = Component.define("game/Card", {
-  left: Field.f32,
-  right: Field.f32,
-});
-const Cards = Query.all(Card);
-const PlayCard = Action.define(
-  "game/PlayCard",
-  Schema.Struct({ card: EntityId })
-);
-
-const Pick = System.input("game/Pick", function* () {
-  const devices = yield* Input.Devices;
-  if (!devices.pressed.includes(Input.pointerButton())) {
-    return;
-  }
-  const x = devices.axes.get(Input.pointerX) ?? 0;
-  const actions = yield* Action.Actions;
-  (yield* Cards).each((card, entity) => {
-    if (card.left <= x && x < card.right) {
-      actions.enqueue(PlayCard, { card: entity });
-    }
-  });
-});
-```
-
-`Input.Devices` is the current sample, the same for every system of the stage. It holds the buttons that are `down`, the buttons `pressed` and `released` since the previous sample, the `axes`, and the axes that `moved`. It isn't part of the game, so a system of the tick or the frame stage can't require it. Those systems read the device state that the game keeps: `Input.Keyboard`, `Input.Pointer`, and `Input.Gamepad`.
-
-## Run the input stage
-
-A driver runs the input stage just before each tick. A tick doesn't read the devices, so a game that steps its app by hand runs `yield* app.input()` before each `yield* app.tick(delta)` that should receive them.
-
-- The stage reads the devices once per run. A frame with no tick due reads nothing, and the presses in between wait for the next tick, so a quick tap between two frames is never lost.
-- The world is read-only here, as in the frame stage. A system issues actions with `Actions.enqueue` and changes nothing itself. The app logs the actions and applies them at the start of the next tick.
-- The stage reads events through its own reader, each event once. It receives what a tick's systems emitted, what its actions emitted, and `Action.Rejected`, so a system that issued an action learns that it was refused. When the stage doesn't run at all, the app keeps its events for up to 600 ticks.
-- A replay doesn't run the stage, because the log already holds what the devices reported. A tool that re-runs a game from its log ticks it with `app.tick(delta)` alone. See [replays](replays.md).
-
-The simulation can't tell whether its devices are read. A game played from a keyboard and its replay have the same hash at every tick.
-
-## Choose where device input comes from
-
-`Input.Source` is where device input comes from. By default there is none, which suits a replay, a server, and most tests.
-
-- Having no devices differs from having devices with nothing pressed. With no source, the device state stays as last reported. A game fed its reports from a log or from another machine can therefore run under a driver, input stage included, and plays out the same way.
-- In a page, `Browser.runMain` provides the page's keyboard, pointer, and gamepads. The pointer is a mouse, a pen, or a finger. `Browser.layer(options)` provides the same devices to a program that starts itself. [Run a game in a page](running-a-game.md#run-a-game-in-a-page) lists the options.
-- A held key goes down once, and everything held is released when the page loses focus. Mouse buttons held together are tracked one by one.
-- `App.make` listens to the devices in the app's own scope, and stops when the app is closed. The devices are heard for as long as the app is open, wherever `Browser.layer` is provided. Each app listens for itself. Reading the devices after the app is closed throws an error that says so.
-- A test, a tool, or on-screen controls use `Input.makeManualSource()`. Drive it by hand with `press`, `release`, `tap`, and `move`, and provide it with `Input.layer(source)`. See [testing](testing.md).
-
-Reading the devices when nothing changed costs 1.4 µs per tick. A tick in which a key went down or up costs 5.2 µs in total, for the read, the action, and the tick that applies it.
+`Input.padStick(pad, "left")` is axes 0 and 1, and `"right"` axes 2 and 3. A stick control turns the gamepad's y around, so up is up.
 
 ## Read more
 
-- [`Input`](/reference/arcadekit/Input) and [`Browser`](/reference/arcadekit/browser/Browser) in the API reference.
+- [Devices and the input stage](devices.md): the devices by their codes, input systems of your own, and where the devices come from.
+- [`Input`](/reference/arcadekit/Input) in the API reference.
 - [Ticks and frames](../concepts/ticks-and-frames.md), for the three stages.

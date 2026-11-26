@@ -22,9 +22,9 @@
  *   for (const message of session.outgoing()) send(message)
  *
  * Everything that enters the app from outside goes through the session:
- * `session.app.enqueue`, a key bound to an action, and a UI button. Each goes
- * into this peer's message for the tick `delay` ticks ahead, and every peer
- * applies it on that tick, this one included. A game issues input as it does
+ * `session.app.enqueue`, what the input stage reads of the devices, and a UI
+ * button. Each goes into this peer's message for the tick `delay` ticks
+ * ahead, and every peer applies it on that tick, this one included. A game issues input as it does
  * with one player. What the simulation issues itself with `Actions`, such as
  * a bot's move, isn't sent, since every peer's simulation issues it.
  *

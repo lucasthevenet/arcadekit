@@ -111,19 +111,22 @@ const Heroes = Three.instancesFrom("game/Heroes", {
   },
 });
 
+const Click = Input.button("game/Click", [Input.pointerButton()]);
+
 const Aiming = System.input("game/Aiming", function* () {
-  const devices = yield* Input.Devices;
-  if (devices.pressed.includes(Input.pointerButton())) {
-    const at = yield* Three.toPlane({
-      x: devices.axes.get(Input.pointerX) ?? 0,
-      y: devices.axes.get(Input.pointerY) ?? 0,
-    });
+  if ((yield* Click).pressed) {
+    const at = yield* Three.toPlane(yield* Input.Pointer);
     (yield* Action.Actions).enqueue(Aim, at);
   }
 });
 
 const Look = Plugin.make("game/Look", {
-  plugins: [Three.plugin, Assets.plugin, Rules],
+  plugins: [
+    Three.plugin,
+    Assets.plugin,
+    Rules,
+    Input.controls("game/Controls", [Click]),
+  ],
   systems: [
     Assets.during(Effect.succeed(true), Deck),
     View,
