@@ -660,6 +660,34 @@ const waitUntil = <E>(
     return yield* Effect.die(new Error(`timed out waiting until ${what}`));
   });
 
+/**
+ * Ticks two peers that have stopped moving, the one behind first, until
+ * each has every message for every tick a move was made on, and both stand
+ * at one tick, at `least` or later. Returns the first tick no move was made
+ * on: every tick from there is empty on every peer, so what a peer predicted
+ * of one is what both ran, and their worlds are the same at every tick.
+ * Until then, the tick a peer ran last may be a prediction without a move
+ * that is still on its way to it.
+ */
+const settle = Effect.fnUntraced(function* (one: Seat, two: Seat, least = 0) {
+  const still = Math.max(one.app.time.tick, two.app.time.tick);
+  for (
+    let i = 0;
+    i < 400 &&
+    (one.app.time.tick !== two.app.time.tick ||
+      one.session.confirmed < still ||
+      two.session.confirmed < still ||
+      one.app.time.tick < least);
+    i++
+  ) {
+    yield* Effect.promise(() => later(2));
+    yield* (
+      one.app.time.tick <= two.app.time.tick ? one : two
+    ).connected.tick();
+  }
+  return still;
+});
+
 /** What a transport fails with once its socket has closed, or undefined while it is open. */
 const closedOf = (transport: Transport.Listener) =>
   Effect.match(transport.receive(), {
@@ -757,18 +785,9 @@ describe("the transport between machines, a WebSocket to a relay", () => {
                 yield* Effect.promise(() => later(1));
               }
             }
-            for (
-              let i = 0;
-              i < 300 &&
-              (one.app.time.tick !== two.app.time.tick ||
-                one.session.confirmed < one.app.time.tick - 1);
-              i++
-            ) {
-              yield* Effect.promise(() => later(2));
-              yield* (
-                one.app.time.tick <= two.app.time.tick ? one : two
-              ).connected.tick();
-            }
+            const still = yield* settle(one, two);
+            expect(one.session.confirmed).toBeGreaterThanOrEqual(still);
+            expect(two.session.confirmed).toBeGreaterThanOrEqual(still);
             expect(one.app.time.tick).toBe(two.app.time.tick);
             expect(one.app.time.tick).toBeGreaterThan(40);
             expect(one.world.hash()).toBe(two.world.hash());
@@ -830,19 +849,9 @@ describe("the transport between machines, a WebSocket to a relay", () => {
             yield* play(30);
             served.drop("ada");
             yield* play(30);
-            for (
-              let i = 0;
-              i < 400 &&
-              (one.app.time.tick !== two.app.time.tick ||
-                one.session.confirmed < one.app.time.tick - 1 ||
-                one.app.time.tick < 80);
-              i++
-            ) {
-              yield* Effect.promise(() => later(2));
-              yield* (
-                one.app.time.tick <= two.app.time.tick ? one : two
-              ).connected.tick();
-            }
+            const still = yield* settle(one, two, 80);
+            expect(one.session.confirmed).toBeGreaterThanOrEqual(still);
+            expect(two.session.confirmed).toBeGreaterThanOrEqual(still);
             expect(one.app.time.tick).toBe(two.app.time.tick);
             expect(one.app.time.tick).toBeGreaterThanOrEqual(80);
             expect(one.world.hash()).toBe(two.world.hash());
