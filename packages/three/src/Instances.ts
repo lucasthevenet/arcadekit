@@ -32,7 +32,7 @@ export interface Look {
 }
 
 /**
- * The options of `Three.instances`, wherever its look comes from.
+ * The options of `Three.instances` and `Three.instancesFrom`.
  *
  * @category Options
  */
@@ -78,14 +78,15 @@ export interface InstancesShared extends Which {
 }
 
 /**
- * Options for instances whose look exists when the system is created.
+ * The options of `Three.instances`, whose look exists when the system is
+ * created.
  *
  * @category Options
  */
 export interface InstancesOptions extends InstancesShared, Look {}
 /**
- * Options for instances whose look is built from assets that are loaded later
- * and released again, such as a level's.
+ * The options of `Three.instancesFrom`, whose look is built from assets that
+ * are loaded later and released again, such as a level's.
  *
  * @category Options
  */
@@ -170,10 +171,28 @@ export interface InstancesFromOptions<
  * - What interpolation keeps, each component's value a tick ago, isn't part of
  *   the world. The game's hash, log and save are the same with it or without.
  *
- * A look built from assets, such as a level's texture, is given as the bundle
- * it comes `from` and a function that builds it:
+ * **Gotchas**
  *
- *   const Rocks = Three.instances("game/Rocks", {
+ * - Instances are drawn in no particular order.
+ *
+ * @category Systems
+ */
+export function instances<const O extends Which["of"]>(
+  name: string,
+  options: InstancesOptions & {
+    readonly of: O;
+    readonly transform: TransformOf<O>;
+  }
+): System.System<never, Needs, string, "frame"> {
+  return internal.instances(name, options);
+}
+
+/**
+ * Makes a frame-stage system that draws every entity of a kind as one instance
+ * of one mesh, whose look is built from assets, such as a level's texture. It
+ * is given as the bundle the look comes `from` and a function that builds it:
+ *
+ *   const Rocks = Three.instancesFrom("game/Rocks", {
  *     of: Rock,
  *     transform: Transform3d,
  *     from: Forest,
@@ -182,6 +201,11 @@ export interface InstancesFromOptions<
  *       material: new MeshStandardMaterial({ map: bark }),
  *     }),
  *   })
+ *
+ * **Details**
+ *
+ * It draws as `Three.instances` does, which says how, with a look that exists
+ * only while its assets are loaded:
  *
  * - The entities are drawn only while the app has the bundle loaded, which
  *   `Assets.during` or a system of your own manages. At any other time, no
@@ -193,13 +217,9 @@ export interface InstancesFromOptions<
  *   starts with the room the previous one had grown to.
  * - It also requires `Assets.plugin`, as the system's type shows.
  *
- * **Gotchas**
- *
- * - Instances are drawn in no particular order.
- *
  * @category Systems
  */
-export function instances<
+export function instancesFrom<
   B extends Entries,
   const O extends Which["of"],
   L extends Look = Look,
@@ -209,19 +229,6 @@ export function instances<
     readonly of: O;
     readonly transform: TransformOf<O>;
   }
-): System.System<never, Needs | Assets.Store, string, "frame">;
-export function instances<const O extends Which["of"]>(
-  name: string,
-  options: InstancesOptions & {
-    readonly of: O;
-    readonly transform: TransformOf<O>;
-  }
-): System.System<never, Needs, string, "frame">;
-// One body for both: the system of a look that is there asks for no store of
-// assets, which the second signature says.
-export function instances(
-  name: string,
-  options: InstancesOptions | InstancesFromOptions<Entries>
 ): System.System<never, Needs | Assets.Store, string, "frame"> {
-  return internal.instances(name, options);
+  return internal.instancesFrom(name, options);
 }

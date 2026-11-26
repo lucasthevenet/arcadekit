@@ -248,7 +248,7 @@ const KeepDeck = Assets.during(
   Deck
 );
 
-const Cards = Three.instances("page/Cards", {
+const Cards = Three.instancesFrom("page/Cards", {
   of: Card,
   transform: Transform2d,
   from: Deck,
@@ -271,7 +271,7 @@ const Fleet = Assets.bundle("page/Fleet", {
   ship: Gltf.model("/ship.gltf"),
 });
 const KeepFleet = Assets.during(Effect.succeed(true), Fleet);
-const Ships = Three.objects("page/Ships", {
+const Ships = Three.objectsFrom("page/Ships", {
   of: Ship,
   transform: Transform3d,
   from: Fleet,

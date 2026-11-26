@@ -282,7 +282,7 @@ const Level = Assets.bundle("bench/Level", {
   // An asset that needs no file, since none is fetched here.
   bark: Assets.make("/bark.png", () => Effect.succeed(material)),
 });
-const Sourced = Three.instances("q", {
+const Sourced = Three.instancesFrom("q", {
   of: Thing,
   transform: Transform3d,
   from: Level,
@@ -290,7 +290,7 @@ const Sourced = Three.instances("q", {
   capacity: N,
 });
 variant(
-  "instances, a look made of assets: a position",
+  "instancesFrom: a position",
   () => [Thing, place()],
   Sourced,
   Assets.during(Effect.succeed(true), Level)

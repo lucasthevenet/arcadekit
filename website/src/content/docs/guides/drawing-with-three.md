@@ -95,7 +95,7 @@ A frame-stage system of one of two types draws each kind of entity:
 | Entry | Contents | Imports |
 | --- | --- | --- |
 | `@arcadekit/three` | Both modules below, as `import { Gltf, Three } from "@arcadekit/three"` | `arcadekit`, `effect`, `three` |
-| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `objects`, and `texture` | `arcadekit`, `effect`, `three` |
+| `@arcadekit/three/Three` | The plugin, the scene, the renderer, `instances`, `instancesFrom`, `objects`, `objectsFrom`, and `texture` | `arcadekit`, `effect`, `three` |
 | `@arcadekit/three/Gltf` | `model`, the glTF asset, and `mesh` | `arcadekit`, `effect`, `three`, and Three.js's glTF loader from `three/addons` |
 
 Models have their own module because they bring Three.js's glTF loader, which a game without models doesn't need to ship. Nothing in `Three` imports the loader.

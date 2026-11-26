@@ -1,4 +1,16 @@
 /// <reference types="node" />
+import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import {
   Action,
   App,
@@ -232,7 +244,7 @@ const start = <A extends App.Any & { readonly close: Effect.Effect<void> }, E>(
 };
 
 /** Which module places the entities of a kind. */
-type Transform = Three.Which["transform"];
+type Transform = typeof Transform3d | typeof Transform2d;
 
 const Rocks = Three.instances("th/Rocks", {
   of: Rock,
@@ -588,7 +600,13 @@ describe("Three.instances", () => {
         transform: Three.TransformOf<O>
       ) => Three.instances("th/Tied", { of, transform, geometry, material });
       tied(Rock, Transform3d);
+      tied(Transform3d.Position, Transform3d);
+      tied([Rock, bare], Transform3d);
       tied([Rock, FlatRock], either);
+      // @ts-expect-error the Position of the other module
+      tied(Transform3d.Position, Transform2d);
+      // @ts-expect-error a rock beside a component the compiler doesn't read
+      tied([Rock, bare], Transform2d);
       // @ts-expect-error a helper of one type for both pairs them too
       tied(Rock, Transform2d);
       // @ts-expect-error nor of either rock
@@ -607,6 +625,62 @@ describe("Three.instances", () => {
         Three.objects("th/Solid", { of: Ship, transform: Transform3d, make }),
       ].map((system) => system.name)
     ).toEqual(["th/Flat", "th/Solid"]);
+  });
+
+  it("refuses an of that requires no Position with the whole reason, first, for either transform and either system", () => {
+    const repo = realpathSync(
+      fileURLToPath(new URL("../../..", import.meta.url))
+    );
+    const dir = mkdtempSync(join(tmpdir(), "three-of-"));
+    symlinkSync(
+      join(repo, "packages/three/node_modules"),
+      join(dir, "node_modules")
+    );
+    const three = relative(dir, join(repo, "packages/three/src/index.ts"));
+    writeFileSync(join(dir, "package.json"), '{ "type": "module" }');
+    writeFileSync(
+      join(dir, "game.ts"),
+      `import { Component, Transform2d, Transform3d } from "arcadekit";
+import { BoxGeometry, MeshBasicMaterial, Object3D } from "three";
+
+import { Three } from "${three}";
+
+const geometry = new BoxGeometry();
+const material = new MeshBasicMaterial();
+const make = () => new Object3D();
+const Heavy = Component.tag("game/Heavy");
+
+Three.instances("game/Rocks", { of: Heavy, transform: Transform3d, geometry, material });
+Three.instances("game/Cards", { of: Heavy, transform: Transform2d, geometry, material });
+Three.objects("game/Ships", { of: Heavy, transform: Transform3d, make });
+Three.objects("game/Pieces", { of: Heavy, transform: Transform2d, make });
+`
+    );
+    writeFileSync(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({
+        extends: join(repo, "tsconfig.base.json"),
+        compilerOptions: { lib: ["ES2023", "DOM"], types: [] },
+        files: ["game.ts"],
+      })
+    );
+    const { stdout } = spawnSync(
+      join(repo, "node_modules/.bin/tsc"),
+      ["-p", ".", "--pretty", "false"],
+      { cwd: dir, encoding: "utf-8" }
+    );
+    rmSync(dir, { recursive: true });
+    const reason = `"The kind's \\"of\\" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component, not as a ComponentDef."`;
+    const refused = (line: number, column: number, dimensions: 2 | 3) =>
+      `game.ts(${line},${column}): error TS2322: Type 'typeof import("${repo}/packages/arcadekit/src/Transform${dimensions}d")' is not assignable to type '{ readonly Position: { readonly name: ${reason}; }; }'.
+  The types of 'Position.name' are incompatible between these types.
+    Type '"arcadekit/Transform${dimensions}d.Position"' is not assignable to type '${reason}'.`;
+    expect(stdout.trimEnd().split(/\n(?=game\.ts)/)).toEqual([
+      refused(11, 44, 3),
+      refused(12, 44, 2),
+      refused(13, 42, 3),
+      refused(14, 43, 2),
+    ]);
   });
 
   it("draws a rotation left at zero as no turn at all", () => {

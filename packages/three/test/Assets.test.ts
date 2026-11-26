@@ -255,7 +255,7 @@ const makeTrees = (
     [];
   const freed: unknown[] = [];
   const meshes: InstancedMesh[] = [];
-  const Trees = Three.instances("ta/Trees", {
+  const Trees = Three.instancesFrom("ta/Trees", {
     of: Tree,
     transform: Transform3d,
     from: Forest,
@@ -620,7 +620,7 @@ describe("instances whose look is made of assets", () => {
       geometry,
       material,
     });
-    const From = Three.instances("ta/From", {
+    const From = Three.instancesFrom("ta/From", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
@@ -634,7 +634,7 @@ describe("instances whose look is made of assets", () => {
         void size;
       },
     });
-    Three.instances("ta/Wrong", {
+    Three.instancesFrom("ta/Wrong", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
@@ -649,10 +649,10 @@ describe("instances whose look is made of assets", () => {
       // @ts-expect-error a look that is there is not also made of a bundle
       from: Forest,
     });
-    Three.instances("ta/Half", {
+    // @ts-expect-error a bundle is not a look until something makes one of it
+    Three.instancesFrom("ta/Half", {
       of: Tree,
       transform: Transform3d,
-      // @ts-expect-error a bundle is not a look until something makes one of it
       from: Forest,
     });
     // One that draws from a bundle needs the store of assets, which
@@ -701,7 +701,7 @@ describe("instances whose look is made of assets", () => {
 describe("objects made of assets", () => {
   /** Deer, each an object made of the forest's bark. */
   const makeDeer = (Forest: Forest, log: string[]) =>
-    Three.objects("ta/Deer", {
+    Three.objectsFrom("ta/Deer", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -828,7 +828,7 @@ describe("objects made of assets", () => {
 
   it("say in their types what an object is made of", () => {
     const Forest = makeForest([]);
-    const Made = Three.objects("ta/Made", {
+    const Made = Three.objectsFrom("ta/Made", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -840,7 +840,7 @@ describe("objects made of assets", () => {
       // The object is the one `make` gives.
       free: (object) => object.dispose(),
     });
-    Three.objects("ta/Wrong", {
+    Three.objectsFrom("ta/Wrong", {
       of: Deer,
       transform: Transform3d,
       from: Forest,
@@ -1026,7 +1026,7 @@ describe("a texture", () => {
     const Forest = Assets.bundle("ta/Forest", {
       bark: Three.texture("/bark.png"),
     });
-    const Trees = Three.instances("ta/Trees", {
+    const Trees = Three.instancesFrom("ta/Trees", {
       of: Tree,
       transform: Transform3d,
       from: Forest,
