@@ -6,8 +6,8 @@
  *
  * `bench/accessors.ts` reports these with the rest of the package's, and
  * `bench/compare.ts --suite app` runs them for two builds, turn and turn
- * about, to say whether a change made any of them slower. A variant is run
- * on its own as
+ * about, to say whether a change made any of them slower: the `app` job of
+ * the `Benchmarks` workflow. A variant is run on its own as
  *
  *   node --import tsx bench/app.ts <name>
  *

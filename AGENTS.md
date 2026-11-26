@@ -51,7 +51,7 @@ A change is not done until it has been run and shown to work. Reasoning that it 
 | A package's exports or build, or what a module imports | Also `pnpm build:packages && pnpm lint:packages` |
 | `website/`, or a doc comment | `pnpm --filter @arcadekit/website typecheck` and `pnpm build:docs` |
 
-CI runs `pnpm check`, `pnpm test` and `pnpm build`, on a pull request `pnpm build:packages && pnpm lint:packages`, and the `Benchmarks` workflow when the storage core changes. `pnpm check` is formatting plus the Oxlint rules Alchemy and Foldkit lint with: Oxlint's default rules, type-aware, and the Effect rules of `@effect/tsgo`, which `effect-tsgo oxlint` adds to Oxlint. `oxlint.config.ts` says which.
+CI runs `pnpm check`, `pnpm test` and `pnpm build`, on a pull request `pnpm build:packages && pnpm lint:packages`, and the `Benchmarks` workflow when the source of `arcadekit` changes: the storage core's variants and those of an app's stages, each against what the pull request would be merged into. `pnpm check` is formatting plus the Oxlint rules Alchemy and Foldkit lint with: Oxlint's default rules, type-aware, and the Effect rules of `@effect/tsgo`, which `effect-tsgo oxlint` adds to Oxlint. `oxlint.config.ts` says which.
 
 ## Issues
 

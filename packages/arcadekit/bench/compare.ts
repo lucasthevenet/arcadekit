@@ -22,10 +22,9 @@
  *   (cd ../base && pnpm install --frozen-lockfile)
  *   pnpm --filter arcadekit bench:compare "$PWD/../base"
  *
- * The `Benchmarks` workflow, `.github/workflows/bench.yml`, runs the storage
- * core's suite on a pull request that touches the storage core, against what
- * the pull request would be merged into. No workflow runs the app suite: a
- * change to what an app's stages do runs it by hand.
+ * The `Benchmarks` workflow, `.github/workflows/bench.yml`, runs both suites
+ * on a pull request that touches the package's source, against what the
+ * pull request would be merged into.
  *
  * Both builds run this checkout's `bench/core.ts`, and with `--suite app`
  * its `bench/app.ts`, which are copied into the base for as long as the
