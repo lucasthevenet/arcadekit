@@ -229,7 +229,7 @@ const noRunInTests: Rule = {
     type: "problem",
     docs: {
       description:
-        "A test of a package is an Effect itself, with it.effect, and runs none by hand.",
+        "A test of a package is an Effect itself, with it.effect, and runs none by hand, nor does a helper of one.",
     },
   },
   create: (context) => ({
@@ -243,7 +243,7 @@ const noRunInTests: Rule = {
       ) {
         context.report({
           node,
-          message: `Effect.${node.property.name} runs an Effect by hand. A test is an Effect itself: write it with it.effect from @effect/vitest, or it.live where it waits in real time, and yield* the effect in it.`,
+          message: `Effect.${node.property.name} runs an Effect by hand. A test is an Effect itself: write it with it.effect from @effect/vitest, or it.live where it waits in real time, and yield* the effect in it. A helper of a test returns the effect for the test to yield*.`,
         });
       }
     },
