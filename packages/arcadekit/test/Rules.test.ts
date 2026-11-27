@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Context, Data, Effect, Exit, Schema } from "effect";
 
 import type { Spawned } from "../src/index.ts";
@@ -689,6 +689,21 @@ describe("actions", () => {
       expect(yield* rolls()).toEqual(rolled);
     })
   );
+
+  it("are of their own payload alone, and show a game only what they hold", () => {
+    expectTypeOf(Say).toExtend<
+      Action.Action<"ru/Say", { readonly n: number }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: number | string }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: 1 }>
+    >();
+    expectTypeOf<keyof typeof Say>().toEqualTypeOf<
+      "name" | "codec" | "error" | "rejected"
+    >();
+  });
 
   it.effect(
     "fail only with the error their action declares, a tagged schema",
