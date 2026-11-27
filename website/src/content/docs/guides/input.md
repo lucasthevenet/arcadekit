@@ -92,10 +92,10 @@ const Settings = System.input("game/Settings", function* () {
 });
 ```
 
-- `Input.rebind(control, bindings)` takes effect at the next sample of the devices. A frame or an input system rebinds, and a system of the tick that rebinds doesn't compile.
+- `Input.rebind(control, bindings)` takes effect at the next sample of the devices. The input systems after it in the same sample read the bindings the sample began with. A frame or an input system rebinds, and a system of the tick that rebinds doesn't compile.
 - Bindings are settings, not the game. They are outside the world, so a save, the hash, the log and a rewind leave them as they are. Each app has its own, made from what each control was declared with, and let go of when it is closed.
 - `Input.rebind(Jump, Jump.bindings)` puts back what the control was declared with. `Input.bindingsOf(Jump)` gives what it is bound to now, for a menu that shows the player's keys.
-- A control bound to a key that is down is held from the next sample on, and goes down then.
+- A key that is down at the next sample, as the one the player pressed to choose and still holds, moves the control only from its next press. The control stays up until the key is let go and pressed again. A key the control was already bound to the same way counts as it did.
 
 ## Keep the player's keys from a settings menu
 
