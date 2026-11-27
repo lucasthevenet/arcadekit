@@ -1,35 +1,38 @@
 import * as Color from "arcadekit/Color";
 import type { EntityColumn } from "arcadekit/ecs";
-import type { Frame, Time } from "arcadekit/Services";
 import * as Transform2d from "arcadekit/Transform2d";
 import * as Transform3d from "arcadekit/Transform3d";
-import { Effect } from "effect";
 
 import type { KindOptions } from "../Three.ts";
 import type { Angle, Numbers, Xy, Xyz, Xyzw } from "./columns.ts";
 
 /**
  * What the app keeps of its entities a tick ago, as `Transform3d.smooth`,
- * `Transform2d.smooth` and `Color.smooth` hand it out for the frame.
+ * `Transform2d.smooth` and `Color.smooth` hand it out for the frame: those
+ * a kind reads.
  *
  * @internal
  */
 export interface Stores {
-  readonly solid: Transform3d.Smooth;
-  readonly flat: Transform2d.Smooth;
-  readonly color: Color.Smooth;
+  readonly solid: Transform3d.Smooth | undefined;
+  readonly flat: Transform2d.Smooth | undefined;
+  readonly color: Color.Smooth | undefined;
 }
 
 /**
- * The app's stores, for the frame being drawn.
+ * Asks the app for the stores a kind drawn smoothly reads in this frame: its
+ * transform's, flat or not, and with a colour, the colour's. Each is an
+ * Effect a frame runs and allocates for, so a kind asks for no other.
  *
  * @internal
  */
-export const stores: Effect.Effect<Stores, never, Frame | Time> = Effect.all({
-  solid: Transform3d.smooth,
-  flat: Transform2d.smooth,
-  color: Color.smooth,
-});
+export function* storesOf(flat: boolean, colored: boolean) {
+  return {
+    solid: flat ? undefined : yield* Transform3d.smooth,
+    flat: flat ? yield* Transform2d.smooth : undefined,
+    color: colored ? yield* Color.smooth : undefined,
+  } satisfies Stores;
+}
 
 /**
  * What a system draws its entities between their last two places with: the
@@ -39,20 +42,24 @@ export const stores: Effect.Effect<Stores, never, Frame | Time> = Effect.all({
  * @internal
  */
 export class Smooth {
-  private stores: Stores | undefined;
+  private solidStore: Transform3d.Smooth | undefined;
+  private flatStore: Transform2d.Smooth | undefined;
+  private colorStore: Color.Smooth | undefined;
   private readonly snap: number | undefined;
 
   constructor(snap: number | undefined) {
     this.snap = snap;
   }
 
-  /** Starts a frame, with the app's store as the frame hands it. */
+  /** Starts a frame, with the app's stores as the frame hands them. */
   begin(stores: Stores): void {
-    this.stores = stores;
+    this.solidStore = stores.solid;
+    this.flatStore = stores.flat;
+    this.colorStore = stores.color;
   }
 
   position(start: number, end: number, from: Xyz, entities: EntityColumn): Xyz {
-    return this.stores!.solid.positions(start, end, from, entities, this.snap);
+    return this.solidStore!.positions(start, end, from, entities, this.snap);
   }
 
   rotation(
@@ -61,11 +68,11 @@ export class Smooth {
     from: Xyzw,
     entities: EntityColumn
   ): Xyzw {
-    return this.stores!.solid.rotations(start, end, from, entities);
+    return this.solidStore!.rotations(start, end, from, entities);
   }
 
   scale(start: number, end: number, from: Xyz, entities: EntityColumn): Xyz {
-    return this.stores!.solid.scales(start, end, from, entities);
+    return this.solidStore!.scales(start, end, from, entities);
   }
 
   flatPosition(
@@ -74,7 +81,7 @@ export class Smooth {
     from: Xy,
     entities: EntityColumn
   ): Xy {
-    return this.stores!.flat.positions(start, end, from, entities, this.snap);
+    return this.flatStore!.positions(start, end, from, entities, this.snap);
   }
 
   flatRotation(
@@ -83,11 +90,11 @@ export class Smooth {
     from: Angle,
     entities: EntityColumn
   ): Angle {
-    return this.stores!.flat.rotations(start, end, from, entities);
+    return this.flatStore!.rotations(start, end, from, entities);
   }
 
   flatScale(start: number, end: number, from: Xy, entities: EntityColumn): Xy {
-    return this.stores!.flat.scales(start, end, from, entities);
+    return this.flatStore!.scales(start, end, from, entities);
   }
 
   /** A colour's three numbers, however far they change. */
@@ -99,7 +106,7 @@ export class Smooth {
     b: Numbers,
     entities: EntityColumn
   ): Xyz {
-    const out = this.stores!.color.colors(start, end, { r, g, b }, entities);
+    const out = this.colorStore!.colors(start, end, { r, g, b }, entities);
     return { x: out.r, y: out.g, z: out.b };
   }
 }

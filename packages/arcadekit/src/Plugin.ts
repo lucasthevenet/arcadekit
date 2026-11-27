@@ -52,7 +52,8 @@ export type AnyHandler = Action.AnyHandler;
  *
  * @typeParam TickE    what the plugin's systems can fail with
  * @typeParam Han      the plugin's action handlers, from which `dispatch` is typed
- * @typeParam Provided services its layer provides to the whole app
+ * @typeParam Provided services its layer provides to the whole app, and its
+ *   `Plugin.Installed`
  * @typeParam E        what building its layer or running its setup can fail with
  * @typeParam RIn      what its layer requires that its dependencies don't provide
  * @typeParam Needs    what its systems, handlers and setup require
@@ -107,6 +108,41 @@ export interface Plugin<
  */
 export type Any = Plugin<unknown, unknown, unknown, unknown, unknown, unknown>;
 
+/**
+ * What a game requires where its code uses what only the plugin named `Id`
+ * acts on: that the plugin is among the game's plugins. Every plugin
+ * provides its own, by the name `Plugin.make` was given, so a game that
+ * leaves the plugin out doesn't compile: `App.make` requires it from
+ * outside, as `Installed<"arcadekit/Timer">`. It stands for nothing at run
+ * time.
+ *
+ * @category Type-level
+ */
+export interface Installed<out Id extends string> {
+  readonly "~arcadekit/Plugin.Installed": Id;
+}
+
+/**
+ * The mark of a component that only the plugin named `Id` acts on, as
+ * `Timer.Lifetime` is one that only `Timer.plugin` counts down. Naming the
+ * component in `Commands.spawns` requires `Plugin.Installed<Id>`, so a game
+ * that spawns or adds it and leaves the plugin out doesn't compile.
+ *
+ *   const Def = Component.define("physics/Velocity", { x: Field.f32 })
+ *   export const Velocity: typeof Def & Plugin.KeptBy<"physics/Physics"> = Def
+ *
+ * **Gotchas**
+ *
+ * - A component that `requires` a marked one is not marked itself: a game
+ *   that spawns it alone compiles without the plugin.
+ *
+ * @category Type-level
+ */
+export interface KeptBy<out Id extends string> {
+  /** Holds no value. It carries the plugin's name. */
+  readonly "~arcadekit/Plugin.KeptBy"?: readonly [Id];
+}
+
 // Distributive, so they work on a union of plugins and give `never` for none.
 /**
  * The error a plugin's systems can fail with, or a union's.
@@ -127,7 +163,8 @@ export type HandlerOf<T> =
     ? X
     : never;
 /**
- * The services a plugin's layer provides, or a union's.
+ * The services a plugin's layer provides and its `Plugin.Installed`, or a
+ * union's.
  *
  * @category Type-level
  */
@@ -212,6 +249,9 @@ type EffectNeeds<T> =
 type NameOf<T> = T extends { readonly name: infer N extends string }
   ? N
   : string;
+type InstalledIfLiteral<Id extends string> = string extends Id
+  ? never
+  : Installed<Id>;
 type OwnOf<T> =
   T extends Plugin<
     unknown,
@@ -423,7 +463,7 @@ export const make = <
 ): Plugin<
   SystemError<S[number]> | TickErrorOf<P[number]>,
   H[number] | HandlerOf<P[number]>,
-  LayerProvides<L> | ProvidedOf<P[number]>,
+  LayerProvides<L> | ProvidedOf<P[number]> | InstalledIfLiteral<Id>,
   LayerError<L> | EffectError<SU> | ErrorOf<P[number]>,
   | Exclude<LayerNeeds<L>, ProvidedOf<P[number]> | BuiltIn>
   | LayerNeedsOf<P[number]>,

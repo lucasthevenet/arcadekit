@@ -21,6 +21,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
+import { expectChecked, makeChecks } from "./checks.ts";
 import { placedIn } from "./placed.ts";
 
 // One component of every field kind, in a table and in a sparse set.
@@ -32,7 +33,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<JsonValue>(),
+  note: Field.json<JsonValue>(null),
 };
 const Body = Component.define("tx/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("tx/Sheet", kinds);
@@ -56,7 +57,7 @@ const sheet = (n: number) => ({
 const Clock = Component.singleton("tx/Clock", kinds, sheet(500));
 const Mood = Component.singleton(
   "tx/Mood",
-  { level: Field.i32, word: Field.json<string>() },
+  { level: Field.i32, word: Field.json<string>("") },
   { level: 3, word: "calm" }
 );
 
@@ -955,7 +956,11 @@ describe("an action that is refused", () => {
             steps: Steps,
             refuse: boolean
           ) {
-            yield* Effect.exit(app.dispatch(Act, { target, steps, refuse }));
+            expect(
+              yield* Effect.exit(app.dispatch(Act, { target, steps, refuse }))
+            ).toEqual(
+              refuse ? Exit.fail(Refused.make({})) : Exit.succeed(steps.length)
+            );
           });
           rings.length = 0;
           yield* app.tick(1);
@@ -995,28 +1000,30 @@ describe("an action that is refused", () => {
             Effect.gen(function* () {
               const target = entities[0]!;
               yield* app.tick(1);
-              yield* Effect.exit(
-                app.dispatch(Act, {
-                  target,
-                  steps: ["read"],
-                  refuse: true,
-                })
-              );
-              yield* Effect.exit(
-                app.dispatch(Act, {
-                  target,
-                  steps: ["read"],
-                  refuse: false,
-                })
-              );
+              expect(
+                yield* Effect.exit(
+                  app.dispatch(Act, {
+                    target,
+                    steps: ["read"],
+                    refuse: true,
+                  })
+                )
+              ).toEqual(Exit.fail(Refused.make({})));
+              yield* app.dispatch(Act, {
+                target,
+                steps: ["read"],
+                refuse: false,
+              });
               yield* app.tick(1);
-              yield* Effect.exit(
-                app.dispatch(Act, {
-                  target,
-                  steps: ["emit", "read"],
-                  refuse: true,
-                })
-              );
+              expect(
+                yield* Effect.exit(
+                  app.dispatch(Act, {
+                    target,
+                    steps: ["emit", "read"],
+                    refuse: true,
+                  })
+                )
+              ).toEqual(Exit.fail(Refused.make({})));
               yield* app.enqueue(Act, {
                 target,
                 steps: ["read"],
@@ -1048,25 +1055,26 @@ describe("an action that is refused", () => {
     "gives the same ids afterwards as if it had never been dispatched",
     () =>
       Effect.gen(function* () {
+        const refused: Exit.Exit<unknown, unknown>[] = [];
         const next = Effect.fnUntraced(function* (dirty: boolean) {
           return yield* withApp(game(), ({ app, bodies, entities }) =>
             Effect.gen(function* () {
               if (dirty) {
-                yield* Effect.exit(
-                  app.dispatch(Act, {
-                    target: entities[0]!,
-                    steps: ["spawn", "spawn", "spawn", "despawn"],
-                    refuse: true,
-                  })
+                refused.push(
+                  yield* Effect.exit(
+                    app.dispatch(Act, {
+                      target: entities[0]!,
+                      steps: ["spawn", "spawn", "spawn", "despawn"],
+                      refuse: true,
+                    })
+                  )
                 );
               }
-              yield* Effect.exit(
-                app.dispatch(Act, {
-                  target: entities[0]!,
-                  steps: ["spawn", "spawn", "spawn"],
-                  refuse: false,
-                })
-              );
+              yield* app.dispatch(Act, {
+                target: entities[0]!,
+                steps: ["spawn", "spawn", "spawn"],
+                refuse: false,
+              });
               return bodies
                 .entities()
                 .filter((entity) => !entities.includes(entity));
@@ -1075,6 +1083,7 @@ describe("an action that is refused", () => {
         });
         expect(yield* next(false)).toHaveLength(3);
         expect(yield* next(true)).toEqual(yield* next(false));
+        expect(refused).toEqual([Exit.fail(Refused.make({}))]);
       })
   );
 });
@@ -1194,6 +1203,7 @@ describe("a game full of refused actions", () => {
         // of them left anything in the world, the replay's hash would differ at
         // the next hash check. Random steps, random targets, half of them refused.
         const steps = everyStep;
+        const checks = makeChecks();
         for (const seed of [1, 2, 3]) {
           const recorded = yield* withApp(game(), ({ app, world, entities }) =>
             Effect.gen(function* () {
@@ -1213,7 +1223,13 @@ describe("a game full of refused actions", () => {
                   if (dice.int(0, 2) === 0) {
                     yield* app.enqueue(Act, payload);
                   } else {
-                    yield* Effect.exit(app.dispatch(Act, payload));
+                    checks.check(
+                      `seed ${seed}, tick ${tick}`,
+                      yield* Effect.exit(app.dispatch(Act, payload)),
+                      refuse
+                        ? Exit.fail(Refused.make({}))
+                        : Exit.succeed(chosen.length)
+                    );
                   }
                   refusedCount += refuse ? 1 : 0;
                 }
@@ -1236,6 +1252,7 @@ describe("a game full of refused actions", () => {
           );
           expect(replayed).toBe(recorded.hash);
         }
+        expectChecked(checks, 100);
       })
   );
 });

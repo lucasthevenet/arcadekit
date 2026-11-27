@@ -86,7 +86,7 @@ const launch = Action.handler(Launch, function* ({ speed }) {
 
 // The demo itself is a plugin too: the ones it is made of, and what no
 // plugin of its has.
-const Name = Component.define("demo/Name", { value: Field.json<string>() });
+const Name = Component.define("demo/Name", { value: Field.json<string>("") });
 const Named = Query.all(Name, Position);
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Timer.plugin, Sketch.plugin],
@@ -110,6 +110,7 @@ const Demo = Plugin.make("Demo", {
 // where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
+  const note = { frames: 0, highest: 0 };
   yield* Driver.run(App.define({ plugins: [Demo] }), {
     seed: 7,
     hz: 60,
@@ -161,9 +162,10 @@ const program = Effect.gen(function* () {
         yield* app.enqueue(Launch, { speed: 30 });
         noted.app = app;
         noted.ticks = app.time.tick;
-        noted.frames = Sketch.sketch.frames;
+        noted.frames = note.frames;
       }),
   }).pipe(
+    Effect.provideService(Sketch.Note, note),
     Effect.provide(Resource.layer(Gravity, -20)),
     // A game runs until its page or its process goes away. This one is
     // interrupted after a quarter of a second, which stops the frame loop
@@ -171,7 +173,7 @@ const program = Effect.gen(function* () {
     Effect.timeoutOption("250 millis")
   );
   yield* Console.log(
-    `real time: ${noted.app!.time.tick - noted.ticks} ticks and ${Sketch.sketch.frames - noted.frames} frames in 250 ms`
+    `real time: ${noted.app!.time.tick - noted.ticks} ticks and ${note.frames - noted.frames} frames in 250 ms`
   );
 });
 

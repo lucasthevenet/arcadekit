@@ -26,7 +26,6 @@ import type { Entity } from "../src/index.ts";
 import type * as Build from "../src/internal/build.ts";
 import { Message, Session } from "../src/net/index.ts";
 import type { ReadingWorld } from "../src/Services.ts";
-import { unwrap } from "./checks.ts";
 
 // --- a small game: players drop coins, which drift about, and take them --------
 
@@ -348,17 +347,21 @@ export const network = (seed: number, lag: { min: number; max: number }) => {
     round(): void {
       now++;
     },
-    send(to: readonly string[], messages: readonly Message.Message[]): void {
+    send: Effect.fnUntraced(function* (
+      to: readonly string[],
+      messages: readonly Message.Message[]
+    ) {
       for (const message of messages) {
+        const bytes = yield* Message.encode(message);
         for (const name of to) {
           inFlight.push({
             at: now + dice.int(lag.min, lag.max),
             to: name,
-            bytes: unwrap(Message.encode(message)),
+            bytes,
           });
         }
       }
-    },
+    }),
     arrivals(to: string): Message.Message[] {
       const due = inFlight.filter((m) => m.to === to && m.at <= now);
       inFlight = inFlight.filter((m) => !(m.to === to && m.at <= now));
@@ -388,7 +391,7 @@ export const round = Effect.fnUntraced(function* (
     if (yield* peer.session.tick()) {
       peer.hashes.push(peer.world.hash());
     }
-    net.send(
+    yield* net.send(
       peers.filter((other) => other !== peer).map((other) => other.name),
       peer.session.outgoing()
     );
@@ -460,7 +463,7 @@ export const untilStopped = Effect.fnUntraced(function* (
       if (Exit.isFailure(exit)) {
         stopped.set(peer.name, Cause.squash(exit.cause));
       }
-      net.send(
+      yield* net.send(
         peers.filter((other) => other !== peer).map((other) => other.name),
         peer.session.outgoing()
       );

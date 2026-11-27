@@ -186,20 +186,21 @@ export class Invalid extends Data.TaggedError("ReplayInvalid")<{
  */
 export const encode = (
   recording: Recording
-): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
-  const { save, ...rest } = recording;
-  const bytes = Schema.encodeExit(codec)(
-    save === undefined ? rest : { ...rest, save: Save.encode(save) }
-  );
-  return Exit.isFailure(bytes)
-    ? Exit.fail(
-        new Invalid({
-          problem: "no JSON form",
-          message: `Replay.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given. ${said(Cause.squash(bytes.cause))}`,
-        })
-      )
-    : Exit.succeed(bytes.value.slice());
-};
+): Effect.Effect<Uint8Array<ArrayBuffer>, Invalid> =>
+  Effect.suspend(() => {
+    const { save, ...rest } = recording;
+    const bytes = Schema.encodeExit(codec)(
+      save === undefined ? rest : { ...rest, save: Save.encode(save) }
+    );
+    return Exit.isFailure(bytes)
+      ? Exit.fail(
+          new Invalid({
+            problem: "no JSON form",
+            message: `Replay.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given. ${said(Cause.squash(bytes.cause))}`,
+          })
+        )
+      : Exit.succeed(bytes.value.slice());
+  });
 
 /**
  * Decodes a recording from bytes. It checks the recording's own structure:

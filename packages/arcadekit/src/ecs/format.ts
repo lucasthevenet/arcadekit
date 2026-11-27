@@ -381,14 +381,23 @@ const writeFields = (
       continue;
     }
     const column = columns[field]!;
-    const row = writeColumn(
-      writer,
-      // Without its codec, a ref field is in its encoded form already.
-      kind === "ref" && codec === undefined ? "json" : kind,
-      column,
-      count,
-      codec
-    );
+    let row: number;
+    try {
+      row = writeColumn(
+        writer,
+        // Without its codec, a ref field is in its encoded form already.
+        kind === "ref" && codec === undefined ? "json" : kind,
+        column,
+        count,
+        codec
+      );
+    } catch (error) {
+      throw new SnapshotError(
+        "cannot be saved",
+        `"${shape.name}.${field}" holds a value its codec refuses: ${error instanceof Error ? error.message : String(error)}`,
+        shape.name
+      );
+    }
     if (row !== -1) {
       throw new SnapshotError(
         "cannot be saved",

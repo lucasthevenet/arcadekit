@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
@@ -29,8 +29,8 @@ const Log = Singleton.define(
   "tm/Log",
   {
     firing: Field.u8,
-    shots: Field.json<readonly number[]>(),
-    waves: Field.json<readonly number[]>(),
+    shots: Field.json<readonly number[]>([]),
+    waves: Field.json<readonly number[]>([]),
   },
   { firing: 0, shots: [], waves: [] }
 );
@@ -140,7 +140,11 @@ describe("a cooldown", () => {
   it.effect("keeps a game that ticks when needed awake until it runs out", () =>
     Effect.gen(function* () {
       const app = yield* App.make(
-        App.define({ plugins: [Armed], systems: [Fire], handlers: [reload] })
+        App.define({
+          plugins: [Timer.plugin, Armed],
+          systems: [Fire],
+          handlers: [reload],
+        })
       );
       yield* app.dispatch(Reload, { seconds: 1 });
       const settled: boolean[] = [];
@@ -153,6 +157,24 @@ describe("a cooldown", () => {
       expect(settled).toEqual([false, false, false, false, true, true]);
     })
   );
+});
+
+const Spark = Component.define("tm/Spark", { x: Field.f32 });
+const Light = Action.define("tm/Light", Schema.Struct({}));
+const Sparks = System.tick("tm/Sparks", function* () {
+  (yield* Commands.spawns(Spark, Timer.Lifetime)).spawn(
+    Spark.of({ x: 0 }),
+    Timer.lifetime(1)
+  );
+});
+const light = Action.handler(Light, function* () {
+  const commands = yield* Commands.spawns(Spark, Timer.Lifetime);
+  commands.add(commands.spawn(Spark.of({ x: 0 })), Timer.lifetime(1));
+});
+const Lit = Plugin.make("tm/Lit", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Timer.Lifetime)).spawn(Timer.lifetime(1));
+  }),
 });
 
 describe("a lifetime", () => {
@@ -169,6 +191,47 @@ describe("a lifetime", () => {
       expect(counts).toEqual([1, 1, 0, 0, 1, 1]);
     })
   );
+
+  it("does not compile in a game that spawns or adds one and leaves out Timer.plugin", () => {
+    const made = {
+      system: App.make(App.define({ systems: [Sparks] })),
+      handler: App.make(App.define({ handlers: [light] })),
+      setup: App.make(App.define({ plugins: [Lit] })),
+    };
+    expectTypeOf<Effect.Services<(typeof made)["system"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+    expectTypeOf<Effect.Services<(typeof made)["handler"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+    expectTypeOf<Effect.Services<(typeof made)["setup"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+  });
+
+  it("compiles in a game that lists Timer.plugin, itself or through one of its plugins", () => {
+    expectTypeOf(
+      App.make(App.define({ plugins: [Timer.plugin], systems: [Sparks] }))
+    ).toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(
+      App.make(
+        App.define({
+          plugins: [Plugin.make("tm/Fire", { plugins: [Timer.plugin, Lit] })],
+          handlers: [light],
+        })
+      )
+    ).toExtend<Effect.Effect<unknown, never>>();
+  });
+
+  it("still needs Timer.plugin beside a plugin whose name the compiler knows only as a string", () => {
+    const name: string = "arcadekit/Timer";
+    const made = App.make(
+      App.define({ plugins: [Plugin.make(name, {})], systems: [Sparks] })
+    );
+    expectTypeOf<Effect.Services<typeof made>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+  });
 });
 
 describe("a system that runs every so often", () => {

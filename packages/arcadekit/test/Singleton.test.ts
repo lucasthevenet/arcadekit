@@ -36,7 +36,7 @@ const Turn = Singleton.define(
 );
 const Score = Singleton.define(
   "sg/Score",
-  { points: Field.f64, best: Field.json<string>() },
+  { points: Field.f64, best: Field.json<string>("") },
   { points: 0, best: "nobody" }
 );
 // One field of every kind.
@@ -50,8 +50,8 @@ const Everything = Singleton.define(
     short: Field.u16,
     byte: Field.u8,
     other: Field.entity,
-    note: Field.json<JsonValue>(),
-    when: Field.schema(Schema.Date),
+    note: Field.json<JsonValue>(null),
+    when: Field.schema(Schema.Date, new Date(0)),
     handle: Field.transient<{ open: boolean }>(),
   },
   {
@@ -666,7 +666,9 @@ describe("a singleton in an app", () => {
       expect(world.hash()).toBe(before);
       for (let move = 0; move < 12; move++) {
         yield* app.dispatch(EndTurn, { player: (move % 2) + 1 });
-        yield* Effect.exit(app.dispatch(Cheat, {}));
+        expect(yield* Effect.exit(app.dispatch(Cheat, {}))).toEqual(
+          Exit.fail(Caught.make({}))
+        );
         yield* app.enqueue(Cheat, {});
         yield* app.tick(1);
       }

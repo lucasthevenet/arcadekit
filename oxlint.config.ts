@@ -298,8 +298,10 @@ export default defineConfig({
     },
     {
       // A test of a package is an Effect itself, with it.effect, and runs
-      // none by hand.
-      files: ["packages/*/test/**/*.test.ts", "examples/**/*.test.ts"],
+      // none by hand, nor does a helper of one. test/policyGame.ts is the
+      // program a child process runs, outside any test, so it runs its own.
+      files: ["packages/*/test/**", "examples/**/*.test.ts"],
+      excludeFiles: ["packages/arcadekit/test/policyGame.ts"],
       rules: { "arcadekit/no-run-in-tests": "error" },
     },
     {
@@ -368,6 +370,45 @@ export default defineConfig({
       },
     },
     {
+      // What arcadekit computes is the same in every engine, so a tick that
+      // calls it is too. ECMA-262 lets each engine round these functions of
+      // Math its own way.
+      files: ["packages/arcadekit/src/**"],
+      rules: {
+        "no-restricted-properties": [
+          "error",
+          ...[
+            "acos",
+            "acosh",
+            "asin",
+            "asinh",
+            "atan",
+            "atan2",
+            "atanh",
+            "cbrt",
+            "cos",
+            "cosh",
+            "exp",
+            "expm1",
+            "hypot",
+            "log",
+            "log10",
+            "log1p",
+            "log2",
+            "pow",
+            "sin",
+            "sinh",
+            "tan",
+            "tanh",
+          ].map((property) => ({
+            object: "Math",
+            property,
+            message: `ECMAScript lets each engine round Math.${property} its own way, so peers on different engines that ran it in a tick would come apart. Compute with + - * / and Math.sqrt, which IEEE 754 rounds one way, as Vec2 does, and take a sine or a cosine from src/internal/trig.ts.`,
+          })),
+        ],
+      },
+    },
+    {
       // The storage core is plain TypeScript, with no Effect: its errors are
       // thrown, and App turns them into tagged ones.
       files: ["packages/arcadekit/src/ecs/**"],
@@ -378,6 +419,12 @@ export default defineConfig({
       // or a hash, which throws what it can't encode.
       files: ["packages/arcadekit/src/Field.ts"],
       rules: { "effecttsgo/schema-sync": "off" },
+    },
+    {
+      // An action or an event with no payload is defined with no schema, as
+      // a game defines one.
+      files: ["packages/*/src/**", "packages/*/bench/**", "examples/**"],
+      rules: { "arcadekit/no-empty-payload": "error" },
     },
   ],
 });

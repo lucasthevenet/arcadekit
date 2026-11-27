@@ -69,37 +69,36 @@ abstract class Blend {
     this.width = width;
   }
 
-  /** Makes room for these rows and their entities, before the loop reads either. */
-  protected fit(start: number, end: number, entities: EntityColumn): void {
-    let most = -1;
-    for (let i = start; i < end; i++) {
-      const index = entityIndex(entities[i]!);
-      if (index > most) {
-        most = index;
-      }
-    }
-    if (most >= this.generations.length) {
-      let length = Math.max(64, this.generations.length);
-      while (length <= most) {
-        length *= 2;
-      }
-      const generations = new Uint32Array(length);
-      generations.set(this.generations);
-      this.generations = generations;
-      const seen = new Uint32Array(length);
-      seen.set(this.seen);
-      this.seen = seen;
-      const prev = new Float32Array(length * this.width);
-      prev.set(this.prev);
-      this.prev = prev;
-      const cur = new Float32Array(length * this.width);
-      cur.set(this.cur);
-      this.cur = cur;
-    }
+  /** Makes room for these rows in the blended columns, before the loop writes them. */
+  protected room(end: number): void {
     if (end > this.rows) {
       this.rows = Math.max(end, this.rows * 2);
       this.widen(this.rows);
     }
+  }
+
+  /**
+   * Makes room for the entity of this index, when a loop comes to one past
+   * the end: a loop asks as it goes, rather than look over every row for
+   * the largest index first.
+   */
+  protected grow(index: number): void {
+    let length = Math.max(64, this.generations.length);
+    while (length <= index) {
+      length *= 2;
+    }
+    const generations = new Uint32Array(length);
+    generations.set(this.generations);
+    this.generations = generations;
+    const seen = new Uint32Array(length);
+    seen.set(this.seen);
+    this.seen = seen;
+    const prev = new Float32Array(length * this.width);
+    prev.set(this.prev);
+    this.prev = prev;
+    const cur = new Float32Array(length * this.width);
+    cur.set(this.cur);
+    this.cur = cur;
   }
 
   /** Reallocates the blended columns with this many rows. */
@@ -145,14 +144,19 @@ export class Lerp3 extends Blend {
     readonly y: Float32Array;
     readonly z: Float32Array;
   } {
-    this.fit(start, end, entities);
-    const { cur, generations, out, prev, seen } = this;
+    this.room(end);
+    const { out } = this;
+    let { cur, generations, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const far = snap * snap;
     const { x: ox, y: oy, z: oz } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      if (index >= generations.length) {
+        this.grow(index);
+        ({ cur, generations, prev, seen } = this);
+      }
       const at = index * 3;
       const generation = entityGeneration(entity);
       let what = FRESH;
@@ -228,14 +232,19 @@ export class Lerp2 extends Blend {
     entities: EntityColumn,
     snap = Infinity
   ): { readonly x: Float32Array; readonly y: Float32Array } {
-    this.fit(start, end, entities);
-    const { cur, generations, out, prev, seen } = this;
+    this.room(end);
+    const { out } = this;
+    let { cur, generations, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const far = snap * snap;
     const { x: ox, y: oy } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      if (index >= generations.length) {
+        this.grow(index);
+        ({ cur, generations, prev, seen } = this);
+      }
       const at = index * 2;
       const generation = entityGeneration(entity);
       let what = FRESH;
@@ -317,13 +326,18 @@ export class Nlerp4 extends Blend {
     readonly z: Float32Array;
     readonly w: Float32Array;
   } {
-    this.fit(start, end, entities);
-    const { cur, generations, out, prev, seen } = this;
+    this.room(end);
+    const { out } = this;
+    let { cur, generations, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const { x: ox, y: oy, z: oz, w: ow } = out;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      if (index >= generations.length) {
+        this.grow(index);
+        ({ cur, generations, prev, seen } = this);
+      }
       const at = index * 4;
       const generation = entityGeneration(entity);
       let what = FRESH;
@@ -399,13 +413,17 @@ export class Arc extends Blend {
     angle: Numbers,
     entities: EntityColumn
   ): { readonly angle: Float32Array } {
-    this.fit(start, end, entities);
-    const { cur, generations, prev, seen } = this;
+    this.room(end);
+    let { cur, generations, prev, seen } = this;
     const { alpha, shift, stamp } = this.clock;
     const out = this.out.angle;
     for (let i = start; i < end; i++) {
       const entity = entities[i]!;
       const index = entityIndex(entity);
+      if (index >= generations.length) {
+        this.grow(index);
+        ({ cur, generations, prev, seen } = this);
+      }
       const generation = entityGeneration(entity);
       let what = FRESH;
       if (generations[index] === generation) {

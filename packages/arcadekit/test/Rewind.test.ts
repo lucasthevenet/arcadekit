@@ -462,7 +462,7 @@ describe("a game that is put back to a moment", () => {
   it.effect("cannot be captured with a field that cannot be saved", () =>
     Effect.gen(function* () {
       const Holder = Component.define("rw/Holder", {
-        thing: Field.json<JsonValue>(),
+        thing: Field.json<JsonValue>(null),
       });
       const Hold = Action.define("rw/Hold", Schema.Struct({}));
       const hold = Action.handler(Hold, function* () {
@@ -1199,7 +1199,7 @@ describe("Session.syncTest", () => {
           }
           return {
             hashes,
-            recording: Replay.encode(yield* Replay.record(app)),
+            recording: yield* Replay.encode(yield* Replay.record(app)),
             checked: test.checked,
           };
         });
@@ -1262,7 +1262,7 @@ describe("Session.syncTest", () => {
     () =>
       Effect.gen(function* () {
         const Held = Component.define("vr/Held", {
-          thing: Field.json<JsonValue>(),
+          thing: Field.json<JsonValue>(null),
         });
         const Hold = System.tick("vr/Hold", function* () {
           (yield* Commands.spawns(Held)).spawn(
@@ -1470,6 +1470,101 @@ describe("the turns of a game kept by Timeline.keep", () => {
           expect(yield* Timeline.redo(app)).toBe(false);
         }).pipe(Effect.scoped)
       )
+  );
+
+  it.effect(
+    "keep a turn to go forward to across the ticks a game runs at rest, until the next move",
+    () =>
+      withApp(App.make(Puzzle), (app, world) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          /** Ticks with nothing from outside, as a game that ticks by itself runs. */
+          const rest = Effect.fnUntraced(function* () {
+            for (let i = 0; i < 30; i++) {
+              yield* app.tick(1 / 60);
+            }
+          });
+          yield* app.enqueue(Step, { dx: 1, dy: 0 });
+          yield* app.tick(1 / 60);
+          yield* rest();
+          const played = world.hash();
+          const tick = app.time.tick;
+
+          // By the actions a game's keys and UI issue, then from outside it.
+          yield* app.enqueue(Timeline.Undo);
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ x: 0, y: 0 });
+          // An undo with no turn to go back to gives up none either.
+          yield* app.enqueue(Timeline.Undo);
+          yield* app.tick(1 / 60);
+          yield* rest();
+          yield* app.enqueue(Timeline.Redo);
+          yield* app.tick(1 / 60);
+          // The game as it was at the undo, its time with it.
+          expect(world.hash()).toBe(played);
+          expect(app.time.tick).toBe(tick);
+          const replayed = yield* Replay.verify(
+            yield* Replay.record(app),
+            Puzzle
+          );
+          expect((yield* replayed.read(World)).hash()).toBe(played);
+          expect(yield* Timeline.undo(app)).toBe(true);
+          yield* rest();
+          expect(yield* Timeline.redo(app)).toBe(true);
+          expect(world.hash()).toBe(played);
+
+          // A move gives up the turn ahead, and so does a rewind.
+          expect(yield* Timeline.undo(app)).toBe(true);
+          yield* rest();
+          yield* app.enqueue(Step, { dx: 0, dy: 1 });
+          yield* app.tick(1 / 60);
+          expect(yield* Timeline.redo(app)).toBe(false);
+          expect(yield* app.read(Cell)).toMatchObject({ x: 0, y: 1 });
+          const moment = yield* captured(app);
+          yield* app.enqueue(Step, { dx: 1, dy: 0 });
+          yield* app.tick(1 / 60);
+          expect(yield* Timeline.undo(app)).toBe(true);
+          yield* Timeline.rewind(app, moment);
+          expect(yield* Timeline.redo(app)).toBe(false);
+        }).pipe(Effect.scoped)
+      )
+  );
+
+  it.effect(
+    "go forward again a turn the rules went back, and stay there",
+    () => {
+      /** A move the rules take back on the next tick. */
+      const Oops = Action.define("vr/Oops");
+      const Taken = App.define({
+        plugins: [
+          Plugin.make("vr/Taken", {
+            plugins: [Timeline.plugin],
+            handlers: [
+              Action.handler(Oops, function* () {
+                (yield* Cell.writes).y += 10;
+                (yield* Action.Actions).enqueue(Timeline.Undo, undefined);
+              }),
+            ],
+          }),
+        ],
+      });
+      return withApp(App.make(Taken), (app) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          yield* app.enqueue(Oops);
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 0 });
+          expect(yield* Timeline.redo(app)).toBe(true);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          // The undo the rules asked for was applied, and isn't asked again.
+          yield* app.tick(1 / 60);
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+        }).pipe(Effect.scoped)
+      );
+    }
   );
 
   it.effect(

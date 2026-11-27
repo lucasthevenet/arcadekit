@@ -294,7 +294,7 @@ export const variants: Record<string, Variant> = {
         since: Field.u32,
       });
       const Label = Component.define("bench/Label", {
-        text: Field.json<string>(),
+        text: Field.json<string>(""),
       });
       const Mass = Component.define("bench/Mass", {
         kg: Field.f32,

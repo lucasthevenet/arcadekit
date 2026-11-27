@@ -40,6 +40,8 @@ export interface Parts {
   readonly time: { readonly tick: number };
   /** The game's handlers, by the name of their action. */
   readonly handlers: ReadonlyMap<string, Action.AnyHandler>;
+  /** What the app does before something from outside enters the game. */
+  readonly before: ReadonlySet<() => void>;
   /** Starts what a handler returned, with the app's services. */
   readonly run: (
     name: string,
@@ -110,6 +112,7 @@ export class Inbox {
    */
   deliver(name: string, payload: unknown, from?: string): void {
     const { intake, log } = this.parts;
+    this.arriving();
     intake.queued.push({
       name,
       payload,
@@ -165,6 +168,7 @@ export class Inbox {
       this.diverted(name, json.value);
       return Exit.void;
     }
+    this.arriving();
     intake.queued.push({
       name,
       payload,
@@ -324,6 +328,13 @@ export class Inbox {
     return Exit.asVoidAll(defects);
   }
 
+  /** Has the app do what it does before something from outside enters the game. */
+  private arriving(): void {
+    for (const step of this.parts.before) {
+      step();
+    }
+  }
+
   /** Refuses a dispatch that isn't made between ticks, on an app of one. */
   private betweenTicks(name: string): void {
     if (this.diverted !== undefined) {
@@ -425,6 +436,9 @@ export class Inbox {
       throw new Error(
         `dispatch("${name}") was called from the handler of "${runner.applying}". A handler issues another action with Actions.enqueue, which applies it on the next tick.`
       );
+    }
+    if (dispatched) {
+      this.arriving();
     }
     const mark = commands.mark();
     world.begin();
