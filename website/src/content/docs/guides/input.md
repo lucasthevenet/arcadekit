@@ -120,8 +120,12 @@ Browser.runMain(
     ready: (app) =>
       Effect.gen(function* () {
         const settings = Input.settingsOf(app, Controls);
-        // The game starts with the keys kept last time.
-        yield* settings.rebind(Jump, yield* JumpKeys);
+        // The game starts with the keys kept last time, or with those it
+        // declares when what was kept no longer reads.
+        yield* settings.rebind(
+          Jump,
+          yield* Effect.orElseSucceed(JumpKeys, () => Jump.bindings)
+        );
         const run = Effect.runForkWith(yield* Effect.context<Setting.Store>());
         // The menu makes K the jump, now and after a reload.
         choose.onclick = () =>
@@ -138,7 +142,7 @@ Browser.runMain(
 ```
 
 - `Input.settingsOf(app, Controls)` gives `rebind` and `bindingsOf` to code outside the game's systems. It takes only the controls the plugin declares, and throws for an app made without the plugin. They are the bindings `Input.rebind` changes from a system: what one changes, the other reads.
-- `Jump.schema` is the schema of the control's bindings. A setting of it keeps them as JSON, and a kept text that names no key reads as the bindings the control was declared with.
+- `Jump.schema` is the schema of the control's bindings. A setting of it keeps them as JSON. A kept text that names no key fails the read with `Setting.Invalid`, and `Effect.orElseSucceed` puts the bindings the control was declared with in its place.
 - The bindings stay outside the world: rebinding changes no save, no hash and no log.
 
 ## Name keys, buttons, and axes
