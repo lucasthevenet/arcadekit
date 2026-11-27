@@ -30,7 +30,7 @@ const Velocity = Component.define("st/Velocity", {
   y: Field.f32,
 });
 const Health = Component.define("st/Health", { hp: Field.i32 });
-const Name = Component.define("st/Name", { value: Field.json<string>() });
+const Name = Component.define("st/Name", { value: Field.json<string>("") });
 const Target = Component.define("st/Target", { entity: Field.entity });
 const Enemy = Component.tag("st/Enemy");
 const Stunned = Component.tag("st/Stunned", { storage: "sparse" });
@@ -163,7 +163,7 @@ describe("entities and components", () => {
       wide: Field.f64,
       hp: Field.i32,
       who: Field.entity,
-      name: Field.json<string | undefined>(),
+      name: Field.json<string | undefined>(undefined),
       cache: Field.transient<object>(),
     });
     const Faint = Component.define(
@@ -231,7 +231,7 @@ describe("entities and components", () => {
     const Mixed = Component.define("st/Mixed2", {
       x: Field.f32,
       hp: Field.i32,
-      name: Field.json<string | undefined>(),
+      name: Field.json<string | undefined>(undefined),
     });
     const Faint = Component.define(
       "st/Faint2",
@@ -1059,11 +1059,14 @@ describe("what each hands its callback", () => {
     u8: Field.u8,
     bool: Field.bool,
     entity: Field.entity,
-    json: Field.json<string>(),
-    ref: Field.ref<Date>({
-      encode: (date) => date.getTime(),
-      decode: (time) => new Date(time as number),
-    }),
+    json: Field.json<string>(""),
+    ref: Field.ref<Date>(
+      {
+        encode: (date) => date.getTime(),
+        decode: (time) => new Date(time as number),
+      },
+      new Date(0)
+    ),
     transient: Field.transient<{ readonly n: number }>(),
   };
   const Every = Component.define("st/Every", fields);

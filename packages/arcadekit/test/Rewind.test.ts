@@ -462,7 +462,7 @@ describe("a game that is put back to a moment", () => {
   it.effect("cannot be captured with a field that cannot be saved", () =>
     Effect.gen(function* () {
       const Holder = Component.define("rw/Holder", {
-        thing: Field.json<JsonValue>(),
+        thing: Field.json<JsonValue>(null),
       });
       const Hold = Action.define("rw/Hold", Schema.Struct({}));
       const hold = Action.handler(Hold, function* () {
@@ -1262,7 +1262,7 @@ describe("Session.syncTest", () => {
     () =>
       Effect.gen(function* () {
         const Held = Component.define("vr/Held", {
-          thing: Field.json<JsonValue>(),
+          thing: Field.json<JsonValue>(null),
         });
         const Hold = System.tick("vr/Hold", function* () {
           (yield* Commands.spawns(Held)).spawn(

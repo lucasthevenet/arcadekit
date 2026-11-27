@@ -18,7 +18,7 @@ const Body = Component.define("rs/Body", { x: Field.f32, y: Field.f32 });
 const Marked = Component.tag("rs/Marked");
 const Aura = Component.define(
   "rs/Aura",
-  { power: Field.i32, note: Field.json<JsonValue>() },
+  { power: Field.i32, note: Field.json<JsonValue>(null) },
   { storage: "sparse" }
 );
 const Chilled = Component.tag("rs/Chilled", { storage: "sparse" });
@@ -27,7 +27,7 @@ const ChildOf = Component.relation("rs/ChildOf", {
 });
 const Score = Component.singleton(
   "rs/Score",
-  { points: Field.i32, name: Field.json<string>() },
+  { points: Field.i32, name: Field.json<string>("") },
   { points: 7, name: "nobody" }
 );
 const Level = Component.singleton(

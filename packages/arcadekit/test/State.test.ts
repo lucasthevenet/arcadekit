@@ -907,7 +907,7 @@ describe("a state in a save", () => {
     const level = yield* Level.sets;
     level.set(level.value === "one" ? "two" : "three");
   });
-  const Built = Component.define("st/Built", { level: Field.json<string>() });
+  const Built = Component.define("st/Built", { level: Field.json<string>("") });
   const build = <const L extends "one" | "two" | "three">(level: L) =>
     State.onEnter(Level, level, `Build ${level}`, function* () {
       (yield* Commands.spawns(Built)).spawn(Built.of({ level }));

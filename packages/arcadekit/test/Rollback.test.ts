@@ -605,7 +605,7 @@ describe("a rollback session", () => {
     () =>
       Effect.gen(function* () {
         const Holder = Component.define("rb/Holder", {
-          thing: Field.json<JsonValue>(),
+          thing: Field.json<JsonValue>(null),
         });
         const Spoil = System.tick("rb/Spoil", function* () {
           if ((yield* Time).tick === 2) {

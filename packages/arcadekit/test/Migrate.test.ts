@@ -57,11 +57,11 @@ const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
 
 const Hp0 = Component.define("mg/Hp", { points: Field.i32 });
 const Pos0 = Component.define("mg/Pos", { x: Field.f32, y: Field.f32 });
-const Name0 = Component.define("mg/Name", { value: Field.json<string>() });
+const Name0 = Component.define("mg/Name", { value: Field.json<string>("") });
 const Old0 = Component.tag("mg/Old");
 const Buff0 = Component.define(
   "mg/Buff",
-  { power: Field.u8, note: Field.json<string>() },
+  { power: Field.u8, note: Field.json<string>("") },
   { storage: "sparse" }
 );
 const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
@@ -118,12 +118,12 @@ const Health2 = Component.define("mg/Health", {
   points: Field.f32,
 });
 const Pos2 = Component.define("mg/Pos", { px: Field.f32 });
-const Name2 = Component.define("mg/Name", { value: Field.json<string>() });
+const Name2 = Component.define("mg/Name", { value: Field.json<string>("") });
 const Buff2 = Component.define(
   "mg/Buff",
   {
     power: Field.u16,
-    note: Field.json<string>(),
+    note: Field.json<string>(""),
     fresh: Field.transient<object>(),
   },
   { storage: "sparse" }
@@ -300,11 +300,14 @@ describe("a snapshot read without the program's components", () => {
       byte: Field.u8,
       flag: Field.bool,
       other: Field.entity,
-      data: Field.json<JsonValue>(),
-      when: Field.ref<Date>({
-        encode: (date) => date.getTime(),
-        decode: (data) => new Date(data as number),
-      }),
+      data: Field.json<JsonValue>(null),
+      when: Field.ref<Date>(
+        {
+          encode: (date) => date.getTime(),
+          decode: (data) => new Date(data as number),
+        },
+        new Date(0)
+      ),
       handle: Field.transient<object>(),
     };
     const Wide = Component.define("mg/Wide", kinds);
@@ -731,7 +734,7 @@ describe("a save from another version of the game", () => {
         const Zhp = Component.define("mg/Zhp", { points: Field.i32 });
         const Boon = Component.define(
           "mg/Boon",
-          { power: Field.u8, note: Field.json<string>() },
+          { power: Field.u8, note: Field.json<string>("") },
           { storage: "sparse" }
         );
         const contents = readSnapshot(save.world);
@@ -821,7 +824,7 @@ describe("a save from another version of the game", () => {
   it("can have every kind of change made to a field", () => {
     const Thing = Component.define("mg/Thing", {
       a: Field.u8,
-      b: Field.json<string>(),
+      b: Field.json<string>(""),
     });
     const world = new EcsWorld();
     const entities = [1, 2, 3].map((n) =>
@@ -829,8 +832,8 @@ describe("a save from another version of the game", () => {
     );
     const contents = readSnapshot(world.snapshot());
     const Thing2 = Component.define("mg/Thing", {
-      d: Field.json<string>(),
-      a: Field.json<{ was: number }>(),
+      d: Field.json<string>(""),
+      a: Field.json<{ was: number }>({ was: 0 }),
       b: Field.f64,
       c: Field.entity,
       e: Field.u16,
