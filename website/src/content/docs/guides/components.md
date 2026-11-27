@@ -112,7 +112,7 @@ Inside the simulation, you name the components where you request what changes th
 
 - Spawning, adding or setting a component you didn't name doesn't compile, and the error says where to name it.
 - The names tell the compiler what a system changes, so it can [check the order of your systems](systems.md#order-systems).
-- The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes.
+- The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes. Until then an entity queued to despawn is alive, and `commands.despawning(entity)` says it is queued.
 
 A component added without a value is all zeros, unless it gives `initial`. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
 

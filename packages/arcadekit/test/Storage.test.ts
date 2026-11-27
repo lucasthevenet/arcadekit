@@ -1421,6 +1421,56 @@ describe("structural changes during iteration", () => {
     expect(world.entityCount).toBe(1);
   });
 
+  it("say an entity is despawning while its despawn is queued, through rollbacks and applies", () => {
+    for (const seed of [1, 2, 3]) {
+      let state = seed;
+      const rnd = () => {
+        state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+        return state / 0x1_00_00_00_00;
+      };
+      const world = new World();
+      const commands = new CommandBuffer(world);
+      const pool = Array.from({ length: 6 }, () =>
+        world.spawn(Health.of({ hp: 1 }))
+      );
+      let queue: { readonly spawns?: Entity; readonly despawns?: Entity }[] =
+        [];
+      const checks = makeChecks();
+      for (let step = 0; step < 600; step++) {
+        const roll = rnd();
+        const pick = pool[Math.floor(rnd() * pool.length)]!;
+        if (roll < 0.5) {
+          commands.despawn(pick);
+          queue.push({ despawns: pick });
+        } else if (roll < 0.7) {
+          const spawned = commands.spawn(Health.of({ hp: 2 }));
+          pool.push(spawned);
+          queue.push({ spawns: spawned });
+        } else if (roll < 0.95) {
+          const mark = Math.floor(rnd() * (commands.size + 1));
+          commands.rollback(mark);
+          for (const { spawns } of queue.slice(mark)) {
+            if (spawns !== undefined) {
+              pool.splice(pool.indexOf(spawns), 1);
+            }
+          }
+          queue = queue.slice(0, mark);
+        } else {
+          commands.apply();
+          queue = [];
+        }
+        for (const entity of pool) {
+          checks.check(
+            `seed ${seed}, step ${step}: ${idOf(entity)}`,
+            commands.despawning(entity),
+            queue.some(({ despawns }) => despawns === entity)
+          );
+        }
+      }
+      expectChecked(checks, 3600);
+    }
+  });
+
   const refusing: [string, (world: World, apply: () => unknown) => void][] = [
     [
       "while a query is iterating",

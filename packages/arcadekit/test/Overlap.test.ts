@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { World as EcsWorld } from "../src/ecs/index.ts";
+import { CommandBuffer, World as EcsWorld } from "../src/ecs/index.ts";
 import {
   App,
   Commands,
@@ -89,7 +89,7 @@ const byHand = (
   return Math.hypot(c.x - nx, c.y - ny) <= c.circle!.radius;
 };
 
-const NONE = { despawn: () => {} };
+const NONE = { despawn: () => {}, despawning: () => false };
 
 describe("the pairs of two queries", () => {
   it("are the pairs whose shapes touch, in order, for circles and boxes alike", () => {
@@ -159,6 +159,28 @@ describe("the pairs of two queries", () => {
     });
     // 0-1, 1-0, 1-2, 2-1 and 0-2, 2-0: the edges of 0 and 2 meet.
     expect(count).toBe(6);
+  });
+
+  it("leave out an entity queued to despawn before the call", () => {
+    const world = new EcsWorld();
+    const commands = new CommandBuffer(world);
+    const ids = [0, 1, 2].map((x) =>
+      world.spawn(
+        Transform2d.Position.of({ x, y: 0 }),
+        Overlap.Circle.of({ radius: 1 })
+      )
+    );
+    commands.despawn(ids[1]!);
+    const all = world.view(Query.all(Transform2d.Position, Overlap.Circle));
+    const found: [Entity, Entity][] = [];
+    Overlap.pairs(commands, all, all, (first, second) => {
+      found.push([first, second]);
+      return "neither";
+    });
+    expect(found).toEqual([
+      [ids[0], ids[2]],
+      [ids[2], ids[0]],
+    ]);
   });
 
   it("refuse a change query, a shape an entity may lack, and a call from inside", () => {
@@ -256,6 +278,17 @@ const Hit = System.tick("ov/Hit", function* () {
   });
 });
 
+const Spend = System.tick("ov/Spend", function* () {
+  const commands = yield* Commands;
+  const tally = yield* Tally.writes;
+  Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
+    tally.hits = [...tally.hits, [bullet, enemy]];
+    commands.despawn(bullet);
+    commands.despawn(enemy);
+    return "neither";
+  });
+});
+
 /** A spawn of enemies and bullets, as the test lays them out. */
 const scene = (
   enemies: readonly { readonly x: number; readonly hp: number }[],
@@ -288,12 +321,13 @@ const scene = (
 
 const shooter = (
   enemies: readonly { readonly x: number; readonly hp: number }[],
-  bullets: readonly number[]
+  bullets: readonly number[],
+  hit: typeof Hit | typeof Spend = Hit
 ) =>
   App.make(
     App.define({
       plugins: [scene(enemies, bullets)],
-      systems: [Fly, Hit],
+      systems: [Fly, hit],
     })
   );
 
@@ -327,6 +361,40 @@ describe("a shooter", () => {
       expect(bullets).toHaveLength(1);
       expect((yield* app.read(Tally)).hits).toHaveLength(2);
     })
+  );
+
+  it.effect(
+    "spends a bullet the callback despawns itself on one enemy, and kills such an enemy once",
+    () =>
+      Effect.gen(function* () {
+        const app = yield* shooter(
+          [
+            { x: 0, hp: 1 },
+            { x: 10, hp: 5 },
+            { x: 10.5, hp: 5 },
+          ],
+          [0.1, -0.1, 10.2],
+          Spend
+        );
+        const enemies = (yield* app.read(Query.all(Enemy))).entities();
+        const bullets = (yield* app.read(Query.all(Bullet))).entities();
+        yield* app.tick(0);
+        expect((yield* app.read(Tally)).hits).toEqual([
+          [bullets[0], enemies[0]],
+          [bullets[2], enemies[1]],
+        ]);
+        const world = yield* app.read(World);
+        expect(enemies.map((enemy) => world.isAlive(enemy))).toEqual([
+          false,
+          false,
+          true,
+        ]);
+        expect(bullets.map((bullet) => world.isAlive(bullet))).toEqual([
+          false,
+          true,
+          false,
+        ]);
+      })
   );
 
   it.effect(
