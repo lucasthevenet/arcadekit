@@ -62,6 +62,7 @@ type Command =
  */
 export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   private ops: Command[] = [];
+  private readonly despawns = new Set<Entity>();
 
   /** Makes an empty buffer for `world`. */
   constructor(readonly world: World) {}
@@ -95,7 +96,17 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
   /** Queues a despawn, which `apply` makes as `World.despawn` does. */
   despawn(entity: Entity | Id): void {
     this.refuseFrozen("despawn");
-    this.ops.push({ op: "despawn", entity: applied(entity) });
+    const target = applied(entity);
+    this.ops.push({ op: "despawn", entity: target });
+    this.despawns.add(target);
+  }
+
+  /**
+   * Returns whether a despawn of `entity` is queued. An entity that a
+   * relation despawns along with a queued one is not queued itself.
+   */
+  despawning(entity: Entity | Id): boolean {
+    return this.despawns.has(applied(entity));
   }
 
   /**
@@ -137,13 +148,24 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
    * never been queued.
    */
   rollback(mark: number): void {
+    let despawned = false;
     for (let i = this.ops.length - 1; i >= mark; i--) {
       const cmd = this.ops[i]!;
       if (cmd.op === "spawn") {
         this.world._release(cmd.entity, cmd.fresh);
+      } else if (cmd.op === "despawn") {
+        despawned = true;
       }
     }
     this.ops.length = Math.min(this.ops.length, mark);
+    if (despawned) {
+      this.despawns.clear();
+      for (const cmd of this.ops) {
+        if (cmd.op === "despawn") {
+          this.despawns.add(cmd.entity);
+        }
+      }
+    }
   }
 
   /**
@@ -172,6 +194,7 @@ export class CommandBuffer<Id extends Entity | Spawned = Entity> {
     }
     const { ops } = this;
     this.ops = [];
+    this.despawns.clear();
     for (let i = 0; i < ops.length; i++) {
       const cmd = ops[i]!;
       switch (cmd.op) {

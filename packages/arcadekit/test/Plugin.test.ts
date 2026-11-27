@@ -162,6 +162,18 @@ describe("plugins", () => {
     expectTypeOf<Plugin.Typed<[typeof Combat]>>().toEqualTypeOf<unknown>();
   });
 
+  it("keep their types under a key no game can name, and beside what a game adds to one", () => {
+    expectTypeOf<Exclude<keyof typeof Combat, symbol>>().toEqualTypeOf<
+      "name" | "systems" | "handlers" | "layer" | "setup" | "plugins"
+    >();
+    type Described = typeof Combat & { readonly about: string };
+    expectTypeOf<Plugin.HandlerOf<Described>>().toEqualTypeOf<typeof heal>();
+    expectTypeOf<Plugin.ProvidedOf<Described>>().toEqualTypeOf<
+      Plugin.ProvidedOf<typeof Combat>
+    >();
+    expectTypeOf<Plugin.ProvidedOf<Described>>().not.toBeNever();
+  });
+
   it.effect(
     "bundle systems, handlers, resources and setup into one value",
     () =>

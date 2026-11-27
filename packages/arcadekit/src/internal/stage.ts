@@ -213,9 +213,6 @@ export const input = (
   const heard = Context.add(context, Input.Devices, devices);
   const board = Context.getOption(context, Board);
   return Option.isSome(board)
-    ? Context.merge(
-        heard,
-        board.value.input(devices, Context.get(context, System.Locals))
-      )
+    ? Context.merge(heard, board.value.input(devices))
     : heard;
 };

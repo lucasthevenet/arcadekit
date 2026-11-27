@@ -82,7 +82,7 @@ A step is given the save as `Migrate.Contents`, which changes it in place. Each 
 
 - A field the definition doesn't have doesn't compile, nor does a value of the wrong type for one, nor a state's value it doesn't have.
 - Each change throws, naming what it was asked for and what the save holds, when the save doesn't hold it. A migration that throws refuses the save with `"migration failed"`.
-- A field of a number type also throws for a value it can't hold, such as a fraction in an `i32`, or 300 in a `u8`, which the typed array would store as something else. An entity is kept as its id, and a `ref` field encoded by its codec.
+- A field of a number type also throws for a value it can't hold, such as a fraction in an `i32`, or 300 in a `u8`, which the typed array would store as something else. An entity is kept as its id, a `Field.bool` as 1 or 0, and a `ref` field encoded by its codec.
 - Entities keep their ids, and two tables that only a removed component kept apart are merged.
 - A state's value that was renamed in the game and not in the save leaves a tag of a value the state no longer has, and the load is refused with `"unknown component"`. `renameStateValue` renames the tag with the value.
 - A migration turns an old save into a new game, so the log recorded before it doesn't replay against the migrated save.
@@ -91,7 +91,7 @@ A save the migrations can't bring up to date is refused with `"no migration"`, `
 
 ## Read what a save holds
 
-`save.world` is the save in a plain form that describes itself, for what the changes don't do. It lists components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. Its `stores` hold what the app keeps of the game beside its entities, each as plain data under a name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued }`, and the events waiting to be read under `Event.STORE`, as one `{ name, waiting, read }` for each event. `Migrate.migrate(save, version, migrations)` runs a game's migrations on a save outside an app, and a tool that edits a snapshot makes its own with `new Migrate.Contents(readSnapshot(bytes))`.
+`save.world` is the save in a plain form that describes itself, for what the changes don't do. It lists components by name with their fields, then tables, sparse sets and singletons, with one column of values per field. The game's time is one of the world's singletons, `arcadekit/Time`. Its `stores` hold what the app keeps of the game beside its entities, each as plain data under a name: the actions queued for the next tick under `Action.INTAKE`, as `{ queued }`, and the events waiting to be read under `Event.STORE`, as one `{ name, waiting, read }` for each event. `yield* Migrate.migrate(save, version, migrations)` runs a game's migrations on a save outside an app, and a tool that edits a snapshot makes its own with `new Migrate.Contents(readSnapshot(bytes))`.
 
 ## Read more
 

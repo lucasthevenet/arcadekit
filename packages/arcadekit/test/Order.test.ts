@@ -75,7 +75,7 @@ describe("the order of systems", () => {
             (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
           }),
         });
-        const play = (app: App.App) =>
+        const play = (app: App.Any<never>) =>
           Effect.gen(function* () {
             for (let n = 0; n < 3; n++) {
               yield* app.tick(1);
@@ -304,7 +304,7 @@ describe("what a system spawns and sets", () => {
       seen.push((yield* NewDots).entities().length);
     });
   const Count = count([]);
-  const tick3 = (app: App.App) =>
+  const tick3 = (app: App.Any<never>) =>
     Effect.gen(function* () {
       for (let n = 0; n < 3; n++) {
         yield* app.tick(1);

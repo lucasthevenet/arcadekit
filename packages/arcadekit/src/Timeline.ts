@@ -30,7 +30,7 @@ import type { SavedChanges } from "./ecs/changes.ts";
 import type { World, Moment as WorldMoment } from "./ecs/world.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
-import type { Since } from "./internal/log.ts";
+import type { Log, Since } from "./internal/log.ts";
 import type { Told } from "./internal/outbox.ts";
 import { moved, partsOf } from "./internal/parts.ts";
 import { taking } from "./internal/save.ts";
@@ -172,9 +172,19 @@ export const rewind = (
   Effect.suspend(() => {
     between(app, "rewind", "A game is put back between ticks.");
     const again = options?.again === true;
+    const parts = partsOf(app);
+    const turns = kept.get(parts.world);
+    // The game it leaves, in case the rewind is itself a turn.
+    turns?.arriving();
     putBack(app, moment, again);
-    // A game put back to run the same ticks again has not gone anywhere yet.
-    return again ? Effect.void : moved(partsOf(app));
+    if (again) {
+      // A game put back to run the same ticks again has not gone anywhere yet.
+      return Effect.void;
+    }
+    if (turns !== undefined) {
+      turns.ahead.length = 0;
+    }
+    return moved(parts) ?? Effect.void;
   });
 
 /** Puts a game back to a moment, between ticks, as `rewind` does. */
@@ -267,10 +277,18 @@ class Turns {
   readonly back: Held[] = [];
   /** The game after each turn that was gone back, the next one last. */
   readonly ahead: Held[] = [];
-  /** The game where it last stood still, between two ticks. */
-  standing: Held;
+  /**
+   * The game where it last stood still, between two ticks, once it was
+   * captured: when something from outside arrived since, or the game went
+   * back or forward to it. A tick at rest captures nothing.
+   */
+  private standing: Held | undefined;
+  /** How long the log was, and how many saves it had loaded, when it stood still. */
+  private logLength: number;
+  private loads: number;
 
   private readonly app: Kept;
+  private readonly log: Log;
   private readonly last: number;
   private readonly asked: { readonly read: () => readonly Asking[] };
 
@@ -280,9 +298,17 @@ class Turns {
     asked: { readonly read: () => readonly Asking[] }
   ) {
     this.app = app;
+    this.log = partsOf(app).log;
     this.last = last;
     this.asked = asked;
     this.standing = this.take();
+    this.logLength = this.standing.since.logLength;
+    this.loads = this.standing.since.loads;
+  }
+
+  /** Captures the game where it stands, before something from outside arrives. */
+  arriving(): void {
+    this.standing ??= this.take();
   }
 
   private take(): Held {
@@ -303,16 +329,19 @@ class Turns {
     if (next === undefined) {
       return false;
     }
-    into.push(this.standing);
+    into.push(this.standing ?? this.take());
     putBack(this.app, next, false);
     this.standing = next;
+    this.logLength = next.since.logLength;
     return true;
   }
 
   /**
    * The game has moved, by a tick, a dispatched action, a load or a rewind:
    * it goes where the rules asked, or, for a turn of moves from outside, the
-   * game as it stood before the turn is kept to go back to.
+   * game as it stood before the turn is kept to go back to and the turns
+   * ahead are given up. A load gives up every turn, and a tick with no move
+   * none.
    */
   moved(): void {
     let went = false;
@@ -322,12 +351,15 @@ class Turns {
     if (went) {
       return;
     }
-    const { log } = partsOf(this.app);
-    if (this.standing.since.loads !== log.loads) {
+    const { log } = this;
+    if (this.loads !== log.loads) {
       this.back.length = 0;
+      this.ahead.length = 0;
     } else if (
+      // A move arrived from outside, which captured the game before it.
+      this.standing !== undefined &&
       log.entries
-        .slice(this.standing.since.logLength)
+        .slice(this.logLength)
         .some(
           (entry) =>
             !Action.isHashCheck(entry) &&
@@ -339,10 +371,11 @@ class Turns {
       if (this.back.length > this.last) {
         this.back.shift();
       }
+      this.ahead.length = 0;
     }
-    // The game has gone elsewhere: what was given up is no more to go to.
-    this.ahead.length = 0;
-    this.standing = this.take();
+    this.standing = undefined;
+    this.logLength = log.entries.length;
+    this.loads = log.loads;
   }
 }
 
@@ -371,12 +404,14 @@ const turnsOf = (app: Game, call: string): Turns => {
  *
  * **Details**
  *
- * - It captures the game after each tick and each dispatched action, as
- *   `Timeline.capture` would, which costs what changed since the last one.
+ * - It captures the game as `Timeline.capture` would when a move arrives,
+ *   before the tick or the dispatch that applies it, which costs what
+ *   changed since the last capture. A tick with no move captures nothing.
  * - It keeps the `last` turns, 100 by default, and lets go of older ones.
  * - Going back a turn keeps the game as it was, for `Timeline.redo` to go
- *   forward to, until the game moves on: a tick, a move or a load gives up
- *   every turn ahead.
+ *   forward to, until the next move: a move, a load or a rewind gives up
+ *   every turn ahead. A tick with no move gives up none, so a game that ticks
+ *   by itself keeps its redo as a game that ticks only when needed does.
  * - `app.load` gives up every turn kept, since they are of the game the load
  *   replaced.
  *
@@ -384,9 +419,9 @@ const turnsOf = (app: Game, call: string): Turns => {
  *
  * - An app a session steps can't be kept: it has no `tick`, and going back
  *   would move this machine's game alone.
- * - A game that keeps ticking at rest, as one does with a running timer,
- *   gives up a turn ahead on its next tick, so that it can't be gone forward
- *   to.
+ * - A redo goes to the game as it was at the undo, and gives up the ticks
+ *   run since, as an undo gives up those run since the turn. What moves at
+ *   rest, such as a running timer, is as it was at the undo.
  *
  * @category Running
  */
@@ -400,7 +435,7 @@ export const keep = (
       "keep",
       "The turns of a game are kept from between two ticks."
     );
-    const { after, events, world } = partsOf(app);
+    const { after, before, events, world } = partsOf(app);
     if (kept.has(world)) {
       throw new Error(
         "Timeline.keep() was called on an app whose turns are kept already. Keep them once."
@@ -413,15 +448,19 @@ export const keep = (
       );
     }
     const turns = new Turns(app, last, events.handle(Asked));
-    const step = () =>
-      Effect.sync(() => {
-        turns.moved();
-      });
+    const step = (): undefined => {
+      turns.moved();
+    };
+    const arriving = () => {
+      turns.arriving();
+    };
     kept.set(world, turns);
     after.add(step);
+    before.add(arriving);
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         after.delete(step);
+        before.delete(arriving);
         kept.delete(world);
       })
     );
@@ -447,9 +486,10 @@ export const undo = (app: Game): Effect.Effect<boolean> =>
 
 /**
  * Goes forward again a turn that `Timeline.undo` went back, and succeeds with
- * whether there was one: the game is as it was before the undo, its log
- * with it. Run it between ticks, before the game moves on: a tick, a move or
- * a load gives up every turn ahead.
+ * whether there was one: the game is as it was before the undo, its time
+ * and its log with it, and the ticks run since are given up. Run it between
+ * ticks, before the next move: a move, a load or a rewind gives up every
+ * turn ahead, and a tick with no move gives up none.
  *
  * @category Running
  */

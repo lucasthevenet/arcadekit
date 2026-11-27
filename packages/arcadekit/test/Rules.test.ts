@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Context, Data, Effect, Exit, Schema } from "effect";
 
 import type { Spawned } from "../src/index.ts";
@@ -618,8 +618,19 @@ describe("actions", () => {
           expect(yield* thrown(app.dispatch(Unhandled, {}))).toThrow(
             /No handler/
           );
-          // @ts-expect-error the payload does not match the action
-          void (yield* Effect.exit(app.dispatch(Attack, { attacker: one })));
+          expect(
+            yield* Effect.exit(
+              // @ts-expect-error the payload does not match the action
+              app.dispatch(Attack, { attacker: one })
+            )
+          ).toEqual(
+            Exit.fail(
+              Action.InvalidPayload.make({
+                action: "Attack",
+                message: 'Missing key\n  at ["target"]',
+              })
+            )
+          );
           expect(
             Exit.isFailure(
               yield* Effect.exit(
@@ -678,6 +689,21 @@ describe("actions", () => {
       expect(yield* rolls()).toEqual(rolled);
     })
   );
+
+  it("are of their own payload alone, and show a game only what they hold", () => {
+    expectTypeOf(Say).toExtend<
+      Action.Action<"ru/Say", { readonly n: number }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: number | string }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: 1 }>
+    >();
+    expectTypeOf<keyof typeof Say>().toEqualTypeOf<
+      "name" | "codec" | "error" | "rejected"
+    >();
+  });
 
   it.effect(
     "fail only with the error their action declares, a tagged schema",
@@ -809,28 +835,24 @@ describe("replay", () => {
           Effect.gen(function* () {
             // A mix of direct and queued actions, including refused ones, over
             // several ticks. Refusals are not logged and must not matter.
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: one, target: two })
-            );
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: two, target: one })
-            );
+            yield* app.dispatch(Attack, { attacker: one, target: two });
+            expect(
+              yield* Effect.exit(
+                app.dispatch(Attack, { attacker: two, target: one })
+              )
+            ).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
             yield* app.tick(1);
             yield* app.enqueue(EndTurn, { player: 1 });
             yield* app.tick(1);
-            yield* Effect.exit(app.dispatch(Summon, { player: 2, hp: 3 }));
+            yield* app.dispatch(Summon, { player: 2, hp: 3 });
             yield* app.enqueue(Attack, { attacker: two, target: one });
             yield* app.enqueue(Attack, { attacker: one, target: two });
             yield* app.tick(1);
             yield* app.tick(1);
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: two, target: one })
-            );
-            yield* Effect.exit(app.dispatch(EndTurn, { player: 2 }));
+            yield* app.dispatch(Attack, { attacker: two, target: one });
+            yield* app.dispatch(EndTurn, { player: 2 });
             yield* app.tick(1);
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: one, target: two })
-            );
+            yield* app.dispatch(Attack, { attacker: one, target: two });
             yield* app.tick(1);
             yield* app.tick(1);
             return {

@@ -65,7 +65,7 @@ const Tally = Component.define("sv/Tally", {
 });
 const Mote = Component.define("sv/Mote", {
   x: Field.f32,
-  name: Field.json<string>(),
+  name: Field.json<string>(""),
 });
 const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 /** The tallies, read from outside the game. */
@@ -563,7 +563,7 @@ describe("a saved game", () => {
 });
 
 describe("a game that cannot be saved as it stands", () => {
-  const Blob = Component.define("sv/Blob", { v: Field.json<JsonValue>() });
+  const Blob = Component.define("sv/Blob", { v: Field.json<JsonValue>(null) });
 
   it.effect(
     "says which action is waiting with a payload its schema does not take",

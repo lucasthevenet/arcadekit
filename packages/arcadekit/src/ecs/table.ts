@@ -89,6 +89,10 @@ export const readRow = (
     const name = def.fields[f];
     out[name!] = cols[name!]![row];
   }
+  for (let b = 0; b < def.bools.length; b++) {
+    const name = def.bools[b]!;
+    out[name] = out[name] !== 0;
+  }
   return out;
 };
 

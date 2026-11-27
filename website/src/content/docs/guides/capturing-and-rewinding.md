@@ -91,9 +91,10 @@ Browser.runMain(
 - `Timeline.Undo` goes back a turn, and `Timeline.Redo` forward again one it went back. They are actions, so a key bound to them in the input stage, a UI that sends them with `ui.send(Timeline.Undo)`, and the rules ask for them alike. The game lists `Timeline.plugin`, which handles them, and the app goes back or forward once the tick that applies one has run.
 - Code outside the game goes back and forward with `Timeline.undo(app)` and `Timeline.redo(app)`, between ticks. Each succeeds with whether there was a turn to go to.
 - Going back is a rewind, so the log goes with it. A recording holds the turns that are left, and replays to the game as it is.
-- A tick, a move or a load gives up every turn ahead: there is nothing to redo once the game has moved on. A game that ticks only when needed rests after an undo, so a redo is there until the next move.
+- A move, a load or a rewind gives up every turn ahead: there is nothing to redo once the player has played on. A tick with no move gives up none, so a game that ticks by itself keeps its redo until the next move, as a game that ticks only when needed does.
+- A redo goes to the game as it was at the undo, and gives up the ticks run since, as an undo gives up those run since the turn. What moves at rest, such as a running timer, is as it was at the undo.
 - `app.load` gives up every turn kept, which are of the game the load replaced.
-- It keeps the `last` turns, 100 by default. It captures the game after each tick and each dispatched action, which costs what changed since the last capture.
+- It keeps the `last` turns, 100 by default. It captures the game when a move arrives, before the tick or the dispatch that applies it, which costs what changed since the last capture. A tick with no move captures nothing, so a game at rest pays for no capture.
 - An app that a session steps can't be kept: it has no `tick`, and a turn gone back would be this machine's alone.
 
 ## Control what the frame and input stages hear after a rewind

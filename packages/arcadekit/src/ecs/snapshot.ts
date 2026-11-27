@@ -393,8 +393,9 @@ export class Reader {
 }
 
 /**
- * Writes rows `[0, count)` of a column. Returns the first row it couldn't
- * write, or -1. A `transient` field writes nothing.
+ * Writes rows `[0, count)` of a column. Returns the first row whose value, or
+ * what its codec made of it, isn't plain data, or -1. A `transient` field
+ * writes nothing. If a codec rejects a value, its error propagates.
  */
 export const writeColumn = (
   writer: Writer,
@@ -412,15 +413,8 @@ export const writeColumn = (
   }
   const values = column as unknown[];
   for (let row = 0; row < count; row++) {
-    let value = values[row];
-    if (kind === "ref") {
-      try {
-        value = codec!.encode(value);
-      } catch {
-        return row;
-      }
-    }
-    if (!writer.value(value)) {
+    const value = values[row];
+    if (!writer.value(kind === "ref" ? codec!.encode(value) : value)) {
       return row;
     }
   }

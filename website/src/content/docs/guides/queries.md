@@ -39,7 +39,7 @@ Both loops below work with every query, and visit entities in the same order: ta
 
 ## Choose how to loop
 
-`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default.
+`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default. An accessor belongs to the loop and reads and writes the entity the loop is at, so use it inside the function and keep the entity's id instead. One kept past a spawn, a despawn, an add or a remove, which commands make when they are applied, throws when it is read or written.
 
 `eachChunk` passes the raw columns and a range of rows. It is three to four times faster than `each`. Use it for the few systems where speed matters.
 
@@ -146,7 +146,7 @@ A query only reads its terms. `Query.writes(Position)` names the ones it writes,
 - Each loop counts a component it writes as changed in every table it visits, whether or not it assigns a value. `world.hash()`, `Timeline.capture` and `Timeline.rewind` work again only on what changed, so a query that names in `Query.writes` a component it doesn't write makes each of them cost more. One that only reads costs them nothing.
 - The compiler tells two components with the same fields apart by their names, which are part of their types. Above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
+A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing-by-hand.md#run-the-frame-stage-by-hand).
 
 ## Visit only what changed
 
@@ -223,7 +223,7 @@ const Wrap = System.tick("game/Wrap", function* () {
 ```
 
 - It throws when the query matches no entity, or more than one, and the error names the query and how many it matched. A game that may have none checks `count()` first.
-- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own: read them in the system that asked, and ask again in the next.
+- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own, and read and write the entity until the world's entities change, when the system's commands are applied: read them in the system that asked, and ask again in the next. After the change, reading or writing one throws.
 - A change query throws, since it has no one entity.
 - A tag is not a term, since it has no data: `Query.all(Position, Player)` doesn't compile. Require it with `Query.with`, as above, or take it as `Query.maybe(Player)` to be told whether an entity has it.
 

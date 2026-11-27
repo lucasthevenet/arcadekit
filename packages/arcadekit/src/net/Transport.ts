@@ -354,14 +354,10 @@ export interface Wire {
  */
 const bytesOf = (
   message: Message.Message | Message.Aside
-): Uint8Array<ArrayBuffer> => {
-  const bytes =
-    "topic" in message ? Message.encodeAside(message) : Message.encode(message);
-  if (Exit.isFailure(bytes)) {
-    throw Cause.squash(bytes.cause);
-  }
-  return bytes.value;
-};
+): Effect.Effect<Uint8Array<ArrayBuffer>> =>
+  Effect.orDie(
+    "topic" in message ? Message.encodeAside(message) : Message.encode(message)
+  );
 
 /**
  * What a frame from another peer is: a message or an aside in bytes, a
@@ -432,11 +428,12 @@ export const fromWire = (
       }
     };
     return {
-      send: (message) =>
-        Effect.sync(() => {
-          use();
-          wire.send(bytesOf(message));
-        }),
+      send: Effect.fnUntraced(function* (
+        message: Message.Message | Message.Aside
+      ) {
+        use();
+        wire.send(yield* bytesOf(message));
+      }),
       receive: () =>
         Effect.sync(() => {
           use();
@@ -836,23 +833,24 @@ export const makeHub = (options: HubOptions = {}): Hub => {
       const mine: Flight[] = [];
       flights.set(peer, mine);
       made = {
-        send: (message) =>
-          Effect.sync(() => {
-            if (cut.has(peer)) {
-              return;
+        send: Effect.fnUntraced(function* (
+          message: Message.Message | Message.Aside
+        ) {
+          if (cut.has(peer)) {
+            return;
+          }
+          const encoded = yield* bytesOf(message);
+          for (const [other, theirs] of flights) {
+            if (other !== peer && !cut.has(other)) {
+              theirs.push({
+                at: now + (min === max ? min : dice.int(min, max)),
+                order: sent++,
+                from: peer,
+                data: encoded,
+              });
             }
-            const encoded = bytesOf(message);
-            for (const [other, theirs] of flights) {
-              if (other !== peer && !cut.has(other)) {
-                theirs.push({
-                  at: now + (min === max ? min : dice.int(min, max)),
-                  order: sent++,
-                  from: peer,
-                  data: encoded,
-                });
-              }
-            }
-          }),
+          }
+        }),
         receive: () =>
           Effect.sync(() => {
             const due = mine

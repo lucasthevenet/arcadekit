@@ -35,12 +35,33 @@
  * after the other; and what the two suites, the storage core's and an app's
  * stages', leave out, such as an action's dispatch or a tick over 100,000
  * entities, which `pnpm --filter arcadekit bench` reports and nothing
- * compares. An app's stages take a few microseconds, and a build's fastest
- * run of one is up to a fifth apart from one process to the next, so a
- * slowdown of one is found when it is about a third, in 25 runs a build.
+ * compares. Nor does it find a slowdown of most runs that leaves the
+ * fastest where it was: issue #450 measured two builds of the loops that
+ * draw whose fastest runs were within a tenth, and whose medians were up to
+ * 43% apart.
+ *
+ * `judgeAll` reads every run. `@arcadekit/three`'s `bench/compare.ts`
+ * judges the loops that draw by it, and `bench/compare.ts` an app's stages,
+ * with `settledAll`. A process runs an app's stage up to a tenth faster or
+ * slower than the next process does, from its first pass to its last. A
+ * build's fastest run is then its luckiest process, and `settled` lets a
+ * slowdown go when one of the head's first six runs was lucky. The head is
+ * slower when both of these hold:
+ *
+ * - The base's runs beat the head's in so many of the pairs of one run of
+ *   each that two builds alike would look so once in `1 / CHANCE`
+ *   comparisons or less: `pairChance`, the rank-sum test of Mann and
+ *   Whitney, worked out exactly.
+ * - The head's median run is slower than the base's by more than `FLOOR`.
+ *
+ * As with `judge`, the first assumes nothing of the noise's shape, and a
+ * disturbed run counts as one pair lost, however slow it was.
  */
 
-/** How much slower the fastest run has to be, beyond the noise: a twentieth. */
+/**
+ * How much slower the fastest run, or with `judgeAll` the median one, has to
+ * be, beyond the noise: a twentieth.
+ */
 export const FLOOR = 0.05;
 
 /** How rarely two builds that are the same may be found to differ one way. */
@@ -58,14 +79,19 @@ export type Outcome =
 
 export interface Verdict {
   readonly outcome: Outcome;
-  /** The head's fastest run over the base's: 1.1 is a tenth slower. */
+  /**
+   * The head's fastest run over the base's, or with `judgeAll` its median
+   * run over the base's: 1.1 is a tenth slower.
+   */
   readonly ratio: number;
-  /** The base's fastest run, and the head's, in the unit they were given in. */
+  /** The two runs of `ratio`, the base's and the head's, in their unit. */
   readonly base: number;
   readonly head: number;
   /**
    * How many runs of the build that looks faster beat every run of the
-   * other, and out of how many.
+   * other, and out of how many. With `judgeAll`, in how many of the pairs
+   * of one run of each the run of the build that looks faster was faster,
+   * and out of how many pairs.
    */
   readonly beaten: number;
   readonly of: number;
@@ -108,6 +134,27 @@ const faster = (runs: readonly number[], than: number): number => {
   return count;
 };
 
+/** What a difference this plain and this large comes to. */
+const outcomeOf = (share: number, ratio: number, onPurpose: boolean): Outcome =>
+  share <= CHANCE && ratio > 1 + FLOOR
+    ? onPurpose
+      ? "slower on purpose"
+      : "slower"
+    : share <= CHANCE && ratio < 1 / (1 + FLOOR)
+      ? "faster"
+      : "the same";
+
+/** The verdict on a variant the base could not run. */
+const fresh = (head: number): Verdict => ({
+  outcome: "new",
+  ratio: 1,
+  base: Number.NaN,
+  head,
+  beaten: 0,
+  of: 0,
+  chance: 1,
+});
+
 /**
  * Compares the runs of one variant by two builds. `onPurpose` says that a
  * commit of the change names the variant as one it slows.
@@ -122,15 +169,7 @@ export const judge = (
   }
   const best = Math.min(...head);
   if (base.length === 0) {
-    return {
-      outcome: "new",
-      ratio: 1,
-      base: Number.NaN,
-      head: best,
-      beaten: 0,
-      of: 0,
-      chance: 1,
-    };
+    return fresh(best);
   }
   const was = Math.min(...base);
   const ratio = best / was;
@@ -139,16 +178,8 @@ export const judge = (
   const beaten = slower ? faster(base, best) : faster(head, was);
   const of = slower ? base.length : head.length;
   const share = chance(beaten, of, slower ? head.length : base.length);
-  const plain = share <= CHANCE;
   return {
-    outcome:
-      plain && ratio > 1 + FLOOR
-        ? onPurpose
-          ? "slower on purpose"
-          : "slower"
-        : plain && ratio < 1 / (1 + FLOOR)
-          ? "faster"
-          : "the same",
+    outcome: outcomeOf(share, ratio, onPurpose),
     ratio,
     base: was,
     head: best,
@@ -157,6 +188,128 @@ export const judge = (
     chance: share,
   };
 };
+
+/** What `deals` has worked out, by the sizes of the hands. */
+const worked = new Map<string, Float64Array>();
+
+/**
+ * For hands of `winners` and `losers` runs, the share of the deals in which
+ * the first hand won each number of pairs, from none to all.
+ *
+ * The slowest run of all is in the second hand `losers / (winners +
+ * losers)` of the time, and then every run of the first beats it, which is
+ * `winners` pairs; or it is in the first, and beats none. Either way the
+ * rest are dealt as before, with one run fewer.
+ */
+const deals = (winners: number, losers: number): Float64Array => {
+  const key = `${winners} ${losers}`;
+  const known = worked.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  let shares = Array.from({ length: losers + 1 }, () => Float64Array.of(1));
+  for (let i = 1; i <= winners; i++) {
+    const next = [Float64Array.of(1)];
+    for (let j = 1; j <= losers; j++) {
+      const shared = new Float64Array(i * j + 1);
+      const slowestInFirst = shares[j]!;
+      const slowestInSecond = next[j - 1]!;
+      for (let u = 0; u < slowestInFirst.length; u++) {
+        shared[u]! += (i / (i + j)) * slowestInFirst[u]!;
+      }
+      for (let u = 0; u < slowestInSecond.length; u++) {
+        shared[u + i]! += (j / (i + j)) * slowestInSecond[u]!;
+      }
+      next.push(shared);
+    }
+    shares = next;
+  }
+  worked.set(key, shares[losers]!);
+  return shares[losers]!;
+};
+
+/**
+ * How often, when `winners + losers` runs are dealt at random into a hand
+ * of `winners` and a hand of `losers`, the first hand's run is the faster
+ * in `pairs` or more of the pairs of one run from each hand: which is what
+ * it takes for one build's runs to beat the other's so often. A tie counts
+ * half a pair, and `pairs` is rounded down, so that a tie never makes the
+ * chance smaller than it is.
+ */
+export const pairChance = (
+  pairs: number,
+  winners: number,
+  losers: number
+): number => {
+  const dealt = deals(winners, losers);
+  let share = 0;
+  for (let u = Math.max(0, Math.floor(pairs)); u < dealt.length; u++) {
+    share += dealt[u]!;
+  }
+  return Math.min(share, 1);
+};
+
+/** The middle run, or the mean of the two in the middle. */
+export const median = (runs: readonly number[]): number => {
+  const sorted = runs.toSorted((a, b) => a - b);
+  const half = sorted.length >> 1;
+  return sorted.length % 2 === 1
+    ? sorted[half]!
+    : (sorted[half - 1]! + sorted[half]!) / 2;
+};
+
+/** In how many pairs of a run of `runs` and one of `others` the first is faster. */
+const pairsWon = (
+  runs: readonly number[],
+  others: readonly number[]
+): number => {
+  let won = 0;
+  for (const run of runs) {
+    for (const other of others) {
+      won += run < other ? 1 : run === other ? 0.5 : 0;
+    }
+  }
+  return won;
+};
+
+/**
+ * Compares the runs of one variant by two builds by every run, where
+ * `judge` reads the fastest of each: by their medians, and by the pairs of
+ * one run of each that each build won. `onPurpose` says that a commit of
+ * the change names the variant as one it slows.
+ */
+export const judgeAll = (
+  base: readonly number[],
+  head: readonly number[],
+  onPurpose = false
+): Verdict => {
+  if (head.length === 0) {
+    throw new Error("judgeAll() was given no run of the head to judge.");
+  }
+  const now = median(head);
+  if (base.length === 0) {
+    return fresh(now);
+  }
+  const was = median(base);
+  const ratio = now / was;
+  const slower = ratio >= 1;
+  const beaten = slower ? pairsWon(base, head) : pairsWon(head, base);
+  const share = slower
+    ? pairChance(beaten, base.length, head.length)
+    : pairChance(beaten, head.length, base.length);
+  return {
+    outcome: outcomeOf(share, ratio, onPurpose),
+    ratio,
+    base: was,
+    head: now,
+    beaten,
+    of: base.length * head.length,
+    chance: share,
+  };
+};
+
+const within = (ratio: number): boolean =>
+  ratio < 1 + FLOOR / 2 && ratio > 1 / (1 + FLOOR / 2);
 
 /**
  * Whether a variant need not be run again: its fastest runs are within
@@ -167,13 +320,20 @@ export const judge = (
 export const settled = (
   base: readonly number[],
   head: readonly number[]
-): boolean => {
-  if (base.length === 0 || head.length === 0) {
-    return false;
-  }
-  const ratio = Math.min(...head) / Math.min(...base);
-  return ratio < 1 + FLOOR / 2 && ratio > 1 / (1 + FLOOR / 2);
-};
+): boolean =>
+  base.length > 0 &&
+  head.length > 0 &&
+  within(Math.min(...head) / Math.min(...base));
+
+/**
+ * `settled` for a variant judged by `judgeAll`: its median runs are within
+ * half the floor of each other.
+ */
+export const settledAll = (
+  base: readonly number[],
+  head: readonly number[]
+): boolean =>
+  base.length > 0 && head.length > 0 && within(median(head) / median(base));
 
 /**
  * The variants that the commits of a change say they slow on purpose. A
@@ -212,6 +372,11 @@ export interface Line {
   /** The unit `verdict.base` and `verdict.head` are in. */
   readonly unit: string;
   readonly verdict: Verdict;
+  /**
+   * What a frame of each build allocates, the median of its runs, for a
+   * variant that measures it.
+   */
+  readonly bytes?: { readonly base: number; readonly head: number };
 }
 
 const percent = (ratio: number): string =>
@@ -222,23 +387,43 @@ const rarity = (share: number): string =>
     ? "often"
     : `1 in ${Math.round(1 / share).toLocaleString("en-US")}`;
 
-/** The comparison as a table in Markdown: what failed first, then what changed. */
-export const table = (lines: readonly Line[]): string => {
+const count = (value: number): string =>
+  Math.round(value).toLocaleString("en-US");
+
+/**
+ * The comparison as a table in Markdown: what failed first, then what
+ * changed. `plainly` heads the column of what `Verdict.beaten` counted, and
+ * a column of the bytes a frame allocates follows when a line has them.
+ */
+export const table = (
+  lines: readonly Line[],
+  plainly = "Runs that beat every run of the other"
+): string => {
   const rank = (line: Line): number =>
     ["slower", "slower on purpose", "faster", "new", "the same"].indexOf(
       line.verdict.outcome
     );
+  const withBytes = lines.some((line) => line.bytes !== undefined);
+  const bytesOf = ({ bytes, verdict }: Line): string =>
+    !withBytes
+      ? ""
+      : bytes === undefined
+        ? " |"
+        : verdict.outcome === "new"
+          ? ` ${count(bytes.head)} |`
+          : ` ${count(bytes.base)} → ${count(bytes.head)} |`;
   const rows = lines
     .map((line, at) => ({ line, at }))
     .toSorted((a, b) => rank(a.line) - rank(b.line) || a.at - b.at)
-    .map(({ line: { label, name, unit, verdict } }) =>
-      verdict.outcome === "new"
-        ? `| ${label} (\`${name}\`) | | ${verdict.head.toFixed(2)} ${unit} | | | new |`
-        : `| ${label} (\`${name}\`) | ${verdict.base.toFixed(2)} | ${verdict.head.toFixed(2)} ${unit} | ${percent(verdict.ratio)} | ${verdict.beaten} of ${verdict.of}, ${rarity(verdict.chance)} | ${verdict.outcome === "slower" ? "**slower**" : verdict.outcome} |`
-    );
+    .map(({ line }) => {
+      const { label, name, unit, verdict } = line;
+      return verdict.outcome === "new"
+        ? `| ${label} (\`${name}\`) | | ${verdict.head.toFixed(2)} ${unit} | | |${bytesOf(line)} new |`
+        : `| ${label} (\`${name}\`) | ${verdict.base.toFixed(2)} | ${verdict.head.toFixed(2)} ${unit} | ${percent(verdict.ratio)} | ${verdict.beaten} of ${verdict.of}, ${rarity(verdict.chance)} |${bytesOf(line)} ${verdict.outcome === "slower" ? "**slower**" : verdict.outcome} |`;
+    });
   return [
-    "| Variant | Base | Head | Change | Runs that beat every run of the other, and how often by chance | |",
-    "| --- | ---: | ---: | ---: | --- | --- |",
+    `| Variant | Base | Head | Change | ${plainly}, and how often by chance |${withBytes ? " Bytes a frame |" : ""} |`,
+    `| --- | ---: | ---: | ---: | --- |${withBytes ? " ---: |" : ""} --- |`,
     ...rows,
   ].join("\n");
 };

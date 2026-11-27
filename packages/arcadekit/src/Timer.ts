@@ -29,6 +29,7 @@ import { Effect } from "effect";
 import { dual } from "effect/Function";
 
 import { Component, Field } from "./ecs/component.ts";
+import type { ComponentDef } from "./ecs/component.ts";
 import * as Plugin from "./Plugin.ts";
 import * as Query from "./Query.ts";
 import { Commands, Time } from "./Services.ts";
@@ -88,13 +89,25 @@ export const ready = (left: number): boolean => left <= 0;
  *
  * **Gotchas**
  *
- * - Nothing counts it down without `Timer.plugin` among the game's plugins.
+ * - A game that spawns or adds it and leaves out `Timer.plugin` doesn't
+ *   compile: `App.make` requires `Plugin.Installed<"arcadekit/Timer">`.
+ * - A component that `requires` it doesn't carry that, so a game that spawns
+ *   one and leaves out `Timer.plugin` compiles, and never despawns it.
  *
  * @category Components
  */
-export const Lifetime = Component.define("arcadekit/Timer.Lifetime", {
-  left: field,
-});
+export const Lifetime: ComponentDef<
+  { left: typeof field },
+  "table",
+  "arcadekit/Timer.Lifetime",
+  never
+> &
+  Plugin.KeptBy<"arcadekit/Timer"> = Component.define(
+  "arcadekit/Timer.Lifetime",
+  {
+    left: field,
+  }
+);
 
 /**
  * Returns a `Timer.Lifetime` of `seconds`, to spawn or add with an entity.
