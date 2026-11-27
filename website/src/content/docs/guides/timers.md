@@ -91,7 +91,8 @@ export const Sparks = Plugin.make("game/Sparks", {
 
 `Timer.lifetime(seconds)` is a `Timer.Lifetime` component, spawned or added with the entity. `Timer.plugin` counts every one down at the start of each tick, in `"preUpdate"`, and despawns the entity on the tick its time runs out, so the game's systems in `"update"` never see it.
 
-- List `Timer.plugin` among the game's plugins. Without it, nothing counts a lifetime down. A plugin that several others list is installed once.
+- List `Timer.plugin` among the game's plugins, or one of its plugins does. A game that spawns or adds a lifetime and leaves it out doesn't compile: `App.make` requires `Plugin.Installed<"arcadekit/Timer">`. A plugin that several others list is installed once.
+- A component that `requires` a lifetime doesn't carry that requirement. A game that spawns one without `Timer.plugin` compiles, and nothing counts its lifetime down.
 - Name `Timer.Lifetime` where the commands are asked for, `Commands.spawns(Spark, Timer.Lifetime)`, as any component a system spawns.
 - A lifetime is counted from the tick after the one it was spawned in.
 
