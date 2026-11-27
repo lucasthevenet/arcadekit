@@ -1531,6 +1531,43 @@ describe("the turns of a game kept by Timeline.keep", () => {
   );
 
   it.effect(
+    "go forward again a turn the rules went back, and stay there",
+    () => {
+      /** A move the rules take back on the next tick. */
+      const Oops = Action.define("vr/Oops");
+      const Taken = App.define({
+        plugins: [
+          Plugin.make("vr/Taken", {
+            plugins: [Timeline.plugin],
+            handlers: [
+              Action.handler(Oops, function* () {
+                (yield* Cell.writes).y += 10;
+                (yield* Action.Actions).enqueue(Timeline.Undo, undefined);
+              }),
+            ],
+          }),
+        ],
+      });
+      return withApp(App.make(Taken), (app) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          yield* app.enqueue(Oops);
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 0 });
+          expect(yield* Timeline.redo(app)).toBe(true);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          // The undo the rules asked for was applied, and isn't asked again.
+          yield* app.tick(1 / 60);
+          yield* app.tick(1 / 60);
+          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+        }).pipe(Effect.scoped)
+      );
+    }
+  );
+
+  it.effect(
     "are kept once, of an app that ticks by itself, between ticks",
     () =>
       withApp(App.make(Puzzle), (app) =>

@@ -163,10 +163,10 @@ const Board = Plugin.make("bench/Board", {
 /**
  * Median milliseconds of a tick of a board game that ticks by itself: a
  * clock that runs, and 1,000 pieces in one table that lie still. With
- * `moved`, a move of the player's is enqueued before each pass, untimed, and
- * the tick applies it. With `kept`, `Timeline.keep` keeps the game's turns,
- * so the tick ends with a capture of the game, and with `moved` it keeps a
- * turn, the last 100 of them.
+ * `moved`, each pass enqueues a move of the player's and runs the tick that
+ * applies it. With `kept`, `Timeline.keep` keeps the game's turns: at rest it
+ * captures nothing, and with `moved` it captures the game as the move
+ * arrives and keeps a turn, the last 100 of them.
  */
 const playing = (kept: boolean, moved: boolean): number =>
   Effect.runSync(
@@ -177,10 +177,11 @@ const playing = (kept: boolean, moved: boolean): number =>
           yield* Timeline.keep(app);
         }
         const median = yield* measureEffect(
-          () => app.tick(DT),
+          moved
+            ? () => Effect.andThen(app.enqueue(Slide, undefined), app.tick(DT))
+            : () => app.tick(DT),
           50_000,
-          20_000,
-          moved ? () => app.enqueue(Slide, undefined) : undefined
+          20_000
         );
         const { tick } = app.time;
         const { ticks } = yield* app.read(Clock);
@@ -521,11 +522,11 @@ export const variants: Record<string, Variant> = {
     run: () => idling("off"),
   },
 
-  // The turns an undo goes back to: `Timeline.keep` captures the game after
-  // every tick, which in a game that ticks by itself is 60 times a second.
-  // Each pair is the same tick without and with it. A capture shares what
-  // did not change since the last one and copies what did, so at rest it
-  // copies the clock, and after a move the board's positions as well.
+  // The turns an undo goes back to: `Timeline.keep` captures the game when a
+  // move arrives, so a game that ticks by itself at rest, 60 times a second,
+  // captures nothing. Each pair is the same pass without and with it. A
+  // capture shares what did not change since the last one and copies what
+  // did: the clock, and the board's positions that the last move slid.
   board: {
     unit: "matches",
     label: "app.tick: a clock and 1,000 pieces at rest",
@@ -538,12 +539,13 @@ export const variants: Record<string, Variant> = {
   },
   boardMoved: {
     unit: "matches",
-    label: "app.tick: a clock and 1,000 pieces, one moved from outside",
+    label:
+      "app.enqueue and app.tick: a clock and 1,000 pieces, one moved from outside",
     run: () => playing(false, true),
   },
   boardMovedKept: {
     unit: "matches",
-    label: "app.tick: the same, its turns kept, one kept each tick",
+    label: "app.enqueue and app.tick: the same, its turns kept, one each tick",
     run: () => playing(true, true),
   },
 
