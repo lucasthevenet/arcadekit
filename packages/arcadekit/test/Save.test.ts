@@ -1469,7 +1469,7 @@ describe("a save the rules ask for", () => {
       expect(told.at(-1)).toEqual({
         _tag: "Failed",
         error: new Save.Refused({
-          message: `"sv/Small.tiles" holds a value its codec did not turn into plain data (an object).`,
+          message: `"sv/Small.tiles" holds a value its codec refuses: a map of 3 by 3 is in a field of 2 by 2`,
         }),
       });
       expect(yield* slots.slots).toEqual([]);
