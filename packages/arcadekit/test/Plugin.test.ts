@@ -169,8 +169,9 @@ describe("plugins", () => {
     type Described = typeof Combat & { readonly about: string };
     expectTypeOf<Plugin.HandlerOf<Described>>().toEqualTypeOf<typeof heal>();
     expectTypeOf<Plugin.ProvidedOf<Described>>().toEqualTypeOf<
-      Plugin.ProvidedOf<typeof Physics>
+      Plugin.ProvidedOf<typeof Combat>
     >();
+    expectTypeOf<Plugin.ProvidedOf<Described>>().not.toBeNever();
   });
 
   it.effect(
