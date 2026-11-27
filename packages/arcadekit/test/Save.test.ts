@@ -24,6 +24,7 @@ import {
   Driver,
   Event,
   Field,
+  Grid,
   Plugin,
   Query,
   Random,
@@ -1254,20 +1255,29 @@ const Levels = App.define({
   ],
 });
 
-const Unsaved = View.define<Readonly<Record<string, string>>>("sv/Unsaved", {});
+const Finished = Save.slot("finished");
+const Status = View.define<Save.SlotStatus>("sv/Status", { _tag: "Off" });
+const Small = Singleton.define(
+  "sv/Small",
+  { tiles: Grid.tiles(2, 2) },
+  { tiles: Grid.fill(2, 2) }
+);
+const Spoil = Action.define("sv/Spoil", Schema.Struct({}));
 const Told = App.define({
   plugins: [View.plugin],
   systems: [
-    View.publish(Unsaved, function* () {
-      return Object.fromEntries(
-        [...(yield* Save.failedAutosaves)].map(([slot, error]) => [
-          slot,
-          error.message,
-        ])
-      );
+    View.publish(Status, function* () {
+      return yield* Finished;
     }),
   ],
-  handlers: [finish],
+  handlers: [
+    finish,
+    // A grid of another size is a save that can't be taken.
+    Action.handler(Spoil, function* () {
+      (yield* Small.writes).tiles = Grid.fill(3, 3);
+      (yield* Save.Asked.emits).emit({ slot: Finished.name });
+    }),
+  ],
 });
 
 describe("a save the rules ask for", () => {
@@ -1392,7 +1402,7 @@ describe("a save the rules ask for", () => {
   );
 
   it.effect(
-    "that can't be kept is told to the game's UI, until a later ask keeps it",
+    "has its slot's status told to the game's UI: off, unasked, failed until a later ask keeps it, and off once nothing keeps the saves",
     () => {
       let full = true;
       const slots = Save.makeMemory();
@@ -1407,19 +1417,36 @@ describe("a save the rules ask for", () => {
       };
       return Effect.gen(function* () {
         const game = yield* Test.make(Told);
-        yield* Save.autosave(game.app);
-        const told: Readonly<Record<string, string>>[] = [];
-        game.ui.subscribe(Unsaved, (unsaved) => {
-          told.push(unsaved);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
         });
-        yield* game.app.dispatch(Finish, {});
         yield* game.step();
-        expect(game.ui.get(Unsaved)).toEqual({ finished: "It is full." });
-
-        full = false;
-        yield* game.app.dispatch(Finish, {});
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* Save.autosave(game.app);
+            yield* game.step();
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+            full = false;
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+          })
+        );
         yield* game.step();
-        expect(told).toEqual([{}, { finished: "It is full." }, {}]);
+        expect(told).toEqual([
+          { _tag: "Off" },
+          { _tag: "Unasked" },
+          {
+            _tag: "Failed",
+            error: new Save.StoreFailed({
+              slot: "finished",
+              message: "It is full.",
+            }),
+          },
+          { _tag: "Saved" },
+          { _tag: "Off" },
+        ]);
         expect(yield* slots.slots).toEqual(["finished"]);
       }).pipe(
         Effect.provide(Layer.merge(Save.layer(store), Logger.layer([]))),
@@ -1428,14 +1455,90 @@ describe("a save the rules ask for", () => {
     }
   );
 
-  it("that failed is not for the code of the tick to read", () => {
+  it.effect("that can't be taken is told as Save.Refused", () => {
+    const slots = Save.makeMemory();
+    return Effect.gen(function* () {
+      const game = yield* Test.make(Told);
+      const told: Save.SlotStatus[] = [];
+      game.ui.subscribe(Status, (status) => {
+        told.push(status);
+      });
+      yield* Save.autosave(game.app);
+      yield* game.app.dispatch(Spoil, {});
+      yield* game.step();
+      expect(told.at(-1)).toEqual({
+        _tag: "Failed",
+        error: new Save.Refused({
+          message: `"sv/Small.tiles" holds a value its codec did not turn into plain data (an object).`,
+        }),
+      });
+      expect(yield* slots.slots).toEqual([]);
+    }).pipe(
+      Effect.provide(Layer.merge(Save.layer(slots), Logger.layer([]))),
+      Effect.scoped
+    );
+  });
+
+  it.effect(
+    "that a store of the game's own throws for is told as Save.StoreFailed",
+    () =>
+      Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
+        });
+        yield* Save.autosave(game.app);
+        yield* game.app.dispatch(Finish, {});
+        yield* game.step();
+        expect(told.at(-1)).toEqual({
+          _tag: "Failed",
+          error: new Save.StoreFailed({
+            slot: "finished",
+            message: "The quota is exceeded.",
+          }),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Save.layer({
+              ...Save.makeMemory(),
+              set: () =>
+                Effect.sync(() => {
+                  throw new Error("The quota is exceeded.");
+                }),
+            }),
+            Logger.layer([])
+          )
+        ),
+        Effect.scoped
+      )
+  );
+
+  it("whose slot's status is not for the code of the tick to read", () => {
     const Reads = System.tick(
       "sv/Reads",
       // @ts-expect-error what the store did is outside the world, which a tick reads
       function* () {
-        yield* Save.failedAutosaves;
+        yield* Finished;
       }
     );
     expect(Reads.name).toBe("sv/Reads");
+  });
+
+  it("has a status that Save.match is given every case of", () => {
+    expect(
+      Save.match(
+        { _tag: "Saved" },
+        {
+          Off: () => "off",
+          Unasked: () => "unasked",
+          Saved: () => "saved",
+          Failed: ({ error }) => error.message,
+        }
+      )
+    ).toBe("saved");
+    // @ts-expect-error a status left out is a case that doesn't compile
+    Save.match({ Off: () => "", Unasked: () => "", Saved: () => "" });
   });
 });
