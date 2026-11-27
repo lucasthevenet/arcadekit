@@ -40,7 +40,6 @@ import {
   Schema,
 } from "effect";
 import type { Scope } from "effect";
-import { dual } from "effect/Function";
 
 import type * as App from "./App.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
@@ -451,7 +450,7 @@ export const autosave = (
           (message) => new Refused({ message })
         );
         for (const slot of slots) {
-          autosaves.slots.set(slot, { _tag: "Failed", error });
+          autosaves.slots.set(slot, SlotStatus.Failed({ error }));
         }
         return yield* Effect.logError(
           `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(error)}`
@@ -468,7 +467,7 @@ export const autosave = (
           kept.cause,
           (message) => new StoreFailed({ slot, message })
         );
-        autosaves.slots.set(slot, { _tag: "Failed", error });
+        autosaves.slots.set(slot, SlotStatus.Failed({ error }));
         yield* Effect.logError(
           `Save.autosave could not keep the save the game asked for in "${slot}": ${said(error)}`
         );
@@ -499,19 +498,22 @@ const errorOf = <E>(cause: Cause.Cause<E>, died: (message: string) => E): E =>
  *
  * @category Models
  */
-export type SlotStatus =
+export type SlotStatus = Data.TaggedEnum<{
   /** No `Save.autosave` keeps the app's saves, so an ask keeps nothing. */
-  | { readonly _tag: "Off" }
+  Off: {};
   /** The game hasn't asked for a save in the slot since `Save.autosave` began. */
-  | { readonly _tag: "Unasked" }
+  Unasked: {};
   /** The slot holds the save the game last asked for in it. */
-  | { readonly _tag: "Saved" }
+  Saved: {};
   /**
    * The slot doesn't hold the save the game last asked for in it: `Save.Refused`
    * when the save couldn't be taken, `Save.StoreFailed` when the store couldn't
    * keep it. It is logged as well.
    */
-  | { readonly _tag: "Failed"; readonly error: Refused | StoreFailed };
+  Failed: { readonly error: Refused | StoreFailed };
+}>;
+
+const SlotStatus = Data.taggedEnum<SlotStatus>();
 
 /**
  * What `Save.match` does with each status of a slot: a function for each
@@ -544,30 +546,11 @@ export type SlotStatusCases<R> = {
 export const match: {
   <R>(cases: SlotStatusCases<R>): (status: SlotStatus) => R;
   <R>(status: SlotStatus, cases: SlotStatusCases<R>): R;
-} = dual(2, <R>(status: SlotStatus, cases: SlotStatusCases<R>): R => {
-  switch (status._tag) {
-    case "Off": {
-      return cases.Off(status);
-    }
-    case "Unasked": {
-      return cases.Unasked(status);
-    }
-    case "Saved": {
-      return cases.Saved(status);
-    }
-    case "Failed": {
-      return cases.Failed(status);
-    }
-    default: {
-      const unknown: never = status;
-      return unknown;
-    }
-  }
-});
+} = SlotStatus.$match;
 
-const OFF: SlotStatus = { _tag: "Off" };
-const UNASKED: SlotStatus = { _tag: "Unasked" };
-const SAVED: SlotStatus = { _tag: "Saved" };
+const OFF = SlotStatus.Off();
+const UNASKED = SlotStatus.Unasked();
+const SAVED = SlotStatus.Saved();
 
 const Autosaves = System.local(() => ({
   keeping: 0,
