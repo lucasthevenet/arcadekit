@@ -590,6 +590,51 @@ describe("a page's devices", () => {
       })
   );
 
+  it.effect(
+    "says once of each code it does not hear that it is not heard, and nothing of a key that has no code",
+    () =>
+      Effect.gen(function* () {
+        const page = new Listened();
+        const logged: string[] = [];
+        yield* run(
+          Effect.gen(function* () {
+            const listener = yield* Input.listen;
+            // Codes a browser sends that the specification does not list.
+            page.send("keydown", { code: "BrightnessUp", repeat: false });
+            page.send("keydown", { code: "BrightnessUp", repeat: true });
+            page.send("keyup", { code: "BrightnessUp" });
+            page.send("keydown", { code: "BrightnessUp", repeat: false });
+            page.send("keyup", { code: "MediaRecord" });
+            page.send("keydown", { code: "", repeat: false });
+            page.send("keydown", { code: "Unidentified", repeat: false });
+            page.send("keydown", { code: "KeyQ", repeat: false });
+            expect(told(listener.sample()).down).toEqual(["KeyQ"]);
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                Browser.layer({
+                  window: page,
+                  gamepads: () => [],
+                  sounds: false,
+                }),
+                Logger.layer([
+                  Logger.make((entry) => {
+                    logged.push(`${entry.logLevel}: ${String(entry.message)}`);
+                  }),
+                ])
+              )
+            )
+          )
+        );
+        const DROPPED = (code: string): string =>
+          `Warn: The page sent a key whose code is "${code}", which is none of Input.KeyCode's, and it is not heard: no control and no Input.Keyboard can read it. Input.KeyCode is the UI Events specification's list, and a browser can send a code the list does not have yet. Report the code at https://github.com/lucasthevenet/arcadekit/issues, so that it is added. This is said once for each code.`;
+        expect(logged).toEqual([
+          DROPPED("BrightnessUp"),
+          DROPPED("MediaRecord"),
+        ]);
+      })
+  );
+
   it.effect("reads the gamepads when it is sampled", () =>
     Effect.gen(function* () {
       const page = new Listened();

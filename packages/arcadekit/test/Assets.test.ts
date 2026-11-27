@@ -834,7 +834,7 @@ describe("a level's assets", () => {
         const Wall = Component.define("as/Wall", { at: Field.i32 });
         const Built = Singleton.define(
           "as/Built",
-          { level: Field.json<string>() },
+          { level: Field.json<string>("") },
           { level: "" }
         );
         const Level = State.define("as/Stage", ["menu", "forest"]);

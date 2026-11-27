@@ -292,6 +292,49 @@ describe("a run condition", () => {
   );
 
   it.effect(
+    "sees its own game's state as it is at its turn, after a system before it in the same tick asked for another",
+    () =>
+      Effect.gen(function* () {
+        const Pause = System.tick("Pause", function* () {
+          const phase = yield* Phase.sets;
+          if (phase.value === "playing") {
+            phase.set("paused");
+          }
+        });
+        const game = (ran: string[]) =>
+          App.define({
+            systems: [
+              Pause,
+              noting("Steady", ran).pipe(
+                System.runIf(
+                  Effect.map(Phase, (phase) => phase.next === undefined)
+                )
+              ),
+              noting("Playing", ran).pipe(
+                System.runIf(State.is(Phase, "playing"))
+              ),
+            ],
+            handlers: [go],
+          });
+        const played: string[] = [];
+        const idled: string[] = [];
+        const playing = yield* App.make(game(played));
+        const idling = yield* App.make(game(idled));
+        const tick = Effect.fnUntraced(function* () {
+          played.length = 0;
+          idled.length = 0;
+          yield* playing.tick(1);
+          yield* idling.tick(1);
+          return [[...played], [...idled]];
+        });
+        expect(yield* tick()).toEqual([["Steady"], ["Steady"]]);
+        yield* playing.dispatch(Go, { to: "playing", refuse: false });
+        expect(yield* tick()).toEqual([["Playing"], ["Steady"]]);
+        expect(yield* tick()).toEqual([["Steady"], ["Steady"]]);
+      })
+  );
+
+  it.effect(
     "lets a system say what it does in place of running, each time it does not hold",
     () =>
       Effect.gen(function* () {
@@ -864,7 +907,7 @@ describe("a state in a save", () => {
     const level = yield* Level.sets;
     level.set(level.value === "one" ? "two" : "three");
   });
-  const Built = Component.define("st/Built", { level: Field.json<string>() });
+  const Built = Component.define("st/Built", { level: Field.json<string>("") });
   const build = <const L extends "one" | "two" | "three">(level: L) =>
     State.onEnter(Level, level, `Build ${level}`, function* () {
       (yield* Commands.spawns(Built)).spawn(Built.of({ level }));

@@ -8,10 +8,10 @@ import type { Entries, Needs } from "../Three.ts";
 import { FromAssets } from "./assets.ts";
 import { Holdings, heldIn } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
-import { placedBy, required } from "./kind.ts";
+import { isFlat, placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
 import { Instances } from "./mesh.ts";
-import { stores } from "./smooth.ts";
+import { storesOf } from "./smooth.ts";
 
 /** The options of `Three.instancesFrom`, as its system reads them. */
 interface Bundled<B extends Entries, L extends Look> extends InstancesShared {
@@ -33,6 +33,7 @@ interface Sourced extends Kept {
  */
 const drawer = (options: InstancesShared & Placing) => {
   const smooth = options.smooth === true;
+  const flat = isFlat(options);
   const marked = required(options);
   const excluded = options.without ?? [];
   const { color } = options;
@@ -54,7 +55,9 @@ const drawer = (options: InstancesShared & Placing) => {
   return function* (drawn: Instances) {
     // What the app keeps of a tick ago: asked only by a system that draws
     // between the two.
-    drawn.begin(smooth ? yield* stores : undefined);
+    drawn.begin(
+      smooth ? yield* storesOf(flat, color !== undefined) : undefined
+    );
     if (Painted === undefined) {
       (yield* Plain).eachChunk(drawn.drawPlain);
     } else {

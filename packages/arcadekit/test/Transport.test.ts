@@ -18,7 +18,7 @@ import {
   World,
 } from "../src/index.ts";
 import { Drift, Message, Session, Transport } from "../src/net/index.ts";
-import { thrown, unwrap } from "./checks.ts";
+import { thrown } from "./checks.ts";
 import {
   CoinGame,
   DELTA,
@@ -784,15 +784,13 @@ describe("a transport over a wire", () => {
             const over = yield* Transport.fromWire(wire);
             expect(listening).toBe(1);
             yield* over.send(message("ada", 3, 2));
-            expect(sent).toEqual([
-              unwrap(Message.encode(message("ada", 3, 2))),
-            ]);
-            deliver(Message.encode(message("grace", 0)).pipe(unwrap));
+            expect(sent).toEqual([yield* Message.encode(message("ada", 3, 2))]);
+            deliver(yield* Message.encode(message("grace", 0)));
             deliver(Message.encodeNotice({ left: "edsger" }));
             deliver("not a message");
             deliver(JSON.stringify(message("grace", 2)));
             deliver(new Uint8Array([1, 2, 3]));
-            deliver(Message.encode(message("grace", 1, 5)).pipe(unwrap));
+            deliver(yield* Message.encode(message("grace", 1, 5)));
             // What is neither is dropped.
             expect(yield* over.receive()).toEqual([
               message("grace", 0),
@@ -927,8 +925,8 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         expect(heard).toEqual([
           Message.encodeNotice({ joined: "ada" }),
           Message.encodeNotice({ joined: "grace" }),
-          unwrap(Message.encode(message("ada", 0, 7))),
-          unwrap(Message.encode(message("grace", 0))),
+          yield* Message.encode(message("ada", 0, 7)),
+          yield* Message.encode(message("grace", 0)),
           Message.encodeNotice({ left: "grace" }),
           Message.encodeNotice({ left: "ada" }),
         ]);
@@ -992,7 +990,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
                 yield* transport.send(message("ada", 0));
                 expect(made[0]!.posted).toEqual([
                   Message.encodeNotice({ joined: "ada" }),
-                  unwrap(Message.encode(message("ada", 0))),
+                  yield* Message.encode(message("ada", 0)),
                 ]);
               })
             );
@@ -1055,7 +1053,7 @@ describe("the transport between tabs, a BroadcastChannel", () => {
         // Closing it again does nothing.
         yield* connected.close;
         expect(log).toEqual(["acquired", "released"]);
-        outside.postMessage(unwrap(Message.encode(message("grace", 0))));
+        outside.postMessage(yield* Message.encode(message("grace", 0)));
         yield* Effect.promise(() => later(20));
         // It says so, in place of a game that waits for ever.
         expect(yield* thrown(connected.tick())).toThrow(

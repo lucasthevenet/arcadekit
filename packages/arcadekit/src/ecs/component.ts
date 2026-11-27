@@ -146,8 +146,8 @@ export const isBoxed = (kind: FieldKind): boolean =>
  * **Gotchas**
  *
  * - When `encode` throws, `World.snapshot` throws a `SnapshotError` whose
- *   problem is `"cannot be saved"` and names the field. `World.hash` throws
- *   the codec's own error.
+ *   problem is `"cannot be saved"`, and whose message names the field and
+ *   says what `encode` threw. `World.hash` throws the codec's own error.
  * - When `decode` throws, the load throws a `SnapshotError` whose problem is
  *   `"component changed"`.
  * - `World.hash` calls `encode` once for every value of the field.
@@ -174,6 +174,18 @@ export interface FieldDef<T, C> {
   readonly kind: FieldKind;
   /** The codec of a `ref` field, and undefined on any other. */
   readonly codec?: RefCodec<T>;
+  /**
+   * What the field holds in a component added or spawned bare, with no value:
+   * a `json` or `ref` field's, given where the field is made. It is absent on
+   * a number field, which holds 0, on a `Field.bool`, which holds `false`, and
+   * on a `transient` field, which holds undefined.
+   */
+  readonly initial?: T;
+  /**
+   * True for `Field.bool`, a `u8` field read as `false` for 0 and `true` for
+   * any other number, and written as 0 or 1. Undefined on any other.
+   */
+  readonly bool?: true;
   /** Never set: it carries `T` in the type. */
   readonly _T?: T;
   /** Never set: it carries `C` in the type. */
@@ -182,12 +194,14 @@ export interface FieldDef<T, C> {
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
 
+const bool: FieldDef<boolean, Uint8Array> = { kind: "u8", bool: true };
+
 /**
  * The field types a component is made of. A number field is a column of a
  * typed array. Any other field type says what a snapshot and the hash do with
  * its values.
  *
- *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>() })
+ *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>("") })
  *
  * **When to use**
  *
@@ -211,6 +225,11 @@ export const Field = {
   /** An unsigned 8-bit integer, in a `Uint8Array`. */
   u8: field<number, Uint8Array>("u8"),
   /**
+   * `true` or `false`, as 1 or 0 in a `Uint8Array`. It is a `u8` field to a
+   * snapshot and the hash, and reads as a boolean everywhere else.
+   */
+  bool,
+  /**
    * An entity's id, in a `Float64Array`. It holds whatever id was written,
    * and is stale once its entity is despawned, so it reads as an
    * `Entity.Ref`, which `world.live` turns back into an `Entity`. For a
@@ -222,18 +241,24 @@ export const Field = {
    * array or object of strings, numbers, booleans and null. It is saved in
    * snapshots and included in the hash. An array or an object is saved and
    * hashed as its `JSON.stringify` text, so it loads as whatever `JSON.parse`
-   * makes of that text.
+   * makes of that text. `initial` is what it holds in a component given bare.
    */
-  json: <T extends JsonValue>(): FieldDef<Frozen<T>, Frozen<T>[]> =>
-    field<Frozen<T>, Frozen<T>[]>("json"),
+  json: <T extends JsonValue>(
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({ kind: "json", initial }),
   /**
    * Any value, such as a `Date`, a `Map` or a class instance, with a codec
    * that converts it to plain data and back. Snapshots and the hash use its
-   * encoded form, so every hash encodes each value once.
+   * encoded form, so every hash encodes each value once. `initial` is what it
+   * holds in a component given bare.
    */
-  ref: <T>(codec: RefCodec<T>): FieldDef<Frozen<T>, Frozen<T>[]> => ({
+  ref: <T>(
+    codec: RefCodec<T>,
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({
     kind: "ref",
     codec: codec as RefCodec<Frozen<T>>,
+    initial,
   }),
   /**
    * A value that isn't part of the game's state, such as a handle, a cache,
@@ -284,10 +309,13 @@ export type ColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<unknown, infer C> ? C : never;
 };
 
-/** The columns of a component a query only reads: indexable, but not assignable. */
+/**
+ * The columns of a component a query only reads: indexable, but not
+ * assignable. A `Field.bool` is its numbers, 0 and 1.
+ */
 export type ReadonlyColumnsOf<S extends Schema> = {
   readonly [K in keyof S]: S[K] extends FieldDef<infer T, unknown>
-    ? ReadonlyColumn<T>
+    ? ReadonlyColumn<[T] extends [boolean] ? number : T>
     : never;
 };
 
@@ -427,6 +455,12 @@ export interface Accessor {
     entities?: Uint32Array | Float64Array,
     log?: WriteLog
   ): void;
+  /**
+   * Points the fields at columns that throw when read or written, once the
+   * world's entities changed: kept, the accessor would read and write a row
+   * that is now another entity's, or a column the table no longer uses.
+   */
+  retract(): void;
 }
 
 /**
@@ -470,6 +504,11 @@ export interface ComponentDef<
   /** For each field, the codec of a `ref` field, or undefined for any other. */
   readonly codecs: readonly (RefCodec<unknown> | undefined)[];
   /**
+   * The names of its fields that are `Field.bool`, each a `u8` read as a
+   * boolean, in the order of `fields`.
+   */
+  readonly bools: readonly string[];
+  /**
    * Where its data is stored. The type carries it too, so that a query knows
    * which of its terms are in the table's rows.
    */
@@ -487,8 +526,11 @@ export interface ComponentDef<
    */
   readonly relation: OnTargetDespawn | undefined;
   /**
-   * Its value when it is added or spawned bare, with no value, and undefined
-   * when that value is all zeros. See `Component.define`.
+   * Its value when it is added or spawned bare, with no value: the `initial`
+   * `Component.define` was given, or else the `initial` of each `json` and
+   * `ref` field, with 0 in a number field, `false` in a `Field.bool` and
+   * undefined in a `transient` field. It is undefined when that value is all
+   * zeros. See `Component.define`.
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
@@ -726,6 +768,14 @@ const refuse = (message: string) => (): never => {
   throw new Error(message);
 };
 
+// A typed array ignores an index it doesn't have, so a retracted accessor's
+// refusal is in its column, and the getters and setters check nothing.
+const refusing = (message: string): Float32Array =>
+  new Proxy(new Float32Array(0), {
+    get: refuse(message),
+    set: refuse(message),
+  });
+
 // The seven that follow differ in the type of `column` and in nothing
 // else. They are not one function given the type: see above.
 
@@ -903,6 +953,31 @@ const defineBoxed: DefineField = (target, name, row, noting, refusal) => {
   };
 };
 
+/** Defines a `Field.bool`: a `u8` column, read and written as booleans. */
+const defineBool: DefineField = (target, name, row, noting, refusal) => {
+  let column = undefined as unknown as Uint8Array;
+  Object.defineProperty(target, name, {
+    get: () => column[row.i] !== 0,
+    set:
+      refusal !== undefined
+        ? refuse(refusal)
+        : noting === undefined
+          ? (value: boolean) => {
+              column[row.i] = value ? 1 : 0;
+            }
+          : (value: boolean) => {
+              column[row.i] = value ? 1 : 0;
+              const index = noting.entities[row.i]! & INDEX_MASK;
+              if (noting.log.noted[index] !== 1) {
+                noting.log.note(index);
+              }
+            },
+  });
+  return (to) => {
+    column = to as Uint8Array;
+  };
+};
+
 const DEFINE_FIELD: Readonly<Record<FieldKind, DefineField>> = {
   f32: defineF32,
   f64: defineF64,
@@ -927,7 +1002,7 @@ export const makeAccessor = (
   mode: AccessorMode,
   row: Row
 ): Accessor => {
-  const { fields, kinds, name } = def;
+  const { bools, fields, kinds, name } = def;
   const noting: Noting | undefined =
     mode === "notes"
       ? {
@@ -937,7 +1012,7 @@ export const makeAccessor = (
       : undefined;
   const target = {};
   const binders = fields.map((field, f) =>
-    DEFINE_FIELD[kinds[f]!](
+    (bools.includes(field) ? defineBool : DEFINE_FIELD[kinds[f]!])(
       target,
       field,
       row,
@@ -952,6 +1027,7 @@ export const makeAccessor = (
             : undefined
     )
   );
+  let retracted: Column[] | undefined;
   return {
     fields: Object.create(target) as object,
     bind(columns, entities, log) {
@@ -963,7 +1039,33 @@ export const makeAccessor = (
         noting.log = log!;
       }
     },
+    retract() {
+      retracted ??= fields.map((field) =>
+        refusing(
+          `"${name}.${field}" was used through an accessor that each() or single() handed out before the world's entities last changed. A spawn, a despawn, an add or a remove, and a restore or a rewind, can move an entity to another row, and the accessor would read and write another entity's. Read the entity again with world.get(entity, ${name.split("/").pop()}), or ask the query again. To change the world's entities while you hold an accessor, queue the change on Commands.`
+        )
+      );
+      for (let f = 0; f < binders.length; f++) {
+        binders[f]!(retracted[f]!);
+      }
+    },
   };
+};
+
+const bareOf = <S extends Schema>(schema: S): ValueOf<S> | undefined => {
+  const fieldDefs = Object.entries(schema);
+  if (!fieldDefs.some(([, { kind }]) => kind === "json" || kind === "ref")) {
+    return undefined;
+  }
+  const value: Record<string, unknown> = {};
+  for (const [name, fieldDef] of fieldDefs) {
+    value[name] = isBoxed(fieldDef.kind)
+      ? fieldDef.initial
+      : fieldDef.bool === true
+        ? false
+        : 0;
+  }
+  return value as ValueOf<S>;
 };
 
 const define = <
@@ -989,11 +1091,12 @@ const define = <
     fields,
     kinds: Object.values(schema).map((fieldDef) => fieldDef.kind),
     codecs: Object.values(schema).map((fieldDef) => fieldDef.codec),
+    bools: fields.filter((field) => schema[field]!.bool === true),
     storage: (options?.storage ?? "table") as St,
     isTag: fields.length === 0,
     single: options?.single === true,
     relation: options?.relation,
-    initial: options?.initial,
+    initial: options?.initial ?? bareOf(schema),
     requires:
       options?.requires === undefined ? [] : closeRequires(options.requires),
     of: (value) => ({ def, value }),
@@ -1058,7 +1161,7 @@ export const Component = {
     schema: S,
     initial: ValueOf<S>
   ): SingletonSpec<S> => ({
-    component: define(name, schema, { single: true }),
+    component: define(name, schema, { single: true, initial }),
     initial,
   }),
   /**

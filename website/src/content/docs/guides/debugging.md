@@ -18,10 +18,10 @@ Browser.runMain(
   Driver.run(App.define({ plugins: [Game] }), {
     hz: 60,
     ready: (app) =>
-      Effect.sync(() => {
-        // For the browser's console, which runs no Effect of its own.
+      Effect.gen(function* () {
+        const runSync = Effect.runSyncWith(yield* Effect.context());
         Object.assign(globalThis, {
-          inspect: () => Effect.runSync(app.inspect()),
+          inspect: () => runSync(app.inspect()),
         });
       }),
   }),
@@ -29,7 +29,7 @@ Browser.runMain(
 );
 ```
 
-`yield* app.inspect()` gives what the game holds and what it did last, as plain data. The browser's console runs no Effect, so a page hands it a function that runs `app.inspect()`, as above. Then type `inspect()` in the console, or `console.table(inspect().systems)` for the systems. A game's own UI can show the same data, and a test can check it.
+`yield* app.inspect()` gives what the game holds and what it did last, as plain data. The browser's console runs no Effect, so the page hands it a function that runs `app.inspect()`, as above and as [calling the app from outside an Effect](running-a-game.md#call-the-app-from-outside-an-effect) says. Then type `inspect()` in the console, or `console.table(inspect().systems)` for the systems. A game's own UI can show the same data, and a test can check it.
 
 | Field | What it holds |
 | --- | --- |

@@ -493,7 +493,7 @@ describe("a lockstep session", () => {
         // Still waiting, and the press is not lost: it is in its next message.
         expect(yield* ada.session.tick()).toBe(false);
         expect(ada.session.outgoing()).toEqual([]);
-        net.send(["grace"], said);
+        yield* net.send(["grace"], said);
         for (let i = 0; i < 6; i++) {
           yield* round(peers, net);
         }
@@ -539,7 +539,7 @@ describe("a lockstep session", () => {
               lead: 0,
             },
           ]);
-          net.send(["grace"], said);
+          yield* net.send(["grace"], said);
           for (let i = 0; i < 3; i++) {
             yield* round(peers, net);
           }
@@ -1383,7 +1383,7 @@ const madeApart = (
         if (Exit.isFailure(exit)) {
           stopped.set(name, Cause.squash(exit.cause));
         }
-        net.send(
+        yield* net.send(
           [...seats.keys()].filter((other) => other !== name),
           seat.outgoing()
         );
@@ -1655,120 +1655,137 @@ describe("a message between peers", () => {
     actions: [{ name: "ls/Drop", payload: { by: "ada", value: 1 } }],
   };
 
-  it("goes to bytes and comes back, with every part of it", () => {
-    const whole: Message.Message = {
-      ...message,
-      checkpoints: [
-        { tick: 10, hash: 0 },
-        { tick: 12, hash: 4_294_967_295 },
-      ],
-      made: {
-        game: 4_294_967_295,
-        hz: 60,
-        peers: ["ada", "grace"],
-        start: 3,
-      },
-      at: 7,
-      lead: -2,
-      heard: 11,
-    };
-    const empty: Message.Message = { from: "grace", tick: 0, actions: [] };
-    for (const sent of [message, whole, empty]) {
-      const bytes = unwrap(Message.encode(sent));
-      expect(bytes).toBeInstanceOf(Uint8Array);
-      expect(Message.decode(bytes)).toEqual(Exit.succeed(sent));
-    }
-  });
+  it.effect("goes to bytes and comes back, with every part of it", () =>
+    Effect.gen(function* () {
+      const whole: Message.Message = {
+        ...message,
+        checkpoints: [
+          { tick: 10, hash: 0 },
+          { tick: 12, hash: 4_294_967_295 },
+        ],
+        made: {
+          game: 4_294_967_295,
+          hz: 60,
+          peers: ["ada", "grace"],
+          start: 3,
+        },
+        at: 7,
+        lead: -2,
+        heard: 11,
+      };
+      const empty: Message.Message = { from: "grace", tick: 0, actions: [] };
+      for (const sent of [message, whole, empty]) {
+        const bytes = yield* Message.encode(sent);
+        expect(bytes).toBeInstanceOf(Uint8Array);
+        expect(Message.decode(bytes)).toEqual(Exit.succeed(sent));
+      }
+    })
+  );
 
-  it("is bytes of its own, which the next message written leaves as they were", () => {
-    const first = unwrap(Message.encode(message));
-    const second = unwrap(
-      Message.encode({ from: "grace", tick: 3, actions: [] })
-    );
-    expect(first.buffer.byteLength).toBe(first.byteLength);
-    expect(second.buffer).not.toBe(first.buffer);
-    expect(Message.decode(first)).toEqual(Exit.succeed(message));
-  });
+  it.effect(
+    "is bytes of its own, which the next message written leaves as they were",
+    () =>
+      Effect.gen(function* () {
+        const first = yield* Message.encode(message);
+        const second = yield* Message.encode({
+          from: "grace",
+          tick: 3,
+          actions: [],
+        });
+        expect(first.buffer.byteLength).toBe(first.byteLength);
+        expect(second.buffer).not.toBe(first.buffer);
+        expect(Message.decode(first)).toEqual(Exit.succeed(message));
+      })
+  );
 
-  it("can't be written when it is not one", () => {
-    const written = Message.encode({ ...message, tick: -1 });
-    assert(Exit.isFailure(written));
-    expect(Cause.squash(written.cause)).toMatchObject({
-      _tag: "MessageInvalid",
-      problem: "not a message",
-    });
-  });
+  it.effect("can't be written when it is not one", () =>
+    Effect.gen(function* () {
+      const written = yield* Effect.exit(
+        Message.encode({ ...message, tick: -1 })
+      );
+      assert(Exit.isFailure(written));
+      expect(Cause.squash(written.cause)).toMatchObject({
+        _tag: "MessageInvalid",
+        problem: "not a message",
+      });
+    })
+  );
 
-  it("is refused when it is not one", () => {
-    /** What a peer that checks nothing writes, in a message's layout. */
-    const Unchecked = SchemaBinary.toCodec(
-      Schema.Struct({
-        from: Schema.String,
-        tick: Schema.Int,
-        actions: Schema.Array(
-          Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
-        ),
-        checkpoints: Schema.optionalKey(
-          Schema.Array(Schema.Struct({ tick: Schema.Int, hash: Schema.Int }))
-        ),
-        made: Schema.optionalKey(
-          Schema.Struct({
-            game: Schema.Int,
-            hz: Schema.Finite,
-            peers: Schema.Array(Schema.String),
-            start: Schema.Int,
-          })
-        ),
-        heard: Schema.optionalKey(Schema.Int),
-        at: Schema.optionalKey(Schema.Int),
-        lead: Schema.optionalKey(Schema.Int),
-      }),
-      { fingerprint: true }
-    );
-    const unchecked = (written: typeof Unchecked.Type) =>
-      unwrap(Schema.encodeExit(Unchecked)(written));
-    expect(Message.decode(unchecked(message))).toEqual(Exit.succeed(message));
-    const bytes = unwrap(Message.encode(message));
-    for (const [what, data] of [
-      ["nothing", new Uint8Array()],
-      ["noise", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])],
-      ["cut short", bytes.subarray(0, -1)],
-      ["padded", new Uint8Array([...bytes, 0])],
-      ["a message as text", new TextEncoder().encode(JSON.stringify(message))],
-      [
-        "another layout",
-        unwrap(
-          Schema.encodeExit(
-            SchemaBinary.toCodec(
-              Schema.Struct({ from: Schema.String, tick: Schema.Int }),
-              { fingerprint: true }
-            )
-          )({ from: "ada", tick: 1 })
-        ),
-      ],
-      ["a tick before the first", unchecked({ ...message, tick: -1 })],
-      ...[-1, 4_294_967_296].map(
-        (hash) =>
-          [
-            `a hash of ${hash}`,
-            unchecked({ ...message, checkpoints: [{ tick: 0, hash }] }),
-          ] as const
-      ),
-      [
-        "a hash check before the first tick",
-        unchecked({ ...message, checkpoints: [{ tick: -1, hash: 1 }] }),
-      ],
-      [
-        "made with a game whose hash is -1",
-        unchecked({
-          ...message,
-          made: { game: -1, hz: 60, peers: ["ada"], start: 0 },
+  it.effect("is refused when it is not one", () =>
+    Effect.gen(function* () {
+      /** What a peer that checks nothing writes, in a message's layout. */
+      const Unchecked = SchemaBinary.toCodec(
+        Schema.Struct({
+          from: Schema.String,
+          tick: Schema.Int,
+          actions: Schema.Array(
+            Schema.Struct({ name: Schema.String, payload: Schema.Unknown })
+          ),
+          checkpoints: Schema.optionalKey(
+            Schema.Array(Schema.Struct({ tick: Schema.Int, hash: Schema.Int }))
+          ),
+          made: Schema.optionalKey(
+            Schema.Struct({
+              game: Schema.Int,
+              hz: Schema.Finite,
+              peers: Schema.Array(Schema.String),
+              start: Schema.Int,
+            })
+          ),
+          heard: Schema.optionalKey(Schema.Int),
+          at: Schema.optionalKey(Schema.Int),
+          lead: Schema.optionalKey(Schema.Int),
         }),
-      ],
-      ["heard before the first tick", unchecked({ ...message, heard: -1 })],
-      ["at a tick before the first", unchecked({ ...message, at: -1 })],
-    ] as const) {
-      expect(Exit.isFailure(Message.decode(data)), what).toBe(true);
-    }
-  });
+        { fingerprint: true }
+      );
+      const unchecked = (written: typeof Unchecked.Type) =>
+        unwrap(Schema.encodeExit(Unchecked)(written));
+      expect(Message.decode(unchecked(message))).toEqual(Exit.succeed(message));
+      const bytes = yield* Message.encode(message);
+      for (const [what, data] of [
+        ["nothing", new Uint8Array()],
+        ["noise", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])],
+        ["cut short", bytes.subarray(0, -1)],
+        ["padded", new Uint8Array([...bytes, 0])],
+        [
+          "a message as text",
+          new TextEncoder().encode(JSON.stringify(message)),
+        ],
+        [
+          "another layout",
+          unwrap(
+            Schema.encodeExit(
+              SchemaBinary.toCodec(
+                Schema.Struct({ from: Schema.String, tick: Schema.Int }),
+                { fingerprint: true }
+              )
+            )({ from: "ada", tick: 1 })
+          ),
+        ],
+        ["a tick before the first", unchecked({ ...message, tick: -1 })],
+        ...[-1, 4_294_967_296].map(
+          (hash) =>
+            [
+              `a hash of ${hash}`,
+              unchecked({ ...message, checkpoints: [{ tick: 0, hash }] }),
+            ] as const
+        ),
+        [
+          "a hash check before the first tick",
+          unchecked({ ...message, checkpoints: [{ tick: -1, hash: 1 }] }),
+        ],
+        [
+          "made with a game whose hash is -1",
+          unchecked({
+            ...message,
+            made: { game: -1, hz: 60, peers: ["ada"], start: 0 },
+          }),
+        ],
+        ["heard before the first tick", unchecked({ ...message, heard: -1 })],
+        ["at a tick before the first", unchecked({ ...message, at: -1 })],
+      ] as const) {
+        expect(Exit.isFailure(Message.decode(data)), what).toBe(true);
+      }
+    })
+  );
 });

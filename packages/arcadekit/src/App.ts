@@ -203,16 +203,20 @@ type Reads = World | Time;
 export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
 
 /**
- * The part of an app that doesn't depend on its systems or handlers, which
- * every app satisfies. Each of its methods returns an Effect, and the rest
- * are values to read.
+ * The part of an app that doesn't depend on its handlers, which every app
+ * satisfies. Each of its methods returns an Effect, and the rest are values
+ * to read.
  *
- *   yield* app.tick(1 / 60)
+ *   const run = <E>(app: App.Any<E>) => app.tick(1 / 60)   // fails with E
  *   const save = yield* Save.make(app)
  *
  * **When to use**
  *
- * Use for code that works with any app.
+ * Use for code that works with any app. Code that runs `tick`, `frame` or
+ * `input` names what they fail with, since bare `App.Any`'s fail with
+ * `unknown`: `App.Any<never>` takes only an app whose systems can't fail, and
+ * a function generic in `E`, as above, takes any app and passes on what its
+ * systems fail with.
  *
  * **Details**
  *
@@ -220,9 +224,12 @@ export type Phase = "idle" | "tick" | "frame" | "input" | "handler";
  * dies with a message that says where it was made. Nothing is to handle
  * there: it is a bug in the code that made it.
  *
+ * @typeParam E what the app's systems can fail with, and so `tick`, `frame`
+ *   and `input`. It defaults to `unknown`, which takes every app.
+ *
  * @category Models
  */
-export interface Any {
+export interface Any<E = unknown> {
   readonly time: Readonly<TimeState>;
   /**
    * Reads the game from outside it. It runs `effect` with the services that
@@ -275,7 +282,7 @@ export interface Any {
    *   yield* app.tick(1 / 60)
    *   const ticked = yield* Effect.exit(app.tick(1 / 60))   // the outcome, as a value
    */
-  readonly tick: (delta: number) => Effect.Effect<void, unknown>;
+  readonly tick: (delta: number) => Effect.Effect<void, E>;
   /**
    * Whether the game is at rest, which means its last tick changed nothing
    * but its time and a tick now would find no pending work. It is false
@@ -319,10 +326,7 @@ export interface Any {
    * one leaves a fiber running, as `tick` does. Run it only between ticks,
    * since it dies anywhere else.
    */
-  readonly frame: (
-    alpha?: number,
-    delta?: number
-  ) => Effect.Effect<void, unknown>;
+  readonly frame: (alpha?: number, delta?: number) => Effect.Effect<void, E>;
   /**
    * Runs the input stage once, the systems made with `System.input`, which
    * turn the devices' state into actions. It reads the devices once, and the
@@ -336,7 +340,7 @@ export interface Any {
    * what a system fails with, and dies when one leaves a fiber running, as
    * `tick` does. Run it only between ticks, since it dies anywhere else.
    */
-  readonly input: () => Effect.Effect<void, unknown>;
+  readonly input: () => Effect.Effect<void, E>;
   /**
    * Like `dispatch`, for actions that arrive as data, such as network
    * messages, saved games and replays. It takes the payload in its JSON form
@@ -454,13 +458,7 @@ export interface Inspection {
  *
  * @category Models
  */
-export interface App<E = never, HU = never> extends Any {
-  /** Runs one tick, as `App.Any`'s `tick` does, and fails with what the game's systems fail with. */
-  readonly tick: (delta: number) => Effect.Effect<void, E>;
-  /** Runs the frame stage, as `App.Any`'s `frame` does, and fails with what a system fails with. */
-  readonly frame: (alpha?: number, delta?: number) => Effect.Effect<void, E>;
-  /** Runs the input stage, as `App.Any`'s `input` does, and fails with what a system fails with. */
-  readonly input: () => Effect.Effect<void, E>;
+export interface App<E = never, HU = never> extends Any<E> {
   /**
    * Applies an action now, and succeeds with what its handler returns. A
    * refusal is a typed failure, and leaves the game unchanged. The log holds

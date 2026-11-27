@@ -2,8 +2,10 @@ import { Context } from "effect";
 
 import type {
   AnyControl,
+  Axis,
   AxisBindings,
   AxisCode,
+  Button,
   ButtonBindings,
   ButtonCode,
   ButtonState,
@@ -12,6 +14,7 @@ import type {
   KeyboardView,
   PointerView,
   Sample,
+  Stick,
   StickBindings,
   StickState,
 } from "../Input.ts";
@@ -127,12 +130,9 @@ export interface Faces {
   readonly keyboard: KeyboardView;
   readonly pointer: PointerView;
   readonly gamepad: (index: number) => GamepadView;
-  readonly button: (
-    name: string,
-    bindings: () => ButtonBindings
-  ) => ButtonState;
-  readonly axis: (name: string, bindings: () => AxisBindings) => number;
-  readonly stick: (name: string, bindings: () => StickBindings) => StickState;
+  readonly button: (control: Button) => ButtonState;
+  readonly axis: (control: Axis) => number;
+  readonly stick: (control: Stick) => StickState;
 }
 
 /**
@@ -146,6 +146,7 @@ export class Board extends Context.Service<
   {
     /** The controls `Input.controls` declared for the app, in order. */
     readonly controls: readonly AnyControl[];
+    readonly sampling: Sampling;
     /**
      * What the input stage has reported since the tick `tick`: queued and
      * not applied yet, so the world is behind by these.
@@ -158,10 +159,7 @@ export class Board extends Context.Service<
     /** What the frame stage is given: what changed since the last frame. */
     readonly frame: (undrawn: Readonly<Undrawn>) => Context.Context<unknown>;
     /** What the input stage is given: what this sample says, with the app's bindings. */
-    readonly input: (
-      devices: Sample,
-      locals: Context.Service.Shape<typeof System.Locals>
-    ) => Context.Context<unknown>;
+    readonly input: (devices: Sample) => Context.Context<unknown>;
   }
 >()("arcadekit/Input.Board") {}
 
@@ -185,6 +183,92 @@ export const bindingsIn = <B>(
 ): B =>
   // Written only by `Input.rebind`, which is given this control's bindings.
   (rebound.get(control.name) as B | undefined) ?? control.bindings;
+
+type ButtonsByWay = readonly (readonly ButtonCode[] | undefined)[];
+
+type Unheard = "held since bound" | "let go this sample";
+
+const buttonsByWay = (
+  control: AnyControl,
+  rebound: ReadonlyMap<string, unknown>
+): ButtonsByWay => {
+  switch (control.kind) {
+    case "button":
+      return [bindingsIn(control, rebound)];
+    case "axis": {
+      const { negative, positive } = bindingsIn(control, rebound);
+      return [negative, positive];
+    }
+    case "stick": {
+      const { left, right, up, down } = bindingsIn(control, rebound);
+      return [left, right, up, down];
+    }
+    default: {
+      const never: never = control;
+      throw new Error(`Not a control: ${String(never)}`);
+    }
+  }
+};
+
+/**
+ * How the input stage reads the controls: with the bindings the game had set
+ * when the sample began, and without the keys bound while they were held.
+ *
+ * @internal
+ */
+export class Sampling {
+  readonly bindings = new Map<string, unknown>();
+  private readonly unheard = new Map<string, Map<ButtonCode, Unheard>>();
+
+  begin(
+    controls: readonly AnyControl[],
+    rebound: ReadonlyMap<string, unknown>,
+    devices: Sample
+  ): void {
+    for (const waiting of this.unheard.values()) {
+      for (const [code, state] of waiting) {
+        if (state === "let go this sample") {
+          waiting.delete(code);
+        } else if (!devices.down.has(code)) {
+          waiting.set(code, "let go this sample");
+        }
+      }
+    }
+    for (const control of controls) {
+      const bound = rebound.get(control.name);
+      if (bound === this.bindings.get(control.name)) {
+        continue;
+      }
+      const before = buttonsByWay(control, this.bindings);
+      this.bindings.set(control.name, bound);
+      const after = buttonsByWay(control, this.bindings);
+      const waiting: Map<ButtonCode, Unheard> =
+        this.unheard.get(control.name) ?? new Map();
+      for (const [way, codes] of after.entries()) {
+        for (const code of codes ?? []) {
+          if (devices.down.has(code) && before[way]?.includes(code) !== true) {
+            waiting.set(code, "held since bound");
+          }
+        }
+      }
+      this.unheard.set(control.name, waiting);
+    }
+  }
+
+  heard(control: AnyControl, devices: Sample): Sample {
+    const waiting = this.unheard.get(control.name);
+    if (waiting === undefined || waiting.size === 0) {
+      return devices;
+    }
+    const hears = (code: ButtonCode): boolean => !waiting.has(code);
+    return {
+      ...devices,
+      down: new Set(Array.from(devices.down).filter(hears)),
+      pressed: devices.pressed.filter(hears),
+      released: devices.released.filter(hears),
+    };
+  }
+}
 
 /** @internal The keys a stick keeps its two halves in. */
 export const halves = (name: string): readonly [x: string, y: string] => [
@@ -428,24 +512,26 @@ export const stickIn = (
 };
 
 /**
- * Returns what the controls say of one sample with an app's bindings, by
- * name, in the shape of a sample.
+ * Returns what the controls say of one sample, as the input stage reads them,
+ * by name, in the shape of a sample.
  *
  * @internal
  */
 export const controlsIn = (
   controls: readonly AnyControl[],
-  rebound: ReadonlyMap<string, unknown>,
-  devices: Sample
+  sampling: Sampling,
+  sample: Sample
 ): Changes => {
   const down = new Set<string>();
   const pressed: string[] = [];
   const released: string[] = [];
   const axes = new Map<string, number>();
+  const bound = sampling.bindings;
   for (const control of controls) {
+    const devices = sampling.heard(control, sample);
     switch (control.kind) {
       case "button": {
-        const state = buttonIn(devices, bindingsIn(control, rebound));
+        const state = buttonIn(devices, bindingsIn(control, bound));
         if (state.held) {
           down.add(control.name);
         }
@@ -458,14 +544,14 @@ export const controlsIn = (
         break;
       }
       case "axis": {
-        const value = axisIn(devices, bindingsIn(control, rebound));
+        const value = axisIn(devices, bindingsIn(control, bound));
         if (value !== 0) {
           axes.set(control.name, value);
         }
         break;
       }
       case "stick": {
-        const { x, y } = stickIn(devices, bindingsIn(control, rebound));
+        const { x, y } = stickIn(devices, bindingsIn(control, bound));
         const [kx, ky] = halves(control.name);
         if (x !== 0) {
           axes.set(kx, x);
@@ -596,13 +682,13 @@ export const facesInWorld = (
   const axis = (key: string): number => held.axes[key] ?? 0;
   return {
     ...devicesOf({ down, pressed, released, axis }),
-    button: (name) => ({
+    button: ({ name }) => ({
       held: down(name),
       pressed: pressed(name),
       released: released(name),
     }),
-    axis,
-    stick: (name) => {
+    axis: ({ name }) => axis(name),
+    stick: ({ name }) => {
       const [x, y] = halves(name);
       return { x: axis(x), y: axis(y) };
     },
@@ -610,19 +696,31 @@ export const facesInWorld = (
 };
 
 /**
- * The devices and the controls as one sample says them, each control with
- * the bindings it is given: what the input stage reads.
+ * The devices and the controls as one sample says them, each control read as
+ * `sampling` reads it: what the input stage reads.
  *
  * @internal
  */
-export const facesInSample = (devices: Sample): Faces => ({
+export const facesInSample = (devices: Sample, sampling: Sampling): Faces => ({
   ...devicesOf({
     down: (code) => devices.down.has(code),
     pressed: (code) => devices.pressed.includes(code),
     released: (code) => devices.released.includes(code),
     axis: (code) => devices.axes.get(code) ?? 0,
   }),
-  button: (_, bindings) => buttonIn(devices, bindings()),
-  axis: (_, bindings) => axisIn(devices, bindings()),
-  stick: (_, bindings) => stickIn(devices, bindings()),
+  button: (control) =>
+    buttonIn(
+      sampling.heard(control, devices),
+      bindingsIn(control, sampling.bindings)
+    ),
+  axis: (control) =>
+    axisIn(
+      sampling.heard(control, devices),
+      bindingsIn(control, sampling.bindings)
+    ),
+  stick: (control) =>
+    stickIn(
+      sampling.heard(control, devices),
+      bindingsIn(control, sampling.bindings)
+    ),
 });

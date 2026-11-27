@@ -55,9 +55,10 @@ export type Relation = RelationDef;
  * the second. `storage: "sparse"` keeps the component in a set of its own,
  * for one that is added and removed often or that few entities have.
  *
- * A component added or spawned bare, with no value, is all zeros. Give
- * `initial` to a component whose zeros are wrong, such as a size:
- * `{ initial: { x: 1, y: 1 } }`.
+ * A component added or spawned bare, with no value, is all zeros, but for
+ * each `json`, `ref` or `schema` field, which holds the initial value it was
+ * made with. Give `initial` to a component whose zeros are wrong, such as a
+ * size: `{ initial: { x: 1, y: 1 } }`.
  *
  * `requires` lists the components a spawn or an add of this one fills in
  * when the entity lacks them, each bare or with a value:

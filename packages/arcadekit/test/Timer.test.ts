@@ -29,8 +29,8 @@ const Log = Singleton.define(
   "tm/Log",
   {
     firing: Field.u8,
-    shots: Field.json<readonly number[]>(),
-    waves: Field.json<readonly number[]>(),
+    shots: Field.json<readonly number[]>([]),
+    waves: Field.json<readonly number[]>([]),
   },
   { firing: 0, shots: [], waves: [] }
 );

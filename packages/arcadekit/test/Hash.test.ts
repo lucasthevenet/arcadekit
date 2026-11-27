@@ -30,7 +30,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<JsonValue>(),
+  note: Field.json<JsonValue>(null),
 };
 const Body = Component.define("hash/Body", { x: Field.f32, y: Field.f32 });
 const Sheet = Component.define("hash/Sheet", kinds);
@@ -716,7 +716,7 @@ describe("the hash of an app's world", () => {
     commands.spawn(Body.of({ x: 0, y: random.next() }));
   });
   const hashes = Effect.fnUntraced(function* (
-    make: Effect.Effect<App.App, never>
+    make: Effect.Effect<App.Any<never>, never>
   ) {
     return yield* withApp(make, (app, world) =>
       Effect.gen(function* () {

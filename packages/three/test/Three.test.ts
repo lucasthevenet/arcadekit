@@ -1096,9 +1096,10 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
     [true, false],
     [true, true],
   ] as const)(
-    "draws ten thousand moving objects without one allocation per object per frame (smooth: %s, each of a colour of its own: %s)",
+    "allocates no more a frame to draw two thousand moving objects than to draw a thousand (smooth: %s, each of a colour of its own: %s)",
     ([smooth, colored]) =>
       Effect.gen(function* () {
+        const count = 1000;
         const Moving = Query.all(Position, Velocity).pipe(
           Query.writes(Position)
         );
@@ -1133,7 +1134,7 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
             transform,
             geometry,
             material,
-            capacity: 8192,
+            capacity: count,
             smooth,
             ...(colored ? { color: Color.Rgb } : {}),
           });
@@ -1152,10 +1153,11 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
           renderer
         );
         const random = makeRandom(5);
-        const count = 10_000;
         const rocks: Entity[] = [];
         const flatRocks: Entity[] = [];
-        for (let i = 0; i < count; i++) {
+        // A second crowd of the same mix, taken away once it is measured.
+        const more: Entity[] = [];
+        for (let i = 0; i < 2 * count; i++) {
           // Of every kind: an eighth each only placed, sized, turned, and
           // both, in three dimensions and in two.
           const flat = i % 8 >= 4;
@@ -1199,11 +1201,23 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
                 : Scale.of({ x: 2, y: 2, z: 2 })
             );
           }
-          (flat ? flatRocks : rocks).push(yield* hand.spawn(...parts));
+          const entity = yield* hand.spawn(...parts);
+          (i >= count ? more : flat ? flatRocks : rocks).push(entity);
         }
         const step = Effect.fnUntraced(function* () {
           yield* app.tick(1 / 60);
           yield* app.frame(0.5);
+        });
+        // How much the heap grows over one tick and one frame, many times: the
+        // middle one, since now and then the collector runs in between.
+        const growth = Effect.fnUntraced(function* () {
+          const grown: number[] = [];
+          for (let i = 0; i < 101; i++) {
+            const before = process.memoryUsage().heapUsed;
+            yield* step();
+            grown.push(process.memoryUsage().heapUsed - before);
+          }
+          return grown.toSorted((a, b) => a - b)[50]!;
         });
         const startedAt = [
           world.get(rocks[0]!, Position)!.x,
@@ -1219,18 +1233,15 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
         const attributes = meshes.map((mesh) => mesh.instanceMatrix);
         const buffers = attributes.map((attribute) => attribute.array);
         const ranges = attributes.map((attribute) => attribute.updateRanges[0]);
-        // How much the heap grew over one tick and one frame, many times: the
-        // middle one, since now and then the collector runs in between.
-        const grown: number[] = [];
-        for (let i = 0; i < 101; i++) {
-          const before = process.memoryUsage().heapUsed;
-          yield* step();
-          grown.push(process.memoryUsage().heapUsed - before);
+        const twice = yield* growth();
+        for (const entity of more) {
+          yield* hand.despawn(entity);
         }
-        const typical = grown.toSorted((a, b) => a - b)[50]!;
+        const once = yield* growth();
         // The smallest thing that can be allocated, a number, is 12 bytes or
-        // more. One of those per object would be 120,000 bytes a frame.
-        expect(typical).toBeLessThan(count * 4);
+        // more: one per object would be 12,000 bytes a frame more for the
+        // larger crowd.
+        expect(twice - once).toBeLessThan(count);
         // And what each draws into is what it drew into: the same buffer, the
         // same attribute, the same range.
         for (const [k, mesh] of meshes.entries()) {
@@ -1239,7 +1250,7 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
           expect(mesh.instanceMatrix.updateRanges[0]).toBe(ranges[k]);
         }
         // They did move, and they were drawn where they are.
-        expect(renderer.frames).toBe(301);
+        expect(renderer.frames).toBe(402);
         expect(renderer.counts).toEqual([count / 2, count / 2]);
         // All the way to the tick they are at, which is where both draw them.
         yield* app.frame(1);

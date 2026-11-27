@@ -40,8 +40,8 @@ const Sheet = Component.define("policy/Sheet", {
   level: Field.u16,
   flags: Field.u8,
   rival: Field.entity,
-  name: Field.json<string>(),
-  born: Field.schema(Schema.Date),
+  name: Field.json<string>(""),
+  born: Field.schema(Schema.Date, new Date(0)),
   cache: Field.transient<{ readonly seen: number }>(),
 });
 const Burning = Component.define(

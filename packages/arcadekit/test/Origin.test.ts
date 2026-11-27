@@ -120,7 +120,7 @@ describe("who issued an action", () => {
         },
       ]);
       // As bytes and back, as a log that is kept would be.
-      const bytes = unwrap(Replay.encode(recorded.recording));
+      const bytes = yield* Replay.encode(recorded.recording);
       const read = Replay.decode(bytes);
       expect(read).toEqual(Exit.succeed(recorded.recording));
       assert(Exit.isSuccess(read));
