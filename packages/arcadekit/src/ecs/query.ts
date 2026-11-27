@@ -211,8 +211,11 @@ const NATIVE_SCAN_ROWS_PER_EXCEPTION = 64;
 
 const ROW_RANGE = 4_294_967_296; // 2^32: keys are `slot * ROW_RANGE + row`
 
-/** What `each` hands out, and the loop's position, for one level of iteration. */
-interface Loop {
+/**
+ * What `each` hands out, and the loop's position, for one level of iteration.
+ * @internal
+ */
+export interface Loop {
   readonly accessors: Accessor[];
   /** For each term, what the callback of `each` receives. */
   readonly fields: (object | undefined)[];
@@ -229,7 +232,22 @@ interface Loop {
   table: Float64Array | undefined;
   /** For each sparse term, the same for its set, identified by its members array. */
   readonly sets: (Uint32Array | undefined)[];
+  /** Whether the world holds it, to retract its accessors when its entities change. */
+  handedOut: boolean;
 }
+
+/**
+ * Retracts a loop's accessors, and has its next visit bind them again.
+ * @internal
+ */
+export const retract = (loop: Loop): void => {
+  for (const accessor of loop.accessors) {
+    accessor.retract();
+  }
+  loop.table = undefined;
+  loop.sets.length = 0;
+  loop.handedOut = false;
+};
 
 /** Scratch state for one level of nested iteration over the same view. */
 interface Frame {
@@ -540,6 +558,7 @@ export class QueryView<D extends Terms = Terms> {
       rows,
       table: undefined,
       sets: [],
+      handedOut: false,
     };
   }
 
@@ -953,7 +972,10 @@ export class QueryView<D extends Terms = Terms> {
    *
    * The loop reuses the accessors from one call to the next. Read and write
    * through them inside the callback, and don't keep them. An assignment
-   * throws for a term the query only reads, and in a frozen world.
+   * throws for a term the query only reads, and in a frozen world. An
+   * accessor kept past a change of the world's entities (a spawn, a despawn,
+   * an add or a remove, and a restore or a rewind) throws when it is read
+   * or written.
    */
   each(fn: (...args: [...AccessorsOf<D>, entity: Entity]) => void): void {
     this._each(fn, undefined);
@@ -968,6 +990,9 @@ export class QueryView<D extends Terms = Terms> {
     try {
       const f = fn as Callback;
       const loop = (frame.loop ??= this.makeLoop(frame.frozen));
+      if (!loop.handedOut) {
+        this.world._handOut(loop);
+      }
       const acc = loop.accessors;
       // Sparse columns are replaced when a set grows, and its members'
       // array with them: an accessor is pointed at them again only then.
@@ -1354,7 +1379,8 @@ export class QueryView<D extends Terms = Terms> {
    *
    * The accessors are the view's own, as in `each`: they read and write the
    * entity until the world's entities change, when the commands are applied.
-   * Ask for it again then, as a system does every tick.
+   * After that, reading or writing one throws. Ask for it again then, as a
+   * system does every tick.
    */
   single(): [...AccessorsOf<D>, entity: Entity] {
     if (this.watching) {

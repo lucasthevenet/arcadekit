@@ -55,6 +55,20 @@ const query = <const D extends Terms>(
     terms.filter((def) => more.readDefs?.includes(def) !== true)
   );
 
+/** What reading or writing a field throws through an accessor kept after the world's entities changed. */
+const retracted = (name: string, field: string): string =>
+  `"${name}.${field}" was used through an accessor that each() or single() handed out before the world's entities last changed. A spawn, a despawn, an add or a remove, and a restore or a rewind, can move an entity to another row, and the accessor would read and write another entity's. Read the entity again with world.get(entity, ${name.split("/").pop()}), or ask the query again. To change the world's entities while you hold an accessor, queue the change on Commands.`;
+
+/** The message of what a call throws, or what says it threw nothing. */
+const refusal = (call: () => unknown): string => {
+  try {
+    call();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "nothing was refused";
+};
+
 describe("entities and components", () => {
   it("spawns, reads, writes and despawns", () => {
     const world = new World();
@@ -1368,6 +1382,98 @@ describe("what each hands its callback", () => {
       }
     }
   });
+
+  // Every way the world's entities change. Add a new one here.
+  const changes: readonly (readonly [
+    string,
+    (world: World, other: Entity) => void,
+  ])[] = [
+    ["a spawn", (world) => void world.spawn(Health.of({ hp: 9 }))],
+    ["a despawn", (world, other) => void world.despawn(other)],
+    ["an add", (world, other) => void world.add(other, Enemy)],
+    ["a remove", (world, other) => void world.remove(other, Health)],
+    [
+      "commands that spawn",
+      (world) => {
+        const commands = new CommandBuffer(world);
+        commands.spawn(Health.of({ hp: 9 }));
+        commands.apply();
+      },
+    ],
+    ["a restore", (world) => world.restore(world.snapshot())],
+    ["a rewind", (world) => world._rewind(world._capture(), [])],
+  ];
+
+  for (const def of [Every, EverySparse]) {
+    it.each(changes)(
+      `are refused once the world's entities changed, by %s (${def.storage})`,
+      (_, change) => {
+        const world = new World();
+        const other = world.spawn(Health.of({ hp: 0 }), def.of(valueOf(0)));
+        world.spawn(Health.of({ hp: 1 }), def.of(valueOf(1)));
+        const player = world.spawn(
+          Health.of({ hp: 2 }),
+          def.of(valueOf(2)),
+          Stunned
+        );
+        const Players = query([Health, def], [Stunned]);
+        const [health, every] = world.view(Players).single();
+        let thawed: Record<string, unknown> = {};
+        let frozen: Record<string, unknown> = {};
+        world.view(query([def])).each((one, entity) => {
+          if (entity === player) {
+            thawed = one;
+          }
+        });
+        world.freeze();
+        world.view(query([def])).each((one, entity) => {
+          if (entity === player) {
+            frozen = one;
+          }
+        });
+        world.thaw();
+
+        change(world, other);
+        const state = () => [
+          world.hash(),
+          world
+            .view(query([def]))
+            .entities()
+            .map((entity) => [
+              entity,
+              world.get(entity, Health),
+              world.get(entity, def),
+            ]),
+        ];
+        const before = state();
+        expect(() => health.hp).toThrow(retracted("st/Health", "hp"));
+        expect(() => {
+          health.hp = 7;
+        }).toThrow(retracted("st/Health", "hp"));
+        for (const name of names) {
+          const message = retracted(def.name, name);
+          for (const accessor of [every as Record<string, unknown>, thawed]) {
+            expect(() => accessor[name]).toThrow(message);
+            expect(() => {
+              accessor[name] = valueOf(7)[name];
+            }).toThrow(message);
+          }
+          expect(() => frozen[name]).toThrow(message);
+        }
+        expect(state()).toEqual(before);
+
+        const [again, , entity] = world.view(Players).single();
+        expect([entity, again.hp]).toEqual([player, 2]);
+        again.hp = 20;
+        expect(world.get(player, Health)).toEqual({ hp: 20 });
+        const seen: number[] = [];
+        world.view(query([Health, def])).each((one) => {
+          seen.push(one.hp);
+        });
+        expect(seen).toContain(20);
+      }
+    );
+  }
 });
 
 describe("structural changes during iteration", () => {
@@ -1597,8 +1703,24 @@ describe("randomized comparison against a simple model", () => {
       const model = new Map<Entity, Map<number, Record<string, number>>>();
       const dead: Entity[] = [];
       const checks = makeChecks();
+      // Every step changes the world's entities, so an accessor kept across
+      // one refuses, and the loop that handed it out binds again.
+      const positions = world.view(query([Position]));
+      const keep = (step: number): { readonly x: number } | undefined => {
+        let kept: { readonly x: number } | undefined;
+        let wrong = 0;
+        positions.each((position, entity) => {
+          if (position.x !== model.get(entity)!.get(Position.id)!.x) {
+            wrong++;
+          }
+          kept = position;
+        });
+        checks.check(`step ${step}: positions read`, wrong, 0);
+        return kept;
+      };
 
       for (let step = 0; step < 4000; step++) {
+        const kept = step % 20 === 0 ? keep(step) : undefined;
         const roll = rnd();
         const live = [...model.keys()];
         const pick =
@@ -1643,6 +1765,13 @@ describe("randomized comparison against a simple model", () => {
             `step ${step}: removed ${def.name}`,
             world.remove(pick, def),
             model.get(pick)!.delete(def.id)
+          );
+        }
+        if (kept !== undefined) {
+          checks.check(
+            `step ${step}: a kept accessor read`,
+            refusal(() => kept.x),
+            retracted("st/Position", "x")
           );
         }
       }

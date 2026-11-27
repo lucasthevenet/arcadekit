@@ -6,7 +6,7 @@
 - the Oxlint rules `arcadekit/no-page`, which keeps what only a page has in `src/browser/`, `arcadekit/no-code-from-text`, `arcadekit/top-level-classes`, which keeps a class out of a function, `arcadekit/id-casts`, which keeps the conversions of an id in `src/ecs/component.ts`, `arcadekit/no-outside-state`, which keeps what the code of the tick changes in the world, `arcadekit/no-unused-internal`, which keeps what is `@internal` out of public signatures, public exports and an entry's own file, members included, and refuses one no source uses, `arcadekit/names`, which holds the names of a module's types and the tags of its errors, and `arcadekit/no-run-in-tests`, which keeps a test of a package and its helpers from running an Effect by hand;
 - the Oxlint rule `arcadekit/no-empty-payload`, which has an action or an event with no payload defined with no schema, not `Schema.Struct({})`, in the sources, the benchmarks, the examples and the code of the site's pages;
 - `test/Policy.test.ts` plays a game where making code from text is forbidden;
-- the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins;
+- the lists of writers in `test/Transaction.test.ts`, `test/Changes.test.ts` and `test/Frame.test.ts`, which every new way to write joins, and the list of changes of the world's entities in `test/Storage.test.ts`, after each of which a kept accessor throws;
 - a frozen world, which refuses a change from the frame and input stages;
 - `Drift.Drifted`, which stops peers whose worlds have come apart;
 - `bench:compare`, which fails on a storage core that got slower, and with `--suite app` on an app's stages that did, and `@arcadekit/three`'s, on loops that draw that did;

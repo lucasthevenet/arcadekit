@@ -39,7 +39,7 @@ Both loops below work with every query, and visit entities in the same order: ta
 
 ## Choose how to loop
 
-`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default.
+`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default. An accessor belongs to the loop and reads and writes the entity the loop is at, so use it inside the function and keep the entity's id instead. One kept past a spawn, a despawn, an add or a remove, which commands make when they are applied, throws when it is read or written.
 
 `eachChunk` passes the raw columns and a range of rows. It is three to four times faster than `each`. Use it for the few systems where speed matters.
 
@@ -223,7 +223,7 @@ const Wrap = System.tick("game/Wrap", function* () {
 ```
 
 - It throws when the query matches no entity, or more than one, and the error names the query and how many it matched. A game that may have none checks `count()` first.
-- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own: read them in the system that asked, and ask again in the next.
+- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own, and read and write the entity until the world's entities change, when the system's commands are applied: read them in the system that asked, and ask again in the next. After the change, reading or writing one throws.
 - A change query throws, since it has no one entity.
 - A tag is not a term, since it has no data: `Query.all(Position, Player)` doesn't compile. Require it with `Query.with`, as above, or take it as `Query.maybe(Player)` to be told whether an entity has it.
 
