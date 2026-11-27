@@ -24,6 +24,7 @@ import {
   Driver,
   Event,
   Field,
+  Grid,
   Plugin,
   Query,
   Random,
@@ -33,6 +34,7 @@ import {
   Sound,
   State,
   System,
+  Test,
   Time,
   Timeline,
   Timer,
@@ -1229,6 +1231,9 @@ describe("a game saved to a slot", () => {
 const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
 const Grab = Action.define("sv/Grab", Schema.Struct({}));
 const Finish = Action.define("sv/Finish", Schema.Struct({}));
+const finish = Action.handler(Finish, function* () {
+  (yield* Save.Asked.emits).emit({ slot: "finished" });
+});
 const Levels = App.define({
   systems: [
     // The level ends with the third coin, and the rules ask to keep it.
@@ -1246,8 +1251,31 @@ const Levels = App.define({
     Action.handler(Grab, function* () {
       (yield* Coins.writes).got++;
     }),
-    Action.handler(Finish, function* () {
-      (yield* Save.Asked.emits).emit({ slot: "finished" });
+    finish,
+  ],
+});
+
+const Finished = Save.slot("finished");
+const Status = View.define<Save.SlotStatus>("sv/Status", { _tag: "Off" });
+const Small = Singleton.define(
+  "sv/Small",
+  { tiles: Grid.tiles(2, 2) },
+  { tiles: Grid.fill(2, 2) }
+);
+const Spoil = Action.define("sv/Spoil", Schema.Struct({}));
+const Told = App.define({
+  plugins: [View.plugin],
+  systems: [
+    View.publish(Status, function* () {
+      return yield* Finished;
+    }),
+  ],
+  handlers: [
+    finish,
+    // A grid of another size is a save that can't be taken.
+    Action.handler(Spoil, function* () {
+      (yield* Small.writes).tiles = Grid.fill(3, 3);
+      (yield* Save.Asked.emits).emit({ slot: Finished.name });
     }),
   ],
 });
@@ -1372,4 +1400,145 @@ describe("a save the rules ask for", () => {
         ]);
       }).pipe(Effect.scoped)
   );
+
+  it.effect(
+    "has its slot's status told to the game's UI: off, unasked, failed until a later ask keeps it, and off once nothing keeps the saves",
+    () => {
+      let full = true;
+      const slots = Save.makeMemory();
+      const store: Save.StoreShape = {
+        ...slots,
+        set: (slot, bytes) =>
+          full
+            ? Effect.fail(
+                new Save.StoreFailed({ slot, message: "It is full." })
+              )
+            : slots.set(slot, bytes),
+      };
+      return Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
+        });
+        yield* game.step();
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* Save.autosave(game.app);
+            yield* game.step();
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+            full = false;
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+          })
+        );
+        yield* game.step();
+        expect(told).toEqual([
+          { _tag: "Off" },
+          { _tag: "Unasked" },
+          {
+            _tag: "Failed",
+            error: new Save.StoreFailed({
+              slot: "finished",
+              message: "It is full.",
+            }),
+          },
+          { _tag: "Saved" },
+          { _tag: "Off" },
+        ]);
+        expect(yield* slots.slots).toEqual(["finished"]);
+      }).pipe(
+        Effect.provide(Layer.merge(Save.layer(store), Logger.layer([]))),
+        Effect.scoped
+      );
+    }
+  );
+
+  it.effect("that can't be taken is told as Save.Refused", () => {
+    const slots = Save.makeMemory();
+    return Effect.gen(function* () {
+      const game = yield* Test.make(Told);
+      const told: Save.SlotStatus[] = [];
+      game.ui.subscribe(Status, (status) => {
+        told.push(status);
+      });
+      yield* Save.autosave(game.app);
+      yield* game.app.dispatch(Spoil, {});
+      yield* game.step();
+      expect(told.at(-1)).toEqual({
+        _tag: "Failed",
+        error: new Save.Refused({
+          message: `"sv/Small.tiles" holds a value its codec refuses: a map of 3 by 3 is in a field of 2 by 2`,
+        }),
+      });
+      expect(yield* slots.slots).toEqual([]);
+    }).pipe(
+      Effect.provide(Layer.merge(Save.layer(slots), Logger.layer([]))),
+      Effect.scoped
+    );
+  });
+
+  it.effect(
+    "that a store of the game's own throws for is told as Save.StoreFailed",
+    () =>
+      Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
+        });
+        yield* Save.autosave(game.app);
+        yield* game.app.dispatch(Finish, {});
+        yield* game.step();
+        expect(told.at(-1)).toEqual({
+          _tag: "Failed",
+          error: new Save.StoreFailed({
+            slot: "finished",
+            message: "The quota is exceeded.",
+          }),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Save.layer({
+              ...Save.makeMemory(),
+              set: () =>
+                Effect.sync(() => {
+                  throw new Error("The quota is exceeded.");
+                }),
+            }),
+            Logger.layer([])
+          )
+        ),
+        Effect.scoped
+      )
+  );
+
+  it("whose slot's status is not for the code of the tick to read", () => {
+    const Reads = System.tick(
+      "sv/Reads",
+      // @ts-expect-error what the store did is outside the world, which a tick reads
+      function* () {
+        yield* Finished;
+      }
+    );
+    expect(Reads.name).toBe("sv/Reads");
+  });
+
+  it("has a status that Save.match is given every case of", () => {
+    expect(
+      Save.match(
+        { _tag: "Saved" },
+        {
+          Off: () => "off",
+          Unasked: () => "unasked",
+          Saved: () => "saved",
+          Failed: ({ error }) => error.message,
+        }
+      )
+    ).toBe("saved");
+    // @ts-expect-error a status left out is a case that doesn't compile
+    Save.match({ Off: () => "", Unasked: () => "", Saved: () => "" });
+  });
 });

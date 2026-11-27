@@ -33,18 +33,21 @@ import {
   Context,
   Data,
   Effect,
+  Effectable,
   Exit,
   Layer,
   Option,
   Schema,
 } from "effect";
 import type { Scope } from "effect";
+import { dual } from "effect/Function";
 
 import type * as App from "./App.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
 import { partsOf } from "./internal/parts.ts";
+import * as System from "./System.ts";
 
 /**
  * A game captured between two ticks, which `Save.make(app)` makes: the game's
@@ -417,8 +420,9 @@ export const Asked = Event.define(
  * - The save is taken between two ticks, of the game as the tick that asked
  *   left it, and written before the next tick runs.
  * - A save that can't be taken, or a slot the store can't keep, is logged as
- *   an error with what went wrong, and the game goes on. The next ask tries
- *   again.
+ *   an error with what went wrong, and the game goes on. The slot's status,
+ *   which `yield*` of `Save.slot(name)` returns, says so to the game's UI
+ *   until a later ask keeps it.
  *
  * @category Running
  */
@@ -432,8 +436,9 @@ export const autosave = (
       );
     }
     const store = yield* Store;
-    const { after, events } = partsOf(app);
+    const { after, events, locals } = partsOf(app);
     const asked = events.handle(Asked);
+    const autosaves = locals.get(Autosaves);
     const step = Effect.fnUntraced(function* () {
       const slots = [...new Set(asked.read().map(({ slot }) => slot))];
       if (slots.length === 0) {
@@ -441,24 +446,188 @@ export const autosave = (
       }
       const taken = yield* Effect.exit(make(app));
       if (Exit.isFailure(taken)) {
+        const error = errorOf(
+          taken.cause,
+          (message) => new Refused({ message })
+        );
+        for (const slot of slots) {
+          autosaves.slots.set(slot, { _tag: "Failed", error });
+        }
         return yield* Effect.logError(
-          `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(Cause.squash(taken.cause))}`
+          `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(error)}`
         );
       }
       const bytes = encode(taken.value);
       for (const slot of slots) {
         const kept = yield* Effect.exit(store.set(slot, bytes));
-        if (Exit.isFailure(kept)) {
-          yield* Effect.logError(
-            `Save.autosave could not keep the save the game asked for in "${slot}": ${said(Cause.squash(kept.cause))}`
-          );
+        if (Exit.isSuccess(kept)) {
+          autosaves.slots.set(slot, SAVED);
+          continue;
         }
+        const error = errorOf(
+          kept.cause,
+          (message) => new StoreFailed({ slot, message })
+        );
+        autosaves.slots.set(slot, { _tag: "Failed", error });
+        yield* Effect.logError(
+          `Save.autosave could not keep the save the game asked for in "${slot}": ${said(error)}`
+        );
       }
     });
     after.add(step);
+    autosaves.keeping++;
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         after.delete(step);
+        if (--autosaves.keeping === 0) {
+          autosaves.slots.clear();
+        }
       })
     );
   });
+
+// A store of the game's own may throw where it should fail, and its slot
+// isn't kept either way.
+const errorOf = <E>(cause: Cause.Cause<E>, died: (message: string) => E): E =>
+  Option.getOrElse(Cause.findErrorOption(cause), () =>
+    died(said(Cause.squash(cause)))
+  );
+
+/**
+ * What `Save.autosave` did with a slot of an app, which `yield*` of
+ * `Save.slot(name)` returns in a frame or an input system.
+ *
+ * @category Models
+ */
+export type SlotStatus =
+  /** No `Save.autosave` keeps the app's saves, so an ask keeps nothing. */
+  | { readonly _tag: "Off" }
+  /** The game hasn't asked for a save in the slot since `Save.autosave` began. */
+  | { readonly _tag: "Unasked" }
+  /** The slot holds the save the game last asked for in it. */
+  | { readonly _tag: "Saved" }
+  /**
+   * The slot doesn't hold the save the game last asked for in it: `Save.Refused`
+   * when the save couldn't be taken, `Save.StoreFailed` when the store couldn't
+   * keep it. It is logged as well.
+   */
+  | { readonly _tag: "Failed"; readonly error: Refused | StoreFailed };
+
+/**
+ * What `Save.match` does with each status of a slot: a function for each
+ * `_tag`, given the status of that tag.
+ *
+ * @category Type-level
+ */
+export type SlotStatusCases<R> = {
+  readonly [K in SlotStatus["_tag"]]: (
+    status: Extract<SlotStatus, { readonly _tag: K }>
+  ) => R;
+};
+
+/**
+ * Returns what the case of a slot's status returns, one function for each of
+ * the four:
+ *
+ *   const label = Save.match(yield* Auto, {
+ *     Off: () => "",
+ *     Unasked: () => "",
+ *     Saved: () => "Saved",
+ *     Failed: ({ error }) => `Not saved: ${error.message}`,
+ *   })
+ *
+ * A status that a later version adds is a case that doesn't compile until it
+ * is given.
+ *
+ * @category Utilities
+ */
+export const match: {
+  <R>(cases: SlotStatusCases<R>): (status: SlotStatus) => R;
+  <R>(status: SlotStatus, cases: SlotStatusCases<R>): R;
+} = dual(2, <R>(status: SlotStatus, cases: SlotStatusCases<R>): R => {
+  switch (status._tag) {
+    case "Off": {
+      return cases.Off(status);
+    }
+    case "Unasked": {
+      return cases.Unasked(status);
+    }
+    case "Saved": {
+      return cases.Saved(status);
+    }
+    case "Failed": {
+      return cases.Failed(status);
+    }
+    default: {
+      const unknown: never = status;
+      return unknown;
+    }
+  }
+});
+
+const OFF: SlotStatus = { _tag: "Off" };
+const UNASKED: SlotStatus = { _tag: "Unasked" };
+const SAVED: SlotStatus = { _tag: "Saved" };
+
+const Autosaves = System.local(() => ({
+  keeping: 0,
+  slots: new Map<string, SlotStatus>(),
+}));
+
+/**
+ * A slot of `Save.Store`, by its name, as `Save.slot` makes it. It is an
+ * Effect, so in a frame or an input system `yield*` returns its status in the
+ * app.
+ *
+ * @category Models
+ */
+export class Slot extends Effectable.Class<SlotStatus, never, System.Locals> {
+  private effect: Effect.Effect<SlotStatus, never, System.Locals> | undefined;
+
+  constructor(
+    /** The slot's name, which `Save.Asked`, `Save.write` and `Save.read` take. */
+    readonly name: string
+  ) {
+    super();
+  }
+
+  asEffect(): Effect.Effect<SlotStatus, never, System.Locals> {
+    return (this.effect ??= Effect.map(Autosaves, (autosaves) =>
+      autosaves.keeping === 0
+        ? OFF
+        : (autosaves.slots.get(this.name) ?? UNASKED)
+    ));
+  }
+}
+
+/**
+ * Names a slot of `Save.Store`, whose status a frame or an input system reads
+ * to tell the player whether the game is saved:
+ *
+ *   const Auto = Save.slot("auto")
+ *
+ *   const Every = System.tick("game/Autosave", function* () {
+ *     (yield* Save.Asked.emits).emit({ slot: Auto.name })
+ *   }).pipe(Timer.every(60))
+ *
+ *   const ShowSaved = View.publish(Saved, function* () {
+ *     return Save.match(yield* Auto, {
+ *       Off: () => "",
+ *       Unasked: () => "",
+ *       Saved: () => "Saved",
+ *       Failed: ({ error }) => `Not saved: ${error.message}`,
+ *     })
+ *   })
+ *
+ * **Details**
+ *
+ * - The status says what `Save.autosave` did. `Save.write` doesn't change it.
+ * - It is outside the world, as a setting is: the game's hash, log and save
+ *   are the same whatever the store did, and a load or a rewind leaves it as
+ *   it is. Each app has its own.
+ * - A system of the tick, an action's handler and a plugin's setup that yield
+ *   it don't compile, since a replay has no store.
+ *
+ * @category Constructors
+ */
+export const slot = (name: string): Slot => new Slot(name);
