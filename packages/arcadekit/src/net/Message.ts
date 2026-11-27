@@ -18,7 +18,7 @@
  * agrees on before the game begins, is an `Aside`. It goes as bytes too,
  * which a relay passes on as it passes on a message.
  */
-import { Cause, Data, Exit, Schema } from "effect";
+import { Cause, Data, Effect, Exit, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -193,12 +193,13 @@ const invalid = (
  */
 export const encode = (
   message: Message
-): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
-  const bytes = Schema.encodeExit(codec)(message);
-  return Exit.isFailure(bytes)
-    ? Exit.fail(invalid("not a message", bytes.cause))
-    : Exit.succeed(bytes.value.slice());
-};
+): Effect.Effect<Uint8Array<ArrayBuffer>, Invalid> =>
+  Effect.suspend(() => {
+    const bytes = Schema.encodeExit(codec)(message);
+    return Exit.isFailure(bytes)
+      ? Exit.fail(invalid("not a message", bytes.cause))
+      : Exit.succeed(bytes.value.slice());
+  });
 
 /**
  * Decodes a message from bytes, and fails with `Message.Invalid`,
@@ -223,12 +224,13 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Message, Invalid> =>
  */
 export const encodeAside = (
   aside: Aside
-): Exit.Exit<Uint8Array<ArrayBuffer>, Invalid> => {
-  const bytes = Schema.encodeExit(asideCodec)(aside);
-  return Exit.isFailure(bytes)
-    ? Exit.fail(invalid("not an aside", bytes.cause))
-    : Exit.succeed(bytes.value.slice());
-};
+): Effect.Effect<Uint8Array<ArrayBuffer>, Invalid> =>
+  Effect.suspend(() => {
+    const bytes = Schema.encodeExit(asideCodec)(aside);
+    return Exit.isFailure(bytes)
+      ? Exit.fail(invalid("not an aside", bytes.cause))
+      : Exit.succeed(bytes.value.slice());
+  });
 
 /**
  * Decodes an aside from bytes, and fails with `Message.Invalid`,

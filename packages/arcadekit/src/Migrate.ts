@@ -25,25 +25,22 @@
  * fails with `"migration failed"`, so a migration that doesn't match its save
  * says so.
  */
-import { Exit, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 
 import * as Action from "./Action.ts";
 import { makeColumn } from "./ecs/column.ts";
 import type { Column } from "./ecs/column.ts";
 import { idOf, isEntity } from "./ecs/component.ts";
 import type { ComponentDef, FieldKind, ValueOf } from "./ecs/component.ts";
-import { readSnapshot, writeSnapshot } from "./ecs/contents.ts";
 import type {
   SnapshotComponent,
   SnapshotContents,
   SnapshotTable,
 } from "./ecs/contents.ts";
 import { renameInChanges } from "./ecs/query.ts";
-import { SnapshotError } from "./ecs/snapshot.ts";
 import * as Event from "./Event.ts";
-import { VISITS, VisitsData, loading } from "./internal/save.ts";
-import { LoadRefused } from "./Save.ts";
-import type { Save } from "./Save.ts";
+import { VISITS, VisitsData, migrated } from "./internal/save.ts";
+import type { LoadRefused, Save } from "./Save.ts";
 import type * as State from "./State.ts";
 
 /** The field types that hold numbers, in a typed array. */
@@ -623,12 +620,6 @@ export const step = (
   migrate: (save: Contents) => void
 ): Migration => ({ from, migrate });
 
-const refuse = (
-  problem: LoadRefused["problem"],
-  message: string
-): Exit.Exit<never, LoadRefused> =>
-  Exit.fail(new LoadRefused({ problem, message }));
-
 /**
  * Migrates a save to a version of the game, one step at a time, as a game's
  * `migrations` do when it loads the save. A save already at that version is
@@ -645,53 +636,5 @@ export const migrate = (
   save: Save,
   version: number,
   migrations: readonly Migration[]
-): Exit.Exit<Save, LoadRefused> => {
-  if (save.version === version) {
-    return Exit.succeed(save);
-  }
-  if (save.version > version) {
-    return refuse(
-      "newer version",
-      `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
-    );
-  }
-  let contents: Contents;
-  try {
-    contents = new Contents(readSnapshot(save.world));
-  } catch (error) {
-    if (error instanceof SnapshotError) {
-      return refuse(loading(error), error.message);
-    }
-    throw error;
-  }
-  for (let from = save.version; from < version; from++) {
-    const one = migrations.find((migration) => migration.from === from);
-    if (one === undefined) {
-      return refuse(
-        "no migration",
-        `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
-      );
-    }
-    try {
-      one.migrate(contents);
-    } catch (error) {
-      return refuse(
-        "migration failed",
-        `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-  try {
-    return Exit.succeed({ version, world: writeSnapshot(contents.world) });
-  } catch (error) {
-    if (!(error instanceof SnapshotError)) {
-      throw error;
-    }
-    return error.problem === "cannot be saved"
-      ? refuse(
-          "migration failed",
-          `The migrations from version ${save.version} to version ${version} left a world that can't be written back: ${error.message}`
-        )
-      : refuse(loading(error), error.message);
-  }
-};
+): Effect.Effect<Save, LoadRefused> =>
+  Effect.suspend(() => migrated(save, version, migrations));
