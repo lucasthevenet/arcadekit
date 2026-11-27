@@ -1245,6 +1245,22 @@ describe("a level's assets", () => {
         expect(log).toEqual(["open /forest.png", "close /forest.png"]);
       })
   );
+
+  it("has a status that Assets.match is given every case of, first or last", () => {
+    const cases = {
+      Absent: () => "absent",
+      Loading: () => "loading",
+      Ready: ({ assets }: { readonly assets: { readonly title: string } }) =>
+        assets.title,
+      Failed: ({ error }: { readonly error: Assets.Failed }) => error.message,
+    };
+    expect(
+      Assets.match({ _tag: "Ready", assets: { title: "Forest" } }, cases)
+    ).toBe("Forest");
+    expect(Assets.match(cases)({ _tag: "Loading" })).toBe("loading");
+    // @ts-expect-error a status left out is a case that doesn't compile
+    Assets.match({ Absent: () => "", Loading: () => "", Ready: () => "" });
+  });
 });
 
 describe("levels as data", () => {

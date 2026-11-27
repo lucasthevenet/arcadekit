@@ -47,7 +47,6 @@ import {
   Schema,
   Scope,
 } from "effect";
-import { dual } from "effect/Function";
 
 import * as Action from "./Action.ts";
 import * as Event from "./Event.ts";
@@ -275,19 +274,26 @@ export type Loaded<B extends Entries> = {
  *
  * @category Models
  */
-export type Status<A> =
+export type Status<A> = Data.TaggedEnum<{
   /** No one holds it. */
-  | { readonly _tag: "Absent" }
+  Absent: {};
   /** It is loading. */
-  | { readonly _tag: "Loading" }
+  Loading: {};
   /** It is loaded, and `assets` holds each asset under its name. */
-  | { readonly _tag: "Ready"; readonly assets: A }
+  Ready: { readonly assets: A };
   /**
    * It couldn't be loaded, which is logged once. Nothing that did load is
    * kept. It is loaded again when it is next held after every holder has
    * dropped it.
    */
-  | { readonly _tag: "Failed"; readonly error: Failed };
+  Failed: { readonly error: Failed };
+}>;
+
+interface StatusOf extends Data.TaggedEnum.WithGenerics<1> {
+  readonly taggedEnum: Status<this["A"]>;
+}
+
+const Status = Data.taggedEnum<StatusOf>();
 
 /**
  * What `Assets.match` does with each status of a bundle: a function for each
@@ -320,29 +326,10 @@ export type StatusCases<A, R> = {
 export const match: {
   <A, R>(cases: StatusCases<A, R>): (status: Status<A>) => R;
   <A, R>(status: Status<A>, cases: StatusCases<A, R>): R;
-} = dual(2, <A, R>(status: Status<A>, cases: StatusCases<A, R>): R => {
-  switch (status._tag) {
-    case "Absent": {
-      return cases.Absent(status);
-    }
-    case "Loading": {
-      return cases.Loading(status);
-    }
-    case "Ready": {
-      return cases.Ready(status);
-    }
-    case "Failed": {
-      return cases.Failed(status);
-    }
-    default: {
-      const unknown: never = status;
-      return unknown;
-    }
-  }
-});
+} = Status.$match;
 
-const ABSENT: Status<never> = { _tag: "Absent" };
-const LOADING: Status<never> = { _tag: "Loading" };
+const ABSENT = Status.Absent();
+const LOADING = Status.Loading();
 
 /**
  * Assets that are loaded and released together, such as a level's or a menu's.
@@ -613,7 +600,7 @@ const storeLayer = Layer.effect(
         Effect.flatMap(
           loadEach(bundle, (asset) => RcMap.get(values, asset)),
           (assets) => {
-            entry.status = { _tag: "Ready", assets };
+            entry.status = Status.Ready({ assets });
             return Effect.never;
           }
         )
@@ -624,13 +611,12 @@ const storeLayer = Layer.effect(
             return Effect.void;
           }
           const error = Cause.squash(cause);
-          entry.status = {
-            _tag: "Failed",
+          entry.status = Status.Failed({
             error:
               error instanceof Failed
                 ? error
                 : new Failed({ url: "", message: describe(error) }),
-          };
+          });
           return Effect.logError(
             `The assets "${bundle.name}" could not be loaded`,
             cause
