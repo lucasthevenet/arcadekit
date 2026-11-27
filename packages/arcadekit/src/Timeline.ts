@@ -173,8 +173,16 @@ export const rewind = (
     between(app, "rewind", "A game is put back between ticks.");
     const again = options?.again === true;
     putBack(app, moment, again);
-    // A game put back to run the same ticks again has not gone anywhere yet.
-    return again ? Effect.void : moved(partsOf(app));
+    if (again) {
+      // A game put back to run the same ticks again has not gone anywhere yet.
+      return Effect.void;
+    }
+    const parts = partsOf(app);
+    const turns = kept.get(parts.world);
+    if (turns !== undefined) {
+      turns.ahead.length = 0;
+    }
+    return moved(parts);
   });
 
 /** Puts a game back to a moment, between ticks, as `rewind` does. */
@@ -312,7 +320,9 @@ class Turns {
   /**
    * The game has moved, by a tick, a dispatched action, a load or a rewind:
    * it goes where the rules asked, or, for a turn of moves from outside, the
-   * game as it stood before the turn is kept to go back to.
+   * game as it stood before the turn is kept to go back to and the turns
+   * ahead are given up. A load gives up every turn, and a tick with no move
+   * none.
    */
   moved(): void {
     let went = false;
@@ -325,6 +335,7 @@ class Turns {
     const { log } = partsOf(this.app);
     if (this.standing.since.loads !== log.loads) {
       this.back.length = 0;
+      this.ahead.length = 0;
     } else if (
       log.entries
         .slice(this.standing.since.logLength)
@@ -339,9 +350,8 @@ class Turns {
       if (this.back.length > this.last) {
         this.back.shift();
       }
+      this.ahead.length = 0;
     }
-    // The game has gone elsewhere: what was given up is no more to go to.
-    this.ahead.length = 0;
     this.standing = this.take();
   }
 }
@@ -375,8 +385,9 @@ const turnsOf = (app: Game, call: string): Turns => {
  *   `Timeline.capture` would, which costs what changed since the last one.
  * - It keeps the `last` turns, 100 by default, and lets go of older ones.
  * - Going back a turn keeps the game as it was, for `Timeline.redo` to go
- *   forward to, until the game moves on: a tick, a move or a load gives up
- *   every turn ahead.
+ *   forward to, until the next move: a move, a load or a rewind gives up
+ *   every turn ahead. A tick with no move gives up none, so a game that ticks
+ *   by itself keeps its redo as a game that ticks only when needed does.
  * - `app.load` gives up every turn kept, since they are of the game the load
  *   replaced.
  *
@@ -384,9 +395,9 @@ const turnsOf = (app: Game, call: string): Turns => {
  *
  * - An app a session steps can't be kept: it has no `tick`, and going back
  *   would move this machine's game alone.
- * - A game that keeps ticking at rest, as one does with a running timer,
- *   gives up a turn ahead on its next tick, so that it can't be gone forward
- *   to.
+ * - A redo goes to the game as it was at the undo, and gives up the ticks
+ *   run since, as an undo gives up those run since the turn. What moves at
+ *   rest, such as a running timer, is as it was at the undo.
  *
  * @category Running
  */
@@ -447,9 +458,10 @@ export const undo = (app: Game): Effect.Effect<boolean> =>
 
 /**
  * Goes forward again a turn that `Timeline.undo` went back, and succeeds with
- * whether there was one: the game is as it was before the undo, its log
- * with it. Run it between ticks, before the game moves on: a tick, a move or
- * a load gives up every turn ahead.
+ * whether there was one: the game is as it was before the undo, its time
+ * and its log with it, and the ticks run since are given up. Run it between
+ * ticks, before the next move: a move, a load or a rewind gives up every
+ * turn ahead, and a tick with no move gives up none.
  *
  * @category Running
  */

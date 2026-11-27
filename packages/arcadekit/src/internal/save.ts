@@ -2,12 +2,12 @@ import { Cause, Exit, Schema } from "effect";
 
 import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Entity } from "../ecs/component.ts";
-import { readSingleton } from "../ecs/contents.ts";
+import { readSingleton, readSnapshot, writeSnapshot } from "../ecs/contents.ts";
 import { SnapshotError } from "../ecs/snapshot.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { Store } from "../ecs/store.ts";
 import type { World } from "../ecs/world.ts";
-import { migrate } from "../Migrate.ts";
+import { Contents } from "../Migrate.ts";
 import type { Migration } from "../Migrate.ts";
 import { LoadRefused, Refused } from "../Save.ts";
 import type { Save } from "../Save.ts";
@@ -89,6 +89,73 @@ export const versionOf = (given: number | undefined): number => {
   return version;
 };
 
+const refuse = (
+  problem: LoadRefused["problem"],
+  message: string
+): Exit.Exit<never, LoadRefused> =>
+  Exit.fail(new LoadRefused({ problem, message }));
+
+/**
+ * `Migrate.migrate`, for a load that runs no Effect: a save brought up to a
+ * version of the game, one step at a time.
+ *
+ * @internal
+ */
+export const migrated = (
+  save: Save,
+  version: number,
+  migrations: readonly Migration[]
+): Exit.Exit<Save, LoadRefused> => {
+  if (save.version === version) {
+    return Exit.succeed(save);
+  }
+  if (save.version > version) {
+    return refuse(
+      "newer version",
+      `The save was written by version ${save.version} of the game, and this is version ${version}. A game cannot read what a later version of itself wrote.`
+    );
+  }
+  let contents: Contents;
+  try {
+    contents = new Contents(readSnapshot(save.world));
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      return refuse(loading(error), error.message);
+    }
+    throw error;
+  }
+  for (let from = save.version; from < version; from++) {
+    const one = migrations.find((migration) => migration.from === from);
+    if (one === undefined) {
+      return refuse(
+        "no migration",
+        `The save was written by version ${save.version} of the game, and this is version ${version}. There is no migration from version ${from} to version ${from + 1}.`
+      );
+    }
+    try {
+      one.migrate(contents);
+    } catch (error) {
+      return refuse(
+        "migration failed",
+        `The migration from version ${from} to version ${from + 1} failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  try {
+    return Exit.succeed({ version, world: writeSnapshot(contents.world) });
+  } catch (error) {
+    if (!(error instanceof SnapshotError)) {
+      throw error;
+    }
+    return error.problem === "cannot be saved"
+      ? refuse(
+          "migration failed",
+          `The migrations from version ${save.version} to version ${version} left a world that can't be written back: ${error.message}`
+        )
+      : refuse(loading(error), error.message);
+  }
+};
+
 /**
  * Fills an empty world from a save, brought up to a version of the game
  * first, and returns the save as it was loaded.
@@ -101,7 +168,7 @@ export const into = (
   version: number,
   migrations: readonly Migration[]
 ): Exit.Exit<Save, LoadRefused> => {
-  const current = migrate(save, version, migrations);
+  const current = migrated(save, version, migrations);
   if (Exit.isFailure(current)) {
     return current;
   }

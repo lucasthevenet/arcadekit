@@ -36,7 +36,7 @@ const Fighter = Component.define("duel/Fighter", {
   hp: Field.i32,
   energy: Field.i32,
 });
-const Name = Component.define("duel/Name", { value: Field.json<string>() });
+const Name = Component.define("duel/Name", { value: Field.json<string>("") });
 // One per game, not one per entity: whose turn it is.
 const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 });
 

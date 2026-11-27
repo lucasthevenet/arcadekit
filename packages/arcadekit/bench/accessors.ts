@@ -329,7 +329,7 @@ const pairing = (): number => {
   }
   const reds = world.view(Reds);
   const blues = world.view(Blues);
-  const commands = { despawn: () => {} };
+  const commands = { despawn: () => {}, despawning: () => false };
   const keep = (): Overlap.Despawn => "neither";
   return measure(() => {
     Overlap.pairs(commands, reds, blues, keep);

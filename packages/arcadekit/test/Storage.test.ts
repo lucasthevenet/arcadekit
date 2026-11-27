@@ -30,7 +30,7 @@ const Velocity = Component.define("st/Velocity", {
   y: Field.f32,
 });
 const Health = Component.define("st/Health", { hp: Field.i32 });
-const Name = Component.define("st/Name", { value: Field.json<string>() });
+const Name = Component.define("st/Name", { value: Field.json<string>("") });
 const Target = Component.define("st/Target", { entity: Field.entity });
 const Enemy = Component.tag("st/Enemy");
 const Stunned = Component.tag("st/Stunned", { storage: "sparse" });
@@ -54,6 +54,20 @@ const query = <const D extends Terms>(
     [],
     terms.filter((def) => more.readDefs?.includes(def) !== true)
   );
+
+/** What reading or writing a field throws through an accessor kept after the world's entities changed. */
+const retracted = (name: string, field: string): string =>
+  `"${name}.${field}" was used through an accessor that each() or single() handed out before the world's entities last changed. A spawn, a despawn, an add or a remove, and a restore or a rewind, can move an entity to another row, and the accessor would read and write another entity's. Read the entity again with world.get(entity, ${name.split("/").pop()}), or ask the query again. To change the world's entities while you hold an accessor, queue the change on Commands.`;
+
+/** The message of what a call throws, or what says it threw nothing. */
+const refusal = (call: () => unknown): string => {
+  try {
+    call();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "nothing was refused";
+};
 
 describe("entities and components", () => {
   it("spawns, reads, writes and despawns", () => {
@@ -163,7 +177,7 @@ describe("entities and components", () => {
       wide: Field.f64,
       hp: Field.i32,
       who: Field.entity,
-      name: Field.json<string | undefined>(),
+      name: Field.json<string | undefined>(undefined),
       cache: Field.transient<object>(),
     });
     const Faint = Component.define(
@@ -231,7 +245,7 @@ describe("entities and components", () => {
     const Mixed = Component.define("st/Mixed2", {
       x: Field.f32,
       hp: Field.i32,
-      name: Field.json<string | undefined>(),
+      name: Field.json<string | undefined>(undefined),
     });
     const Faint = Component.define(
       "st/Faint2",
@@ -1059,11 +1073,14 @@ describe("what each hands its callback", () => {
     u8: Field.u8,
     bool: Field.bool,
     entity: Field.entity,
-    json: Field.json<string>(),
-    ref: Field.ref<Date>({
-      encode: (date) => date.getTime(),
-      decode: (time) => new Date(time as number),
-    }),
+    json: Field.json<string>(""),
+    ref: Field.ref<Date>(
+      {
+        encode: (date) => date.getTime(),
+        decode: (time) => new Date(time as number),
+      },
+      new Date(0)
+    ),
     transient: Field.transient<{ readonly n: number }>(),
   };
   const Every = Component.define("st/Every", fields);
@@ -1365,6 +1382,98 @@ describe("what each hands its callback", () => {
       }
     }
   });
+
+  // Every way the world's entities change. Add a new one here.
+  const changes: readonly (readonly [
+    string,
+    (world: World, other: Entity) => void,
+  ])[] = [
+    ["a spawn", (world) => void world.spawn(Health.of({ hp: 9 }))],
+    ["a despawn", (world, other) => void world.despawn(other)],
+    ["an add", (world, other) => void world.add(other, Enemy)],
+    ["a remove", (world, other) => void world.remove(other, Health)],
+    [
+      "commands that spawn",
+      (world) => {
+        const commands = new CommandBuffer(world);
+        commands.spawn(Health.of({ hp: 9 }));
+        commands.apply();
+      },
+    ],
+    ["a restore", (world) => world.restore(world.snapshot())],
+    ["a rewind", (world) => world._rewind(world._capture(), [])],
+  ];
+
+  for (const def of [Every, EverySparse]) {
+    it.each(changes)(
+      `are refused once the world's entities changed, by %s (${def.storage})`,
+      (_, change) => {
+        const world = new World();
+        const other = world.spawn(Health.of({ hp: 0 }), def.of(valueOf(0)));
+        world.spawn(Health.of({ hp: 1 }), def.of(valueOf(1)));
+        const player = world.spawn(
+          Health.of({ hp: 2 }),
+          def.of(valueOf(2)),
+          Stunned
+        );
+        const Players = query([Health, def], [Stunned]);
+        const [health, every] = world.view(Players).single();
+        let thawed: Record<string, unknown> = {};
+        let frozen: Record<string, unknown> = {};
+        world.view(query([def])).each((one, entity) => {
+          if (entity === player) {
+            thawed = one;
+          }
+        });
+        world.freeze();
+        world.view(query([def])).each((one, entity) => {
+          if (entity === player) {
+            frozen = one;
+          }
+        });
+        world.thaw();
+
+        change(world, other);
+        const state = () => [
+          world.hash(),
+          world
+            .view(query([def]))
+            .entities()
+            .map((entity) => [
+              entity,
+              world.get(entity, Health),
+              world.get(entity, def),
+            ]),
+        ];
+        const before = state();
+        expect(() => health.hp).toThrow(retracted("st/Health", "hp"));
+        expect(() => {
+          health.hp = 7;
+        }).toThrow(retracted("st/Health", "hp"));
+        for (const name of names) {
+          const message = retracted(def.name, name);
+          for (const accessor of [every as Record<string, unknown>, thawed]) {
+            expect(() => accessor[name]).toThrow(message);
+            expect(() => {
+              accessor[name] = valueOf(7)[name];
+            }).toThrow(message);
+          }
+          expect(() => frozen[name]).toThrow(message);
+        }
+        expect(state()).toEqual(before);
+
+        const [again, , entity] = world.view(Players).single();
+        expect([entity, again.hp]).toEqual([player, 2]);
+        again.hp = 20;
+        expect(world.get(player, Health)).toEqual({ hp: 20 });
+        const seen: number[] = [];
+        world.view(query([Health, def])).each((one) => {
+          seen.push(one.hp);
+        });
+        expect(seen).toContain(20);
+      }
+    );
+  }
 });
 
 describe("structural changes during iteration", () => {
@@ -1419,6 +1528,56 @@ describe("structural changes during iteration", () => {
     expect(world.has(e, Stunned)).toBe(true);
     expect(world.isAlive(doomed)).toBe(false);
     expect(world.entityCount).toBe(1);
+  });
+
+  it("say an entity is despawning while its despawn is queued, through rollbacks and applies", () => {
+    for (const seed of [1, 2, 3]) {
+      let state = seed;
+      const rnd = () => {
+        state = (state * 1_664_525 + 1_013_904_223) >>> 0;
+        return state / 0x1_00_00_00_00;
+      };
+      const world = new World();
+      const commands = new CommandBuffer(world);
+      const pool = Array.from({ length: 6 }, () =>
+        world.spawn(Health.of({ hp: 1 }))
+      );
+      let queue: { readonly spawns?: Entity; readonly despawns?: Entity }[] =
+        [];
+      const checks = makeChecks();
+      for (let step = 0; step < 600; step++) {
+        const roll = rnd();
+        const pick = pool[Math.floor(rnd() * pool.length)]!;
+        if (roll < 0.5) {
+          commands.despawn(pick);
+          queue.push({ despawns: pick });
+        } else if (roll < 0.7) {
+          const spawned = commands.spawn(Health.of({ hp: 2 }));
+          pool.push(spawned);
+          queue.push({ spawns: spawned });
+        } else if (roll < 0.95) {
+          const mark = Math.floor(rnd() * (commands.size + 1));
+          commands.rollback(mark);
+          for (const { spawns } of queue.slice(mark)) {
+            if (spawns !== undefined) {
+              pool.splice(pool.indexOf(spawns), 1);
+            }
+          }
+          queue = queue.slice(0, mark);
+        } else {
+          commands.apply();
+          queue = [];
+        }
+        for (const entity of pool) {
+          checks.check(
+            `seed ${seed}, step ${step}: ${idOf(entity)}`,
+            commands.despawning(entity),
+            queue.some(({ despawns }) => despawns === entity)
+          );
+        }
+      }
+      expectChecked(checks, 3600);
+    }
   });
 
   const refusing: [string, (world: World, apply: () => unknown) => void][] = [
@@ -1544,8 +1703,24 @@ describe("randomized comparison against a simple model", () => {
       const model = new Map<Entity, Map<number, Record<string, number>>>();
       const dead: Entity[] = [];
       const checks = makeChecks();
+      // Every step changes the world's entities, so an accessor kept across
+      // one refuses, and the loop that handed it out binds again.
+      const positions = world.view(query([Position]));
+      const keep = (step: number): { readonly x: number } | undefined => {
+        let kept: { readonly x: number } | undefined;
+        let wrong = 0;
+        positions.each((position, entity) => {
+          if (position.x !== model.get(entity)!.get(Position.id)!.x) {
+            wrong++;
+          }
+          kept = position;
+        });
+        checks.check(`step ${step}: positions read`, wrong, 0);
+        return kept;
+      };
 
       for (let step = 0; step < 4000; step++) {
+        const kept = step % 20 === 0 ? keep(step) : undefined;
         const roll = rnd();
         const live = [...model.keys()];
         const pick =
@@ -1590,6 +1765,13 @@ describe("randomized comparison against a simple model", () => {
             `step ${step}: removed ${def.name}`,
             world.remove(pick, def),
             model.get(pick)!.delete(def.id)
+          );
+        }
+        if (kept !== undefined) {
+          checks.check(
+            `step ${step}: a kept accessor read`,
+            refusal(() => kept.x),
+            retracted("st/Position", "x")
           );
         }
       }

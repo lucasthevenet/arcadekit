@@ -24,7 +24,7 @@ const kinds = {
   short: Field.u16,
   byte: Field.u8,
   other: Field.entity,
-  note: Field.json<JsonValue>(),
+  note: Field.json<JsonValue>(null),
 };
 const define = (prefix: string) => ({
   Body: Component.define(`${prefix}/Body`, { x: Field.f32, y: Field.f32 }),

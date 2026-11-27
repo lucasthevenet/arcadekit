@@ -57,11 +57,11 @@ const refusal = <E>(exit: Exit.Exit<unknown, E>): E => {
 
 const Hp0 = Component.define("mg/Hp", { points: Field.i32 });
 const Pos0 = Component.define("mg/Pos", { x: Field.f32, y: Field.f32 });
-const Name0 = Component.define("mg/Name", { value: Field.json<string>() });
+const Name0 = Component.define("mg/Name", { value: Field.json<string>("") });
 const Old0 = Component.tag("mg/Old");
 const Buff0 = Component.define(
   "mg/Buff",
-  { power: Field.u8, note: Field.json<string>() },
+  { power: Field.u8, note: Field.json<string>("") },
   { storage: "sparse" }
 );
 const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
@@ -118,12 +118,12 @@ const Health2 = Component.define("mg/Health", {
   points: Field.f32,
 });
 const Pos2 = Component.define("mg/Pos", { px: Field.f32 });
-const Name2 = Component.define("mg/Name", { value: Field.json<string>() });
+const Name2 = Component.define("mg/Name", { value: Field.json<string>("") });
 const Buff2 = Component.define(
   "mg/Buff",
   {
     power: Field.u16,
-    note: Field.json<string>(),
+    note: Field.json<string>(""),
     fresh: Field.transient<object>(),
   },
   { storage: "sparse" }
@@ -300,11 +300,14 @@ describe("a snapshot read without the program's components", () => {
       byte: Field.u8,
       flag: Field.bool,
       other: Field.entity,
-      data: Field.json<JsonValue>(),
-      when: Field.ref<Date>({
-        encode: (date) => date.getTime(),
-        decode: (data) => new Date(data as number),
-      }),
+      data: Field.json<JsonValue>(null),
+      when: Field.ref<Date>(
+        {
+          encode: (date) => date.getTime(),
+          decode: (data) => new Date(data as number),
+        },
+        new Date(0)
+      ),
       handle: Field.transient<object>(),
     };
     const Wide = Component.define("mg/Wide", kinds);
@@ -531,8 +534,11 @@ describe("a save from another version of the game", () => {
     Effect.gen(function* () {
       const { save } = yield* savedByVersion0();
       const failing = (migrate: Migrate.Migration["migrate"]) =>
-        refusal(Migrate.migrate(save, 1, [Migrate.step(0, migrate)]));
-      const thrown = failing(() => {
+        Effect.map(
+          Effect.exit(Migrate.migrate(save, 1, [Migrate.step(0, migrate)])),
+          refusal
+        );
+      const thrown = yield* failing(() => {
         throw new Error("the old saves had no such thing");
       });
       expect(thrown.problem).toBe("migration failed");
@@ -588,64 +594,72 @@ describe("a save from another version of the game", () => {
         ],
       ];
       for (const [change, message] of cases) {
-        const error = failing(change);
+        const error = yield* failing(change);
         expect(error.problem).toBe("migration failed");
         expect(error.message).toMatch(message);
       }
     })
   );
 
-  it("is refused when a migration gives a number field what it cannot hold", () => {
-    // A save of a gauge, and the builds of it that add a field of each kind.
-    const world = new EcsWorld();
-    world.spawn(Gauge.of({ level: 3 }));
-    const save: Save.Save = { version: 0, world: world.snapshot() };
-    const failing = (change: (save: Migrate.Contents) => void) =>
-      refusal(Migrate.migrate(save, 1, [Migrate.step(0, change)]));
-    const cases: [(save: Migrate.Contents) => void, string][] = [
-      [
-        // @ts-expect-error a number field is given a string
-        (one) => one.addField(GaugeF32, "z", "far"),
-        'The f32 field "z" of "mg/Gauge" cannot hold "far": it holds numbers.',
-      ],
-      [
-        (one) => one.addField(GaugeU8, "z", 300),
-        'The u8 field "z" of "mg/Gauge" cannot hold 300: it holds whole numbers from 0 to 255.',
-      ],
-      [
-        (one) => one.addField(GaugeI32, "z", 1.5),
-        'The i32 field "z" of "mg/Gauge" cannot hold 1.5: it holds whole numbers from -2147483648 to 2147483647.',
-      ],
-      [
-        (one) => one.addField(GaugeU32, "z", -1),
-        'The u32 field "z" of "mg/Gauge" cannot hold -1: it holds whole numbers from 0 to 4294967295.',
-      ],
-      [
-        (one) =>
-          one.mapField(
-            GaugeU8,
-            "level",
-            // @ts-expect-error a number field is given what is not a number
-            (level: number) => ({ level })
-          ),
-        'The u8 field "level" of "mg/Gauge" cannot hold [object Object]: it holds whole numbers from 0 to 255.',
-      ],
-      [
-        (one) => one.mapField(GaugeU8, "level", (level: number) => level * 100),
-        'The u8 field "level" of "mg/Gauge" cannot hold 300',
-      ],
-      [
-        // @ts-expect-error a bool field is given a number
-        (one) => one.addField(GaugeBool, "z", 1),
-        'The bool field "z" of "mg/Gauge" cannot hold 1: it holds true or false.',
-      ],
-    ];
-    for (const [change, message] of cases) {
-      const error = failing(change);
-      expect(error.problem).toBe("migration failed");
-      expect(error.message).toContain(message);
-    }
-  });
+  it.effect(
+    "is refused when a migration gives a number field what it cannot hold",
+    () =>
+      Effect.gen(function* () {
+        // A save of a gauge, and the builds of it that add a field of each kind.
+        const world = new EcsWorld();
+        world.spawn(Gauge.of({ level: 3 }));
+        const save: Save.Save = { version: 0, world: world.snapshot() };
+        const failing = (change: (save: Migrate.Contents) => void) =>
+          Effect.map(
+            Effect.exit(Migrate.migrate(save, 1, [Migrate.step(0, change)])),
+            refusal
+          );
+        const cases: [(save: Migrate.Contents) => void, string][] = [
+          [
+            // @ts-expect-error a number field is given a string
+            (one) => one.addField(GaugeF32, "z", "far"),
+            'The f32 field "z" of "mg/Gauge" cannot hold "far": it holds numbers.',
+          ],
+          [
+            (one) => one.addField(GaugeU8, "z", 300),
+            'The u8 field "z" of "mg/Gauge" cannot hold 300: it holds whole numbers from 0 to 255.',
+          ],
+          [
+            (one) => one.addField(GaugeI32, "z", 1.5),
+            'The i32 field "z" of "mg/Gauge" cannot hold 1.5: it holds whole numbers from -2147483648 to 2147483647.',
+          ],
+          [
+            (one) => one.addField(GaugeU32, "z", -1),
+            'The u32 field "z" of "mg/Gauge" cannot hold -1: it holds whole numbers from 0 to 4294967295.',
+          ],
+          [
+            (one) =>
+              one.mapField(
+                GaugeU8,
+                "level",
+                // @ts-expect-error a number field is given what is not a number
+                (level: number) => ({ level })
+              ),
+            'The u8 field "level" of "mg/Gauge" cannot hold [object Object]: it holds whole numbers from 0 to 255.',
+          ],
+          [
+            (one) =>
+              one.mapField(GaugeU8, "level", (level: number) => level * 100),
+            'The u8 field "level" of "mg/Gauge" cannot hold 300',
+          ],
+          [
+            // @ts-expect-error a bool field is given a number
+            (one) => one.addField(GaugeBool, "z", 1),
+            'The bool field "z" of "mg/Gauge" cannot hold 1: it holds true or false.',
+          ],
+        ];
+        for (const [change, message] of cases) {
+          const error = yield* failing(change);
+          expect(error.problem).toBe("migration failed");
+          expect(error.message).toContain(message);
+        }
+      })
+  );
 
   it("does not compile with a field the component's definition does not have", () => {
     const edit = (save: Migrate.Contents) => {
@@ -693,17 +707,17 @@ describe("a save from another version of the game", () => {
       const { save } = yield* savedByVersion0();
       let ran = 0;
       const counting = [Migrate.step(0, () => void ran++)];
-      expect(unwrap(Migrate.migrate(save, 0, counting))).toBe(save);
+      expect(yield* Migrate.migrate(save, 0, counting)).toBe(save);
       expect(ran).toBe(0);
       // A migration that changes nothing gives the same game, a version on.
-      const moved = unwrap(Migrate.migrate(save, 1, counting));
+      const moved = yield* Migrate.migrate(save, 1, counting);
       expect(ran).toBe(1);
       expect(moved.version).toBe(1);
       expect(moved.world).toEqual(save.world);
       expect({ ...moved, version: 0 }).toEqual(save);
       // The save it was given is not changed by a migration that edits.
       const before = structuredClone(save);
-      unwrap(Migrate.migrate(save, 2, migrations));
+      yield* Migrate.migrate(save, 2, migrations);
       expect(save).toEqual(before);
     })
   );
@@ -720,7 +734,7 @@ describe("a save from another version of the game", () => {
         const Zhp = Component.define("mg/Zhp", { points: Field.i32 });
         const Boon = Component.define(
           "mg/Boon",
-          { power: Field.u8, note: Field.json<string>() },
+          { power: Field.u8, note: Field.json<string>("") },
           { storage: "sparse" }
         );
         const contents = readSnapshot(save.world);
@@ -764,11 +778,13 @@ describe("a save from another version of the game", () => {
       Effect.gen(function* () {
         const { save } = yield* savedByVersion0();
         const error = refusal(
-          Migrate.migrate(save, 1, [
-            Migrate.step(0, ({ world }) => {
-              world.tables[0]!.columns["mg/Hp"]!.points = new Int32Array(1);
-            }),
-          ])
+          yield* Effect.exit(
+            Migrate.migrate(save, 1, [
+              Migrate.step(0, ({ world }) => {
+                world.tables[0]!.columns["mg/Hp"]!.points = new Int32Array(1);
+              }),
+            ])
+          )
         );
         expect(error).toBeInstanceOf(Save.LoadRefused);
         expect(error.problem).toBe("corrupt");
@@ -778,21 +794,25 @@ describe("a save from another version of the game", () => {
         // And when it takes a column away, or leaves data for a component it
         // took off the list.
         const missing = refusal(
-          Migrate.migrate(save, 1, [
-            Migrate.step(0, ({ world }) => {
-              delete world.tables[1]!.columns["mg/Pos"]!.y;
-            }),
-          ])
+          yield* Effect.exit(
+            Migrate.migrate(save, 1, [
+              Migrate.step(0, ({ world }) => {
+                delete world.tables[1]!.columns["mg/Pos"]!.y;
+              }),
+            ])
+          )
         );
         expect(missing.message).toMatch(/"mg\/Pos\.y" has no column/);
         const unlisted = refusal(
-          Migrate.migrate(save, 1, [
-            Migrate.step(0, ({ world }) => {
-              world.components = world.components.filter(
-                (component) => component.name !== "mg/Buff"
-              );
-            }),
-          ])
+          yield* Effect.exit(
+            Migrate.migrate(save, 1, [
+              Migrate.step(0, ({ world }) => {
+                world.components = world.components.filter(
+                  (component) => component.name !== "mg/Buff"
+                );
+              }),
+            ])
+          )
         );
         expect(unlisted.problem).toBe("corrupt");
         expect(unlisted.message).toMatch(
@@ -804,7 +824,7 @@ describe("a save from another version of the game", () => {
   it("can have every kind of change made to a field", () => {
     const Thing = Component.define("mg/Thing", {
       a: Field.u8,
-      b: Field.json<string>(),
+      b: Field.json<string>(""),
     });
     const world = new EcsWorld();
     const entities = [1, 2, 3].map((n) =>
@@ -812,8 +832,8 @@ describe("a save from another version of the game", () => {
     );
     const contents = readSnapshot(world.snapshot());
     const Thing2 = Component.define("mg/Thing", {
-      d: Field.json<string>(),
-      a: Field.json<{ was: number }>(),
+      d: Field.json<string>(""),
+      a: Field.json<{ was: number }>({ was: 0 }),
       b: Field.f64,
       c: Field.entity,
       e: Field.u16,
@@ -959,14 +979,12 @@ describe("a save's events, actions and states", () => {
         })
       );
       const Stage = State.define("mv/Stage", ["menu", "play", "over"]);
-      const moved = unwrap(
-        Migrate.migrate(save, 1, [
-          Migrate.step(0, (one) => {
-            one.renameState("mv/Phase", Stage);
-            one.removeEvent("mv/Hit");
-          }),
-        ])
-      );
+      const moved = yield* Migrate.migrate(save, 1, [
+        Migrate.step(0, (one) => {
+          one.renameState("mv/Phase", Stage);
+          one.removeEvent("mv/Hit");
+        }),
+      ]);
       const names = readSnapshot(moved.world).components.map(
         ({ name }) => name
       );

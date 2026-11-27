@@ -36,10 +36,15 @@ type Profile = typeof Profile.Type;
 
 // Every kind of field that is not a number, in a table and in a sparse set.
 const fields = {
-  data: Field.json<JsonValue>(),
-  when: Field.ref(dates),
-  tags: Field.ref(sets),
-  profile: Field.schema(Profile),
+  data: Field.json<JsonValue>(null),
+  when: Field.ref(dates, new Date(0)),
+  tags: Field.ref(sets, new Set()),
+  profile: Field.schema(Profile, {
+    name: "",
+    level: 1,
+    joined: new Date(0),
+    gold: 0n,
+  }),
   handle: Field.transient<{ readonly id: number }>(),
   hp: Field.i32,
 };
@@ -107,6 +112,93 @@ describe("a field that is not a number", () => {
       false,
       false,
     ]);
+  });
+
+  it("holds in a component given bare what it was made with, as its type says", () => {
+    const Holder = Component.tag("fld/Holder", { requires: [Card, Badge] });
+    const world = new EcsWorld();
+    const added = world.spawn();
+    world.add(added, Card);
+    world.add(added, Badge);
+    for (const entity of [
+      world.spawn(Card, Badge),
+      added,
+      world.spawn(Holder),
+    ]) {
+      for (const def of both) {
+        expect(world.get(entity, def)).toEqual({
+          data: null,
+          when: new Date(0),
+          tags: new Set(),
+          profile: { name: "", level: 1, joined: new Date(0), gold: 0n },
+          handle: undefined,
+          hp: 0,
+        });
+      }
+    }
+    expect(reload(world, [...both, Holder]).hash()).toBe(world.hash());
+
+    const Named = Component.define("fld/Named", {
+      name: Field.json<string>("nobody"),
+    });
+    const name = world.get(world.spawn(Named), Named)!.name;
+    expectTypeOf(name).toEqualTypeOf<string>();
+    expect(name).toBe("nobody");
+
+    // A bool beside a json field is false, a boolean, in the bare value too.
+    const flagged = { open: Field.bool, label: Field.json<string>("door") };
+    const Gate = Component.define("fld/Gate", flagged);
+    const Hatch = Component.define("fld/Hatch", flagged, { storage: "sparse" });
+    const bare = { open: false, label: "door" };
+    expect([Gate.initial, Hatch.initial]).toStrictEqual([bare, bare]);
+    const Latch = Singleton.define("fld/Latch", flagged, Gate.initial!);
+    const gates = new EcsWorld({ seed: 2 });
+    const shut = gates.spawn();
+    gates.add(shut, Gate);
+    gates.add(shut, Hatch);
+    for (const entity of [shut, gates.spawn(Gate, Hatch)]) {
+      expect([gates.get(entity, Gate), gates.get(entity, Hatch)]).toStrictEqual(
+        [bare, bare]
+      );
+    }
+    const read: unknown[] = [];
+    gates.view(Query.all(Gate, Hatch)).each((gate, hatch) => {
+      read.push([gate.open, gate.label], [hatch.open, hatch.label]);
+    });
+    expect(read).toStrictEqual([
+      [false, "door"],
+      [false, "door"],
+      [false, "door"],
+      [false, "door"],
+    ]);
+    const latch = gates.singleton(Latch);
+    expect([latch.open, latch.label]).toStrictEqual([false, "door"]);
+    latch.label = "latch";
+
+    const given = new EcsWorld({ seed: 2 });
+    const kept = given.spawn();
+    given.add(kept, Gate.of(bare));
+    given.add(kept, Hatch.of(bare));
+    given.spawn(Gate.of(bare), Hatch.of(bare));
+    given.singleton(Latch).label = "latch";
+    expect(gates.hash()).toBe(given.hash());
+    const loaded = reload(gates, [Gate, Hatch, Latch.component]);
+    expect(loaded.hash()).toBe(gates.hash());
+    expect(loaded.get(shut, Hatch)).toStrictEqual(bare);
+    expect(loaded.singleton(Latch).open).toBe(false);
+  });
+
+  it("is told where it is made what a component given bare holds", () => {
+    expect(() =>
+      Component.define("fld/Untold", {
+        // @ts-expect-error a json field is given what a bare component holds
+        name: Field.json<string>(),
+        // @ts-expect-error a ref field is given what a bare component holds
+        when: Field.ref(dates),
+        // @ts-expect-error a schema field is given what a bare component holds
+        born: Field.schema(Schema.Date),
+      })
+    ).not.toThrow();
   });
 
   it("is saved and loaded as what it held, or not at all when it is transient", () => {
@@ -215,12 +307,18 @@ describe("a field that is not a number", () => {
     expect(transient!.message).toContain("data: transient");
     expect(
       retyped(
-        Component.define("fld/Card", { ...fields, handle: Field.json() })
+        Component.define("fld/Card", {
+          ...fields,
+          handle: Field.json<JsonValue>(null),
+        })
       )!.problem
     ).toBe("component changed");
     expect(
       retyped(
-        Component.define("fld/Card", { ...fields, data: Field.ref(dates) })
+        Component.define("fld/Card", {
+          ...fields,
+          data: Field.ref(dates, new Date(0)),
+        })
       )!.problem
     ).toBe("component changed");
   });
@@ -270,7 +368,7 @@ describe("a field that is not a number", () => {
     };
     const Changed = Component.define("fld/Card", {
       ...fields,
-      when: Field.ref(strict),
+      when: Field.ref(strict, new Date(0)),
     });
     const { world } = populated(2);
     let error: unknown;
@@ -288,7 +386,9 @@ describe("a field that is not a number", () => {
   });
 
   it("refuses a snapshot whose JSON is damaged, as damaged and not as a changed component", () => {
-    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
+    const Note = Component.define("fld/Note", {
+      v: Field.json<JsonValue>(null),
+    });
     const world = new EcsWorld();
     world.spawn(Note.of({ v: { key: "value" } }));
     const bytes = world.snapshot();
@@ -312,7 +412,9 @@ describe("a field that is not a number", () => {
 
   it("saves plain data in a json field as JSON does: what comes back is what JSON makes of it", () => {
     const world = new EcsWorld();
-    const Note = Component.define("fld/Note", { v: Field.json<JsonValue>() });
+    const Note = Component.define("fld/Note", {
+      v: Field.json<JsonValue>(null),
+    });
     const values: JsonValue[] = [
       { a: 1, b: [true, null, "x", { c: [] }] },
       [],
@@ -345,7 +447,7 @@ describe("a field that is not a number", () => {
 describe("a bool field", () => {
   const Door = Component.define("fld/Door", {
     open: Field.bool,
-    label: Field.json<string>(),
+    label: Field.json<string>(""),
   });
   const Lever = Singleton.define(
     "fld/Lever",
@@ -357,7 +459,7 @@ describe("a bool field", () => {
     const world = new EcsWorld();
     const bare = world.spawn(Door);
     const front = world.spawn(Door.of({ open: true, label: "front" }));
-    expect(world.get(bare, Door)).toEqual({ open: false, label: undefined });
+    expect(world.get(bare, Door)).toEqual({ open: false, label: "" });
     expect(world.get(front, Door)).toEqual({ open: true, label: "front" });
     expectTypeOf(world.get(bare, Door)!.open).toEqualTypeOf<boolean>();
 
@@ -371,7 +473,7 @@ describe("a bool field", () => {
       door.open = !door.open;
     });
     expect(read).toEqual([false, false]);
-    expect(world.get(bare, Door)).toEqual({ open: true, label: undefined });
+    expect(world.get(bare, Door)).toEqual({ open: true, label: "" });
     expect(world.get(front, Door)).toEqual({ open: true, label: "front" });
 
     const lever = world.singleton(Lever);
@@ -381,7 +483,7 @@ describe("a bool field", () => {
     // What a tool reads of the world, as `app.inspect()` gives it.
     expect(world.contents().entities[0]!.components["fld/Door"]).toEqual({
       open: true,
-      label: undefined,
+      label: "",
     });
     expect(world.contents().singletons["fld/Lever"]).toEqual({
       pulled: false,
@@ -489,21 +591,21 @@ describe("a bool field", () => {
 describe("a field that holds an object", () => {
   it("holds in a json field only what JSON holds, refused where the field is made", () => {
     const Notes = Component.define("fld/Notes", {
-      tags: Field.json<{ tags: string[] }>(),
+      tags: Field.json<{ tags: string[] }>({ tags: [] }),
       // @ts-expect-error A Date comes back from JSON as text: it is a ref.
-      when: Field.json<Date>(),
+      when: Field.json<Date>(new Date()),
       // @ts-expect-error A Map comes back from JSON as an empty object.
-      counts: Field.json<Map<string, number>>(),
+      counts: Field.json<Map<string, number>>(new Map()),
       // @ts-expect-error JSON cannot write a function at all.
-      call: Field.json<() => void>(),
+      call: Field.json<() => void>(() => {}),
     });
     expect(Notes.kinds).toEqual(["json", "json", "json", "json"]);
   });
 
   it("is read-only where it is read, and replaced with set", () => {
     const Tagged = Component.define("fld/Tagged", {
-      tags: Field.json<{ tags: string[] }>(),
-      labels: Field.ref(sets),
+      tags: Field.json<{ tags: string[] }>({ tags: [] }),
+      labels: Field.ref(sets, new Set()),
     });
     const world = new EcsWorld();
     const entity = world.spawn(

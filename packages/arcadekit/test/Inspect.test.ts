@@ -30,7 +30,7 @@ const Heat = Component.define(
   { storage: "sparse" }
 );
 const Boss = Component.tag("in/Boss");
-const Name = Component.define("in/Name", { text: Field.json<string>() });
+const Name = Component.define("in/Name", { text: Field.json<string>("") });
 const ChildOf = Component.relation("in/ChildOf", {
   onTargetDespawn: "despawn",
 });

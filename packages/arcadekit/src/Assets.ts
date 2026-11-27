@@ -773,7 +773,7 @@ export function during<E, R>(
  */
 const Handed = Singleton.define(
   "arcadekit/Assets.Handed",
-  { by: Field.json<Readonly<Record<string, Key | null>>>() },
+  { by: Field.json<Readonly<Record<string, Key | null>>>({}) },
   { by: {} }
 );
 

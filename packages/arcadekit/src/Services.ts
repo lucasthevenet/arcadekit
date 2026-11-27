@@ -308,6 +308,12 @@ export interface Spawning<in N extends string> {
   ): void;
   /** Queues an entity to despawn. */
   despawn(entity: Entity | Spawned): void;
+  /**
+   * Returns whether an entity is queued to despawn. It stays alive until the
+   * system or handler finishes. An entity that a relation despawns along with
+   * a queued one is not queued itself.
+   */
+  despawning(entity: Entity | Spawned): boolean;
   /** Queues a component to remove from an entity. */
   remove(entity: Entity | Spawned, def: ComponentDef): void;
 }

@@ -45,7 +45,7 @@ Browser.runMain(
 - A system of the frame or input stage reads a setting, and so does a plugin's layer and code outside the game. A system of the tick, an action's handler and a plugin's setup that read one don't compile: a replay, a save and the other peers of a session have none of it.
 - The key is what identifies the setting where it is kept. Prefix it with its feature, as a component's name is.
 - `Setting.set` fails with `Setting.Invalid` for a value the schema doesn't take, and with `Setting.StoreFailed` when the store can't keep it. Either way, the setting keeps the value it had.
-- A kept value the schema no longer takes, after the schema changed, reads as `initial` until it is set again.
+- A kept value the schema no longer takes, after the schema changed, or text that isn't JSON, fails the read with `Setting.Invalid`, which names the key, until it is set again. A frame that fails ends `Driver.run` with the failure, so a game that would rather start from `initial` reads it with `yield* Effect.orElseSucceed(Volume, () => Volume.initial)`.
 
 | Store | Keeps the settings |
 | --- | --- |

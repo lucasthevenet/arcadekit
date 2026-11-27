@@ -175,6 +175,13 @@ export interface FieldDef<T, C> {
   /** The codec of a `ref` field, and undefined on any other. */
   readonly codec?: RefCodec<T>;
   /**
+   * What the field holds in a component added or spawned bare, with no value:
+   * a `json` or `ref` field's, given where the field is made. It is absent on
+   * a number field, which holds 0, on a `Field.bool`, which holds `false`, and
+   * on a `transient` field, which holds undefined.
+   */
+  readonly initial?: T;
+  /**
    * True for `Field.bool`, a `u8` field read as `false` for 0 and `true` for
    * any other number, and written as 0 or 1. Undefined on any other.
    */
@@ -194,7 +201,7 @@ const bool: FieldDef<boolean, Uint8Array> = { kind: "u8", bool: true };
  * typed array. Any other field type says what a snapshot and the hash do with
  * its values.
  *
- *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>() })
+ *   const Hero = Component.define("game/Hero", { hp: Field.i32, name: Field.json<string>("") })
  *
  * **When to use**
  *
@@ -234,18 +241,24 @@ export const Field = {
    * array or object of strings, numbers, booleans and null. It is saved in
    * snapshots and included in the hash. An array or an object is saved and
    * hashed as its `JSON.stringify` text, so it loads as whatever `JSON.parse`
-   * makes of that text.
+   * makes of that text. `initial` is what it holds in a component given bare.
    */
-  json: <T extends JsonValue>(): FieldDef<Frozen<T>, Frozen<T>[]> =>
-    field<Frozen<T>, Frozen<T>[]>("json"),
+  json: <T extends JsonValue>(
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({ kind: "json", initial }),
   /**
    * Any value, such as a `Date`, a `Map` or a class instance, with a codec
    * that converts it to plain data and back. Snapshots and the hash use its
-   * encoded form, so every hash encodes each value once.
+   * encoded form, so every hash encodes each value once. `initial` is what it
+   * holds in a component given bare.
    */
-  ref: <T>(codec: RefCodec<T>): FieldDef<Frozen<T>, Frozen<T>[]> => ({
+  ref: <T>(
+    codec: RefCodec<T>,
+    initial: NoInfer<Frozen<T>>
+  ): FieldDef<Frozen<T>, Frozen<T>[]> => ({
     kind: "ref",
     codec: codec as RefCodec<Frozen<T>>,
+    initial,
   }),
   /**
    * A value that isn't part of the game's state, such as a handle, a cache,
@@ -442,6 +455,12 @@ export interface Accessor {
     entities?: Uint32Array | Float64Array,
     log?: WriteLog
   ): void;
+  /**
+   * Points the fields at columns that throw when read or written, once the
+   * world's entities changed: kept, the accessor would read and write a row
+   * that is now another entity's, or a column the table no longer uses.
+   */
+  retract(): void;
 }
 
 /**
@@ -507,8 +526,11 @@ export interface ComponentDef<
    */
   readonly relation: OnTargetDespawn | undefined;
   /**
-   * Its value when it is added or spawned bare, with no value, and undefined
-   * when that value is all zeros. See `Component.define`.
+   * Its value when it is added or spawned bare, with no value: the `initial`
+   * `Component.define` was given, or else the `initial` of each `json` and
+   * `ref` field, with 0 in a number field, `false` in a `Field.bool` and
+   * undefined in a `transient` field. It is undefined when that value is all
+   * zeros. See `Component.define`.
    */
   readonly initial: Readonly<ValueOf<S>> | undefined;
   /**
@@ -745,6 +767,14 @@ type DefineField = (
 const refuse = (message: string) => (): never => {
   throw new Error(message);
 };
+
+// A typed array ignores an index it doesn't have, so a retracted accessor's
+// refusal is in its column, and the getters and setters check nothing.
+const refusing = (message: string): Float32Array =>
+  new Proxy(new Float32Array(0), {
+    get: refuse(message),
+    set: refuse(message),
+  });
 
 // The seven that follow differ in the type of `column` and in nothing
 // else. They are not one function given the type: see above.
@@ -997,6 +1027,7 @@ export const makeAccessor = (
             : undefined
     )
   );
+  let retracted: Column[] | undefined;
   return {
     fields: Object.create(target) as object,
     bind(columns, entities, log) {
@@ -1008,7 +1039,33 @@ export const makeAccessor = (
         noting.log = log!;
       }
     },
+    retract() {
+      retracted ??= fields.map((field) =>
+        refusing(
+          `"${name}.${field}" was used through an accessor that each() or single() handed out before the world's entities last changed. A spawn, a despawn, an add or a remove, and a restore or a rewind, can move an entity to another row, and the accessor would read and write another entity's. Read the entity again with world.get(entity, ${name.split("/").pop()}), or ask the query again. To change the world's entities while you hold an accessor, queue the change on Commands.`
+        )
+      );
+      for (let f = 0; f < binders.length; f++) {
+        binders[f]!(retracted[f]!);
+      }
+    },
   };
+};
+
+const bareOf = <S extends Schema>(schema: S): ValueOf<S> | undefined => {
+  const fieldDefs = Object.entries(schema);
+  if (!fieldDefs.some(([, { kind }]) => kind === "json" || kind === "ref")) {
+    return undefined;
+  }
+  const value: Record<string, unknown> = {};
+  for (const [name, fieldDef] of fieldDefs) {
+    value[name] = isBoxed(fieldDef.kind)
+      ? fieldDef.initial
+      : fieldDef.bool === true
+        ? false
+        : 0;
+  }
+  return value as ValueOf<S>;
 };
 
 const define = <
@@ -1039,7 +1096,7 @@ const define = <
     isTag: fields.length === 0,
     single: options?.single === true,
     relation: options?.relation,
-    initial: options?.initial,
+    initial: options?.initial ?? bareOf(schema),
     requires:
       options?.requires === undefined ? [] : closeRequires(options.requires),
     of: (value) => ({ def, value }),
@@ -1104,7 +1161,7 @@ export const Component = {
     schema: S,
     initial: ValueOf<S>
   ): SingletonSpec<S> => ({
-    component: define(name, schema, { single: true }),
+    component: define(name, schema, { single: true, initial }),
     initial,
   }),
   /**
