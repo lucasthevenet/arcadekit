@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 
 /**
  * How should a system touch component data?
@@ -24,11 +26,13 @@ import {
   Commands,
   Component,
   EntityId,
+  Event,
   Field,
   Grid,
   Overlap,
   Plugin,
   Query,
+  Replay,
   System,
   Time,
   Timeline,
@@ -36,6 +40,8 @@ import {
   World as WorldService,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
+import { partsOf } from "../src/internal/parts.ts";
+import { Session } from "../src/net/index.ts";
 import {
   Moving,
   Seen,
@@ -239,6 +245,196 @@ const rollingBack = (): number =>
         })
       );
       void drawn.rows;
+      return ms;
+    })
+  );
+
+/** The bytes in use once the garbage is collected, on the heap and in typed arrays. */
+const inUse = (): number => {
+  setFlagsFromString("--expose-gc");
+  const gc = runInNewContext("gc") as () => void;
+  // A typed array's memory can be given back a collection or two after the
+  // array itself is collected: one collection left 0.8 MB of them counted.
+  let least = Infinity;
+  for (let i = 0; i < 6; i++) {
+    gc();
+    const { arrayBuffers, heapUsed } = process.memoryUsage();
+    least = Math.min(least, heapUsed + arrayBuffers);
+  }
+  return least;
+};
+
+const layers = [0, 1, 2, 3, 4, 5, 6].map((i) =>
+  Component.tag(`bench/Layer${i}`)
+);
+
+/**
+ * The N entities of `populate` over 100 tables, as `bench/core.ts`'s
+ * `spread` has them: the last table has every layer.
+ */
+const Layered = Plugin.make("bench/Layered", {
+  setup: Effect.gen(function* () {
+    const commands = yield* Commands.spawns(Position, Velocity, ...layers);
+    for (let i = 0; i < N; i++) {
+      const table = 28 + (i % 100);
+      commands.spawn(
+        Position.of({ x: i, y: i }),
+        Velocity.of({ x: 1, y: 2 }),
+        ...layers.filter((_, bit) => (table >> bit) & 1)
+      );
+    }
+  }),
+});
+/** The entities of the table with every layer: 1 table of the 100. */
+const OneLayer = Moving.pipe(Query.with(...layers));
+
+/**
+ * The bytes that ten moments of a game of 100,000 entities hold, each
+ * captured after a tick that moved every entity, or with `few`, one table
+ * of 100.
+ */
+const holding = (few: boolean): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      const Move = System.tick("Move", function* () {
+        (yield* Query.View(few ? OneLayer : Moving)).eachChunk(
+          (start, end, pos, vel) => {
+            for (let n = start; n < end; n++) {
+              pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
+            }
+          }
+        );
+      });
+      const app = yield* App.make(
+        App.define({ plugins: [few ? Layered : Populated], systems: [Move] }),
+        { hashEvery: 0 }
+      );
+      yield* app.tick(DT);
+      const before = inUse();
+      const moments: Timeline.Moment[] = [];
+      for (let i = 0; i < 10; i++) {
+        yield* app.tick(DT);
+        moments.push(yield* Timeline.capture(app));
+      }
+      const bytes = inUse() - before;
+      // Each entity starts at a whole number, and one that moved is past it.
+      let moved = 0;
+      (yield* app.read(Query.View(Seen))).eachChunk((start, end, pos) => {
+        for (let n = start; n < end; n++) {
+          moved += pos.x[n]! % 1 === 0 ? 0 : 1;
+        }
+      });
+      if (moments.length !== 10 || moved !== (few ? N / 100 : N)) {
+        throw new Error(
+          `${moments.length} moments, of a game in which ${moved} entities moved.`
+        );
+      }
+      return bytes;
+    })
+  );
+
+/** Four fields, as an event of what hit what has. */
+const Hit = Event.define(
+  "bench/Hit",
+  Schema.Struct({
+    x: Schema.Number,
+    y: Schema.Number,
+    dx: Schema.Number,
+    dy: Schema.Number,
+  })
+);
+
+/**
+ * Median milliseconds of a hash check of a game that holds nothing but 256
+ * of those events, waiting to be read.
+ */
+const hashingWaiting = (): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      const Emit = System.tick("Emit", function* () {
+        const hits = yield* Event.Emitter(Hit);
+        for (let i = 0; i < 256; i++) {
+          hits.emit({ x: i, y: i, dx: 1, dy: 2 });
+        }
+      });
+      const app = yield* App.make(App.define({ systems: [Emit] }), {
+        hashEvery: 0,
+      });
+      yield* app.tick(DT);
+      const waiting = partsOf(app).events.pending(Hit);
+      if (waiting !== 256) {
+        throw new Error(`${waiting} events wait to be read, not 256.`);
+      }
+      return yield* measureEffect(() => Replay.hashCheck(app));
+    })
+  );
+
+/** How many ticks apart an app's hash checks are when it doesn't say. */
+const HASH_EVERY = 60;
+
+/**
+ * Median milliseconds of a hash check of a game of 100,000 entities, shared
+ * over the ticks between two: what hash checks cost a tick on average.
+ */
+const checkingHash = (): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      const app = yield* App.make(App.define({ plugins: [Populated] }));
+      const count = (yield* app.read(Query.View(Seen))).count();
+      if (count !== N) {
+        throw new Error(`The game holds ${count} entities, not ${N}.`);
+      }
+      const ms = yield* measureEffect(() => Replay.hashCheck(app));
+      return ms / HASH_EVERY;
+    })
+  );
+
+/** A thousand entities, spawned by a game's setup. */
+const Thousand = Plugin.make("bench/Thousand", {
+  setup: Effect.gen(function* () {
+    const commands = yield* Commands.spawns(Position, Velocity);
+    for (let i = 0; i < 1000; i++) {
+      commands.spawn(Position.of({ x: i, y: i }), Velocity.of({ x: 1, y: 2 }));
+    }
+  }),
+});
+
+/** Keeps what moves within a square of 1,000. */
+const Wrap = System.tick("Wrap", function* () {
+  (yield* Query.View(Moving)).each((pos) => {
+    if (pos.x > 1000) {
+      pos.x -= 1000;
+    }
+    if (pos.y > 1000) {
+      pos.y -= 1000;
+    }
+  });
+});
+
+/**
+ * Median milliseconds of a tick of a game of 1,000 entities and two
+ * systems, run by `Session.syncTest` when `checked`, or by `app.tick`.
+ */
+const syncing = (checked: boolean): number =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      const game = App.define({
+        plugins: [Thousand],
+        systems: [Movement, Wrap],
+      });
+      if (checked) {
+        const test = yield* Session.syncTest(game);
+        const ms = yield* measureEffect(() => test.tick(DT));
+        if (test.checked !== 380) {
+          throw new Error(`It checked ${test.checked} ticks, not 380.`);
+        }
+        return ms;
+      }
+      const app = yield* App.make(game);
+      const ms = yield* measureEffect(() => app.tick(DT));
+      if (app.time.tick !== 380) {
+        throw new Error(`It ran ${app.time.tick} ticks, not 380.`);
+      }
       return ms;
     })
   );
@@ -458,6 +654,29 @@ const variants: Record<string, Variant> = {
     label: "rollback: rewind, the tick again, a frame watching them",
     run: rollingBack,
   },
+  // A moment shares what did not change since the moment before it.
+  tenMoments: {
+    unit: "bytes",
+    label: "ten moments, each after a tick that moved all",
+    run: () => holding(false),
+  },
+  tenMomentsFew: {
+    unit: "bytes",
+    label: "the same, each after a tick that moved 1 table in 100",
+    run: () => holding(true),
+  },
+  // An app's hash encodes each waiting event through its schema, and a hash
+  // check hashes every column, whatever changed.
+  hashWaiting: {
+    unit: "matches",
+    label: "Replay.hashCheck: 256 waiting events of four fields",
+    run: hashingWaiting,
+  },
+  hashCheck: {
+    unit: "matches",
+    label: "Replay.hashCheck: 100,000 entities, shared by 60 ticks",
+    run: checkingHash,
+  },
 
   // The frame stage, drawing over 100,000 entities: checking that it left
   // the world alone costs a hash before and one per system.
@@ -468,6 +687,19 @@ const variants: Record<string, Variant> = {
   frameVerified: {
     label: "app.frame: the same, with verifyFrames",
     run: () => drawingRaw(true),
+  },
+
+  // A tick checked for what a rewind would not put back: a capture, a
+  // rewind, the tick run twice, and a world hash after each system.
+  syncTest: {
+    unit: "matches",
+    label: "Session.syncTest: a tick, 1,000 entities, two systems",
+    run: () => syncing(true),
+  },
+  syncTestWithout: {
+    unit: "matches",
+    label: "app.tick: the same game, unchecked",
+    run: () => syncing(false),
   },
 
   // What an action costs, in a world of 100,000 entities. A refused action
@@ -565,7 +797,9 @@ if (only === undefined) {
           ? `${(ms * 1000).toFixed(2).padStart(8)} µs per dispatch`
           : variant.unit === "visit"
             ? `${(ms * 1e6).toFixed(1).padStart(8)} ns per visit`
-            : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
+            : variant.unit === "bytes"
+              ? `${(ms / 1e6).toFixed(2).padStart(8)} MB held`
+              : `${((ms * 1e6) / N).toFixed(2).padStart(8)} ns/entity ${ms.toFixed(3).padStart(8)} ms/pass`;
     console.log(`${variant.label.padEnd(54)} ${text}`);
   }
   const ratio = (a: string, b: string) =>
