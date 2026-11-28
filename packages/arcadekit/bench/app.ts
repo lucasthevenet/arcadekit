@@ -32,6 +32,7 @@ import {
   Input,
   Plugin,
   Query,
+  Save,
   Singleton,
   Sound,
   State,
@@ -546,6 +547,25 @@ export const variants: Record<string, Variant> = {
     unit: "matches",
     label: "app.enqueue and app.tick: the same, its turns kept, one each tick",
     run: () => playing(true, true),
+  },
+  // The saves the rules ask for: `Save.autosave` keeps them after the tick
+  // that asked, and the board's rules ask for none.
+  boardSaved: {
+    unit: "matches",
+    label:
+      "app.tick: a clock and 1,000 pieces at rest, its saves kept by Save.autosave",
+    run: () =>
+      Effect.runSync(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const app = yield* App.make(App.define({ plugins: [Board] }));
+            yield* Save.autosave(app).pipe(
+              Effect.provide(Save.layer(Save.makeMemory()))
+            );
+            return yield* measureEffect(() => app.tick(DT), 50_000, 20_000);
+          })
+        )
+      ),
   },
 
   // The frame stage: systems that draw, run between ticks with the world

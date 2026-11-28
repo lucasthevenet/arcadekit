@@ -419,7 +419,8 @@ export const Asked = Event.define(
  * **Details**
  *
  * - The save is taken between two ticks, of the game as the tick that asked
- *   left it, and written before the next tick runs.
+ *   left it, and written before the next tick runs. A tick in which the rules
+ *   ask for nothing runs nothing for it.
  * - A save that can't be taken, or a slot the store can't keep, is logged as
  *   an error with what went wrong, and the game goes on. The slot's status,
  *   which `yield*` of `Save.slot(name)` returns, says so to the game's UI
@@ -440,11 +441,7 @@ export const autosave = (
     const { after, events, locals } = partsOf(app);
     const asked = events.handle(Asked);
     const autosaves = locals.get(Autosaves);
-    const step = Effect.fnUntraced(function* () {
-      const slots = [...new Set(asked.read().map(({ slot }) => slot))];
-      if (slots.length === 0) {
-        return;
-      }
+    const keep = Effect.fnUntraced(function* (slots: readonly string[]) {
       const taken = yield* Effect.exit(make(app));
       if (Exit.isFailure(taken)) {
         const error = errorOf(
@@ -475,6 +472,12 @@ export const autosave = (
         );
       }
     });
+    const step = (): Effect.Effect<void> | undefined => {
+      const asks = asked.read();
+      return asks.length === 0
+        ? undefined
+        : keep([...new Set(asks.map(({ slot }) => slot))]);
+    };
     after.add(step);
     autosaves.keeping++;
     yield* Effect.addFinalizer(() =>
