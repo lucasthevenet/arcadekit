@@ -26,5 +26,5 @@ Errors, with the tag `Effect.catchTag` takes:
 
 Codecs:
 
-- `Journal.encode` returns an `Exit` and fails with `Journal.Invalid`, `"no JSON form"`, where it threw: `yield* Journal.encode(recording)`. `Journal.decode` fails with `Journal.Invalid`, `"not a recording"` or `"older format"`, where it failed with a `Schema.SchemaError`.
-- `Message.encode` returns an `Exit` and fails with `Message.Invalid`, `"not a message"`, where it threw. `Message.decode` and `Message.decodeNotice` fail with `Message.Invalid` where they failed with a `Schema.SchemaError`.
+- `Journal.encode` fails with `Journal.Invalid`, `"no JSON form"`, where it threw: `yield* Journal.encode(recording)`. `Journal.decode` fails with `Journal.Invalid`, `"not a recording"` or `"older format"`, where it failed with a `Schema.SchemaError`.
+- `Message.encode` fails with `Message.Invalid`, `"not a message"`, where it threw. `Message.decode` and `Message.decodeNotice` fail with `Message.Invalid` where they failed with a `Schema.SchemaError`.
