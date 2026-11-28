@@ -318,7 +318,8 @@ const Die = Component.define("rnd/Die", { face: Field.u8, rolls: Field.u32 });
 const Spark = Component.define("rnd/Spark", { x: Field.f32, y: Field.f32 });
 
 class NoSuchDie extends Schema.TaggedError<NoSuchDie>()("NoSuchDie", {}) {}
-const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }), {
+const Roll = Action.define("rnd/Roll", {
+  payload: Schema.Struct({ sides: Schema.Int }),
   error: NoSuchDie,
 });
 

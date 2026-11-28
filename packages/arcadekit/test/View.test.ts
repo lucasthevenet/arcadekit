@@ -32,8 +32,9 @@ const Hud = View.define("vw/Hud", { gold: 0, coins: 0 });
 const Menu = View.define("vw/Menu", { phase: "title" as "title" | "playing" });
 class TooPoor extends Schema.TaggedError<TooPoor>()("TooPoor", {}) {}
 // What it may ask for.
-const Start = Action.define("vw/Start", Schema.Struct({}));
-const Buy = Action.define("vw/Buy", Schema.Struct({ price: Schema.Int }), {
+const Start = Action.define("vw/Start", { payload: Schema.Struct({}) });
+const Buy = Action.define("vw/Buy", {
+  payload: Schema.Struct({ price: Schema.Int }),
   error: TooPoor,
 });
 const Ping = Action.define("vw/Ping");
@@ -144,7 +145,7 @@ const playWithUi = Effect.fnUntraced(function* (
 });
 
 // What the game above has no handler for.
-const Unknown = Action.define("vw/Unknown", Schema.Struct({}));
+const Unknown = Action.define("vw/Unknown", { payload: Schema.Struct({}) });
 
 const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
   !Action.isHashCheck(entry);
@@ -286,11 +287,10 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         // A coin can be found, and every coin lost.
-        const Find = Action.define(
-          "vw/Find",
-          Schema.Struct({ value: Schema.Int })
-        );
-        const Lose = Action.define("vw/Lose", Schema.Struct({}));
+        const Find = Action.define("vw/Find", {
+          payload: Schema.Struct({ value: Schema.Int }),
+        });
+        const Lose = Action.define("vw/Lose", { payload: Schema.Struct({}) });
         const Chance = Plugin.make("vw/Chance", {
           handlers: [
             Action.handler(Find, function* ({ value }) {
@@ -456,7 +456,9 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         let bodies = 0;
-        const Quit = Action.define("vw/QuitWhen", Schema.Struct({}));
+        const Quit = Action.define("vw/QuitWhen", {
+          payload: Schema.Struct({}),
+        });
         const Shown = View.publish(
           Menu,
           {
@@ -694,7 +696,9 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         let bodies = 0;
-        const Quit = Action.define("vw/QuitWhenReset", Schema.Struct({}));
+        const Quit = Action.define("vw/QuitWhenReset", {
+          payload: Schema.Struct({}),
+        });
         const Shown = View.publish(
           Hud,
           {
@@ -777,7 +781,7 @@ describe("a view", () => {
     "is put back to its first value while its system does not run, when the system says so",
     () =>
       Effect.gen(function* () {
-        const Quit = Action.define("vw/Quit", Schema.Struct({}));
+        const Quit = Action.define("vw/Quit", { payload: Schema.Struct({}) });
         const Shown = View.publish(Hud, function* () {
           return { gold: (yield* Singleton.Read(Purse)).gold, coins: 0 };
         }).pipe(

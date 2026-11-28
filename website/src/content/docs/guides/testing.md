@@ -19,7 +19,9 @@ const Score = Singleton.define(
   { points: Field.i32 },
   { points: 0 }
 );
-const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
+const Add = Action.define("game/Add", {
+  payload: Schema.Struct({ points: Schema.Int }),
+});
 const add = Action.handler(Add, function* ({ points }) {
   (yield* Singleton.Write(Score)).points += points;
 });
@@ -115,7 +117,7 @@ it.effect("starts with the points the level's file says", () =>
     const Level = Assets.bundle("game/Level", {
       start: Assets.json("/level.json", Schema.Int),
     });
-    const Begin = Action.define("game/Begin", Schema.Int);
+    const Begin = Action.define("game/Begin", { payload: Schema.Int });
     const begin = Action.handler(Begin, function* (points) {
       (yield* Singleton.Write(Score)).points = points;
     });

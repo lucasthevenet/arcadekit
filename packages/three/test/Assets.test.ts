@@ -44,25 +44,23 @@ const { Position } = Transform3d;
 const Tree = Component.tag("ta/Tree", { requires: [Transform3d.Position] });
 const Deer = Component.tag("ta/Deer", { requires: [Transform3d.Position] });
 const Level = State.define("ta/Level", ["menu", "forest"]);
-const Go = Action.define(
-  "ta/Go",
-  Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
-);
+const Go = Action.define("ta/Go", {
+  payload: Schema.Struct({ to: Schema.Literals(["menu", "forest"]) }),
+});
 const go = Action.handler(Go, function* ({ to }) {
   (yield* State.Setter(Level)).set(to);
 });
 const at = (x: number) => Position.of({ x, y: 0, z: 0 });
 /** A tree or a deer comes to stand at x, of a colour if it is given one. */
-const Arrive = Action.define(
-  "ta/Arrive",
-  Schema.Struct({
+const Arrive = Action.define("ta/Arrive", {
+  payload: Schema.Struct({
     kind: Schema.Literals(["tree", "deer"]),
     x: Schema.Number,
     paint: Schema.optional(
       Schema.Struct({ r: Schema.Number, g: Schema.Number, b: Schema.Number })
     ),
-  })
-);
+  }),
+});
 const arrive = Action.handler(Arrive, function* ({ kind, paint, x }) {
   return (yield* Commands.spawns(Tree, Deer, Position, Color.Rgb)).spawn(
     kind === "tree" ? Tree : Deer,
@@ -72,14 +70,15 @@ const arrive = Action.handler(Arrive, function* ({ kind, paint, x }) {
       : [Color.Rgb.of({ ...paint, space: Color.Linear })])
   );
 });
-const Move = Action.define(
-  "ta/Move",
-  Schema.Struct({ entity: EntityId, x: Schema.Number })
-);
+const Move = Action.define("ta/Move", {
+  payload: Schema.Struct({ entity: EntityId, x: Schema.Number }),
+});
 const move = Action.handler(Move, function* ({ entity, x }) {
   (yield* World.writes(Position)).set(entity, Position, { x });
 });
-const Leave = Action.define("ta/Leave", Schema.Struct({ entity: EntityId }));
+const Leave = Action.define("ta/Leave", {
+  payload: Schema.Struct({ entity: EntityId }),
+});
 const leave = Action.handler(Leave, function* ({ entity }) {
   (yield* Commands).despawn(entity);
 });

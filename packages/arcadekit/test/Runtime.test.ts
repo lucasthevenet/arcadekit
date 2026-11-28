@@ -379,10 +379,9 @@ describe("systems", () => {
             return yield* new OutOfBounds({ x: worst });
           }
         });
-        const Place = Action.define(
-          "rt/Place",
-          Schema.Struct({ x: Schema.Number })
-        );
+        const Place = Action.define("rt/Place", {
+          payload: Schema.Struct({ x: Schema.Number }),
+        });
         const place = Action.handler(Place, function* ({ x }) {
           (yield* Commands.spawns(Position)).spawn(Position.of({ x, y: 0 }));
         });
@@ -467,7 +466,7 @@ describe("the built-in services", () => {
 describe("a fiber the game starts", () => {
   /** A fiber that never ends, left behind by whoever starts it. */
   const leave = Effect.forkDetach(Effect.never);
-  const Ping = Action.define("rt/Ping", Schema.Struct({}));
+  const Ping = Action.define("rt/Ping", { payload: Schema.Struct({}) });
 
   it.effect(
     "may be a child of the system that starts it, ended with the tick",

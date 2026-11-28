@@ -2,7 +2,7 @@
  * Schemas for arcadekit's own types, for use in the payloads of actions and
  * events.
  *
- *   const Attack = Action.define("duel/Attack", Schema.Struct({ target: EntityId }))
+ *   const Attack = Action.define("duel/Attack", { payload: Schema.Struct({ target: EntityId }) })
  *
  * The root entry exports `EntityId` itself, with no namespace:
  * `import { EntityId } from "arcadekit"`.

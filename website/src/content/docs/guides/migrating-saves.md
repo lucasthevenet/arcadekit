@@ -27,10 +27,9 @@ const Health = Component.define("game/Health", {
   points: Field.f32,
 });
 const Struck = Event.define("game/Struck", Schema.Struct({ by: Schema.Int }));
-const Move = Action.define(
-  "game/Move",
-  Schema.Struct({ dx: Schema.Int, run: Schema.Boolean })
-);
+const Move = Action.define("game/Move", {
+  payload: Schema.Struct({ dx: Schema.Int, run: Schema.Boolean }),
+});
 const Phase = State.define("game/Phase", ["menu", "playing", "over"]);
 
 const migrations = [

@@ -28,15 +28,15 @@ const Stepped = Event.define(
   Schema.Struct({ hard: Schema.Boolean })
 );
 
-const Go = Action.define(
-  "mu/Go",
-  Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) })
-);
-const SetHush = Action.define(
-  "mu/SetHush",
-  Schema.Struct({ on: Schema.Boolean })
-);
-const Step = Action.define("mu/Step", Schema.Struct({ hard: Schema.Boolean }));
+const Go = Action.define("mu/Go", {
+  payload: Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) }),
+});
+const SetHush = Action.define("mu/SetHush", {
+  payload: Schema.Struct({ on: Schema.Boolean }),
+});
+const Step = Action.define("mu/Step", {
+  payload: Schema.Struct({ hard: Schema.Boolean }),
+});
 
 const Rules = Plugin.make("mu/Rules", {
   handlers: [
@@ -656,7 +656,7 @@ describe("Sound.Player.music", () => {
         (yield* Sound.Player).music("mu/Loud", T.theme);
       }
     );
-    const Bang = Action.define("mu/Bang", Schema.Struct({}));
+    const Bang = Action.define("mu/Bang", { payload: Schema.Struct({}) });
     Action.handler(
       Bang,
       // @ts-expect-error sound is the frame's

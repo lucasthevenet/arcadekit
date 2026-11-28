@@ -47,10 +47,9 @@ const Fire = System.tick("game/Fire", function* () {
   });
 });
 
-const Hold = Action.define(
-  "game/Hold",
-  Schema.Struct({ held: Schema.Boolean })
-);
+const Hold = Action.define("game/Hold", {
+  payload: Schema.Struct({ held: Schema.Boolean }),
+});
 const hold = Action.handler(Hold, function* ({ held }) {
   (yield* Singleton.Write(Trigger)).held = held ? 1 : 0;
 });

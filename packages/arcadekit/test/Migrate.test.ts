@@ -64,7 +64,9 @@ const Buff0 = Component.define(
   { power: Field.u8, note: Field.json<string>("") },
   { storage: "sparse" }
 );
-const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
+const Heal0 = Action.define("mg/Heal", {
+  payload: Schema.Struct({ amount: Schema.Int }),
+});
 const heal0 = Action.handler(Heal0, function* ({ amount }) {
   (yield* Query.View(Query.all(Hp0).pipe(Query.writes(Hp0)))).each((hp) => {
     hp.points += amount;
@@ -128,7 +130,9 @@ const Buff2 = Component.define(
   },
   { storage: "sparse" }
 );
-const Mend2 = Action.define("mg/Mend", Schema.Struct({ by: Schema.Int }));
+const Mend2 = Action.define("mg/Mend", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
 const mend2 = Action.handler(Mend2, function* ({ by }) {
   (yield* Query.View(Query.all(Health2).pipe(Query.writes(Health2)))).each(
     (health) => {
@@ -136,7 +140,7 @@ const mend2 = Action.handler(Mend2, function* ({ by }) {
     }
   );
 });
-const Recruit2 = Action.define("mg/Recruit", Schema.Struct({}));
+const Recruit2 = Action.define("mg/Recruit", { payload: Schema.Struct({}) });
 const recruit2 = Action.handler(Recruit2, function* () {
   return (yield* Commands.spawns(Health2)).spawn(
     Health2.of({ armor: 0, points: 1 })
@@ -192,7 +196,9 @@ const GaugeBool = Component.define("mg/Gauge", {
 // --- what a save holds beside its components, in version 0 and in version 1 ----------
 
 const Hit0 = Event.define("mv/Hit", Schema.Struct({ damage: Schema.Int }));
-const Move0 = Action.define("mv/Move", Schema.Struct({ dx: Schema.Int }));
+const Move0 = Action.define("mv/Move", {
+  payload: Schema.Struct({ dx: Schema.Int }),
+});
 const Phase0 = State.define("mv/Phase", ["menu", "play", "over"]);
 const Spark = Component.define("mv/Spark", { n: Field.u8 });
 const Sparks = Query.all(Spark);
@@ -217,12 +223,11 @@ const Version0Moves = App.define({
 });
 
 const Struck = Event.define("mv/Struck", Schema.Struct({ damage: Schema.Int }));
-const Step1 = Action.define(
-  "mv/Step",
-  Schema.Struct({ dx: Schema.Int, run: Schema.Boolean })
-);
+const Step1 = Action.define("mv/Step", {
+  payload: Schema.Struct({ dx: Schema.Int, run: Schema.Boolean }),
+});
 const Phase1 = State.define("mv/Phase", ["menu", "playing", "over"]);
-const End1 = Action.define("mv/End", Schema.Struct({}));
+const End1 = Action.define("mv/End", { payload: Schema.Struct({}) });
 
 describe("a snapshot read without the program's components", () => {
   it.effect(

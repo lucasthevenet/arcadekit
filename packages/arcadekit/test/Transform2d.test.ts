@@ -88,10 +88,9 @@ describe("Transform2d", () => {
             );
           }),
         });
-        const Slide = Action.define(
-          "t2/Slide",
-          Schema.Struct({ x: Schema.Number, y: Schema.Number })
-        );
+        const Slide = Action.define("t2/Slide", {
+          payload: Schema.Struct({ x: Schema.Number, y: Schema.Number }),
+        });
         const slide = Action.handler(Slide, function* (to) {
           (yield* Query.View(
             Query.all(Position).pipe(Query.writes(Position))
@@ -100,7 +99,7 @@ describe("Transform2d", () => {
             position.y = to.y;
           });
         });
-        const Lift = Action.define("t2/Lift", Schema.Struct({}));
+        const Lift = Action.define("t2/Lift", { payload: Schema.Struct({}) });
         const lift = Action.handler(Lift, function* () {
           const commands = yield* Commands;
           (yield* Query.View(Query.all(Position))).each((_, entity) => {
@@ -242,10 +241,9 @@ describe("Transform2d", () => {
 describe("Transform2d.smooth", () => {
   const Player = Component.tag("t2/Player", { requires: [Position] });
   const Players = Query.all(Position).pipe(Query.with(Player));
-  const Teleport = Action.define(
-    "t2/Teleport",
-    Schema.Struct({ x: Schema.Number })
-  );
+  const Teleport = Action.define("t2/Teleport", {
+    payload: Schema.Struct({ x: Schema.Number }),
+  });
   const teleport = Action.handler(Teleport, function* ({ x }) {
     (yield* Query.View(Players.pipe(Query.writes(Position)))).each(
       (position) => {

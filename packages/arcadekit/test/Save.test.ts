@@ -73,15 +73,17 @@ const Counted = Query.all(Tally);
 const Motes = Query.all(Mote).pipe(Query.writes(Mote));
 
 class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
-const Add = Action.define("sv/Add", Schema.Struct({ by: Schema.Int }));
-const Double = Action.define("sv/Double", Schema.Struct({}), {
+const Add = Action.define("sv/Add", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
+const Double = Action.define("sv/Double", {
+  payload: Schema.Struct({}),
   error: TooBig,
 });
-const Scatter = Action.define(
-  "sv/Scatter",
-  Schema.Struct({ count: Schema.Int })
-);
-const Pulse = Action.define("sv/Pulse", Schema.Struct({}));
+const Scatter = Action.define("sv/Scatter", {
+  payload: Schema.Struct({ count: Schema.Int }),
+});
+const Pulse = Action.define("sv/Pulse", { payload: Schema.Struct({}) });
 
 const add = Action.handler(Add, function* ({ by }) {
   (yield* Query.View(Tallies)).each((tally) => {
@@ -401,10 +403,9 @@ describe("a saved game", () => {
     () =>
       Effect.gen(function* () {
         const stamps: unknown[] = [];
-        const Stamp = Action.define(
-          "sv/Stamp",
-          Schema.Struct({ at: Schema.Date, big: Schema.BigInt })
-        );
+        const Stamp = Action.define("sv/Stamp", {
+          payload: Schema.Struct({ at: Schema.Date, big: Schema.BigInt }),
+        });
         const stamp = Action.handler(Stamp, function* ({ at, big }) {
           stamps.push([at instanceof Date && at.getTime(), typeof big, big]);
         });
@@ -571,12 +572,11 @@ describe("a game that cannot be saved as it stands", () => {
     "says which action is waiting with a payload its schema does not take",
     () =>
       Effect.gen(function* () {
-        const Small = Action.define(
-          "sv/Small",
-          Schema.Struct({
+        const Small = Action.define("sv/Small", {
+          payload: Schema.Struct({
             n: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })),
-          })
-        );
+          }),
+        });
         const small = Action.handler(Small, function* () {});
         const Issue = System.tick("Issue", function* () {
           (yield* Action.Actions).enqueue(Small, { n: 9 });
@@ -598,7 +598,7 @@ describe("a game that cannot be saved as it stands", () => {
 
   it.effect("says which field holds what cannot be saved", () =>
     Effect.gen(function* () {
-      const Mend = Action.define("sv/Mend", Schema.Struct({}));
+      const Mend = Action.define("sv/Mend", { payload: Schema.Struct({}) });
       const mend = Action.handler(Mend, function* () {
         const world = yield* World.writes(Blob);
         for (const entity of (yield* Query.View(Query.all(Blob))).entities()) {
@@ -904,7 +904,7 @@ describe("a save loaded in place", () => {
     () =>
       Effect.gen(function* () {
         const Phase = State.define("sv/Phase", ["menu", "playing"]);
-        const Begin = Action.define("sv/Begin", Schema.Struct({}));
+        const Begin = Action.define("sv/Begin", { payload: Schema.Struct({}) });
         // Nothing but the handler names the state: the app that loads the
         // save has never met it.
         const Phased = App.define({
@@ -946,7 +946,9 @@ describe("a save loaded in place", () => {
     () =>
       Effect.gen(function* () {
         const Rang = Event.define("sv/Rang", Schema.Struct({ n: Schema.Int }));
-        const Ring = Action.define("sv/Ring", Schema.Struct({ n: Schema.Int }));
+        const Ring = Action.define("sv/Ring", {
+          payload: Schema.Struct({ n: Schema.Int }),
+        });
         const heard: number[] = [];
         const Rings = App.define({
           systems: [
@@ -1089,7 +1091,9 @@ describe("a save loaded in place", () => {
 const Ball = Component.define("sv/Ball", { x: Field.f32, speed: Field.f32 });
 const Rolling = Query.all(Ball).pipe(Query.writes(Ball));
 const Balls = Query.all(Ball);
-const Kick = Action.define("sv/Kick", Schema.Struct({ by: Schema.Number }));
+const Kick = Action.define("sv/Kick", {
+  payload: Schema.Struct({ by: Schema.Number }),
+});
 const Lit = State.define("sv/Lit", ["dark", "lit"]);
 const Distance = View.define("sv/Distance", 0);
 const Tunes = Sound.sheet("sv/Tunes", { theme: "/theme.ogg" });
@@ -1237,8 +1241,8 @@ describe("a game saved to a slot", () => {
 // --- a save the rules ask for --------------------------------------------------------
 
 const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
-const Grab = Action.define("sv/Grab", Schema.Struct({}));
-const Finish = Action.define("sv/Finish", Schema.Struct({}));
+const Grab = Action.define("sv/Grab", { payload: Schema.Struct({}) });
+const Finish = Action.define("sv/Finish", { payload: Schema.Struct({}) });
 const finish = Action.handler(Finish, function* () {
   (yield* Event.Emitter(Save.Asked)).emit({ slot: "finished" });
 });
@@ -1270,7 +1274,7 @@ const Small = Singleton.define(
   { tiles: Grid.tiles(2, 2) },
   { tiles: Grid.fill(2, 2) }
 );
-const Spoil = Action.define("sv/Spoil", Schema.Struct({}));
+const Spoil = Action.define("sv/Spoil", { payload: Schema.Struct({}) });
 const Told = App.define({
   plugins: [View.plugin],
   systems: [

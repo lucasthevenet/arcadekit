@@ -105,10 +105,9 @@ const Settings = Singleton.define(
   { music: Field.f32, effects: Field.u8 },
   { music: 1, effects: 1 }
 );
-const Choose = Action.define(
-  "game/Choose",
-  Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean })
-);
+const Choose = Action.define("game/Choose", {
+  payload: Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean }),
+});
 
 const Volumes = System.frame("game/Volumes", function* () {
   const settings = yield* Singleton.Read(Settings);

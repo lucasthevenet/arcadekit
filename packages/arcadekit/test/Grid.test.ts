@@ -63,16 +63,18 @@ class Blocked extends Schema.TaggedError<Blocked>()("GridTestBlocked", {
   by: Schema.String,
 }) {}
 
-const Step = Action.define(
-  "gr/Step",
-  Schema.Struct({ dx: Schema.Int, dy: Schema.Int }),
-  { error: Blocked }
-);
-const Dig = Action.define(
-  "gr/Dig",
-  Schema.Struct({ x: Schema.Int, y: Schema.Int, refuse: Schema.Boolean }),
-  { error: Blocked }
-);
+const Step = Action.define("gr/Step", {
+  payload: Schema.Struct({ dx: Schema.Int, dy: Schema.Int }),
+  error: Blocked,
+});
+const Dig = Action.define("gr/Dig", {
+  payload: Schema.Struct({
+    x: Schema.Int,
+    y: Schema.Int,
+    refuse: Schema.Boolean,
+  }),
+  error: Blocked,
+});
 
 // It moves first and looks after, so that a refusal has a move to undo.
 const step = Action.handler(Step, function* ({ dx, dy }) {
@@ -302,7 +304,7 @@ describe("a map in the world", () => {
         { tiles: Grid.tiles(2, 2) },
         { tiles: Grid.fill(2, 2) }
       );
-      const Wrong = Action.define("gr/Wrong", Schema.Struct({}));
+      const Wrong = Action.define("gr/Wrong", { payload: Schema.Struct({}) });
       const wrong = Action.handler(Wrong, function* () {
         (yield* Singleton.Write(Small)).tiles = Grid.fill(3, 3);
       });

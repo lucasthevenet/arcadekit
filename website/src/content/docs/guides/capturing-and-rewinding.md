@@ -49,7 +49,9 @@ import { Browser } from "arcadekit/browser";
 import { Schema } from "effect";
 
 const Cell = Singleton.define("game/Cell", { x: Field.i32 }, { x: 0 });
-const Step = Action.define("game/Step", Schema.Struct({ dx: Schema.Int }));
+const Step = Action.define("game/Step", {
+  payload: Schema.Struct({ dx: Schema.Int }),
+});
 const step = Action.handler(Step, function* ({ dx }) {
   (yield* Singleton.Write(Cell)).x += dx;
 });

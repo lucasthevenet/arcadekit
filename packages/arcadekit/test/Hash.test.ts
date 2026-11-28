@@ -864,7 +864,9 @@ describe("the hash of an app's world", () => {
 
   describe("covers what waits for the next tick", () => {
     const Rang = Event.define("hash/Rang", Schema.Struct({ n: Schema.Int }));
-    const Push = Action.define("hash/Push", Schema.Struct({ by: Schema.Int }));
+    const Push = Action.define("hash/Push", {
+      payload: Schema.Struct({ by: Schema.Int }),
+    });
     const push = Action.handler(Push, function* () {});
     // A number the world doesn't keep: only the event tells it apart.
     let ringing: number | undefined;
@@ -944,10 +946,9 @@ describe("the hash of an app's world", () => {
           "hash/Rang2",
           Schema.Struct({ n: Schema.Int })
         );
-        const Push = Action.define(
-          "hash/Push2",
-          Schema.Struct({ by: Schema.Int })
-        );
+        const Push = Action.define("hash/Push2", {
+          payload: Schema.Struct({ by: Schema.Int }),
+        });
         const heard: number[] = [];
         const pushed: number[] = [];
         const push = Action.handler(Push, function* ({ by }) {

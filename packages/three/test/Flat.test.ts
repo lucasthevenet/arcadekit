@@ -43,11 +43,12 @@ const Aimed = Singleton.define(
   { x: Field.f64, y: Field.f64, angle: Field.f64 },
   { x: 0, y: 0, angle: 0 }
 );
-const Aim = Action.define(
-  "fl/Aim",
-  Schema.Struct({ x: Schema.Number, y: Schema.Number })
-);
-const Step = Action.define("fl/Step", Schema.Struct({ x: Schema.Number }));
+const Aim = Action.define("fl/Aim", {
+  payload: Schema.Struct({ x: Schema.Number, y: Schema.Number }),
+});
+const Step = Action.define("fl/Step", {
+  payload: Schema.Struct({ x: Schema.Number }),
+});
 const PlayerAt = Query.all(Transform2d.Position).pipe(Query.with(Player));
 
 /** The level is 64 by 36, and the player starts in its bottom left corner. */

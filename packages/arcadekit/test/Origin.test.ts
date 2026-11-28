@@ -67,10 +67,9 @@ describe("who issued an action", () => {
       );
       // And for one the simulation issues, a bot's: no peer stands behind it.
       const told: (string | undefined)[] = [];
-      const Poke = Action.define(
-        "or/Poke",
-        Schema.Struct({ n: Schema.Number })
-      );
+      const Poke = Action.define("or/Poke", {
+        payload: Schema.Struct({ n: Schema.Number }),
+      });
       const poke = Action.handler(Poke, function* (_, origin) {
         yield* Effect.sync(() => told.push(origin.from));
       });
@@ -242,11 +241,10 @@ describe("who issued an action", () => {
           heard.push(refusal.from);
         }
       });
-      const Never = Action.define(
-        "or/Never",
-        Schema.Struct({ n: Schema.Number }),
-        { error: Stranger }
-      );
+      const Never = Action.define("or/Never", {
+        payload: Schema.Struct({ n: Schema.Number }),
+        error: Stranger,
+      });
       const never = Action.handler(Never, function* () {
         return yield* Stranger.make({ from: undefined });
       });

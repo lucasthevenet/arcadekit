@@ -63,10 +63,9 @@ import { Schema } from "effect";
 
 const Hard = Setting.define("game/Hard", Schema.Boolean, false);
 const Mode = Singleton.define("game/Mode", { hard: Field.u8 }, { hard: 0 });
-const SetHard = Action.define(
-  "game/SetHard",
-  Schema.Struct({ hard: Schema.Boolean })
-);
+const SetHard = Action.define("game/SetHard", {
+  payload: Schema.Struct({ hard: Schema.Boolean }),
+});
 
 const setHard = Action.handler(SetHard, function* ({ hard }) {
   (yield* Singleton.Write(Mode)).hard = hard ? 1 : 0;

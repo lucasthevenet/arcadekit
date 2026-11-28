@@ -140,7 +140,7 @@ const Layout = Schema.Struct({
   slowest: Schema.Finite,
   fastest: Schema.Finite,
 });
-const Scatter = Action.define("page/Scatter", Layout);
+const Scatter = Action.define("page/Scatter", { payload: Layout });
 
 const handlers = [
   Action.handler(Start, function* () {

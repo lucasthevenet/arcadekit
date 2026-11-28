@@ -128,7 +128,7 @@ A player changes the game in one other way, through actions. An action has a nam
 ```ts title="rules.ts"
 export class NotOver extends Schema.TaggedError<NotOver>()("NotOver", {}) {}
 
-export const Restart = Action.define("catch/Restart", Schema.Void, {
+export const Restart = Action.define("catch/Restart", {
   error: NotOver,
 });
 
@@ -142,7 +142,7 @@ const restart = Action.handler(Restart, function* () {
 });
 ```
 
-`Restart` carries nothing, so its payload is `Schema.Void`, and it is issued with none, `app.dispatch(Restart)`. An action with no payload and no refusal takes only its name, `Action.define("catch/Pause")`.
+`Restart` carries nothing, so it gives no `payload`, and it is issued with none, `app.dispatch(Restart)`. An action with no payload and no refusal takes only its name, `Action.define("catch/Pause")`.
 
 ## Coins that keep coming
 

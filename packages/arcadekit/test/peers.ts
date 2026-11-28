@@ -55,36 +55,31 @@ export const Taken = Event.define(
 const Fresh = Query.all(Coin).pipe(Query.added(Coin));
 
 export const Player = Schema.Literals(["ada", "grace", "edsger"]);
-export const Drop = Action.define(
-  "ls/Drop",
-  Schema.Struct({ by: Player, value: Schema.Int })
-);
+export const Drop = Action.define("ls/Drop", {
+  payload: Schema.Struct({ by: Player, value: Schema.Int }),
+});
 export class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
   coin: EntityId,
 }) {}
-export const Take = Action.define(
-  "ls/Take",
-  Schema.Struct({ by: Player, coin: EntityId }),
-  { error: NoSuchCoin }
-);
-export const Fire = Action.define("ls/Fire", Schema.Struct({}));
+export const Take = Action.define("ls/Take", {
+  payload: Schema.Struct({ by: Player, coin: EntityId }),
+  error: NoSuchCoin,
+});
+export const Fire = Action.define("ls/Fire", { payload: Schema.Struct({}) });
 export class Stranger extends Schema.TaggedError<Stranger>()("Stranger", {
   from: Schema.UndefinedOr(Schema.String),
 }) {}
 /** A gift to oneself: whose purse it goes to is whoever issued it. */
-export const Tip = Action.define(
-  "ls/Tip",
-  Schema.Struct({ amount: Schema.Int }),
-  { error: Stranger }
-);
-export const Mint = Action.define(
-  "ls/Mint",
-  Schema.Struct({ on: Schema.Date })
-);
-export const Whisper = Action.define(
-  "ls/Whisper",
-  Schema.Struct({ to: Schema.String })
-);
+export const Tip = Action.define("ls/Tip", {
+  payload: Schema.Struct({ amount: Schema.Int }),
+  error: Stranger,
+});
+export const Mint = Action.define("ls/Mint", {
+  payload: Schema.Struct({ on: Schema.Date }),
+});
+export const Whisper = Action.define("ls/Whisper", {
+  payload: Schema.Struct({ to: Schema.String }),
+});
 
 export const drop = Action.handler(Drop, function* ({ value }) {
   const random = yield* Random;

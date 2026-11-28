@@ -194,7 +194,7 @@ describe("a term an entity may lack", () => {
     "is put back by a rewind where a table has it, and hashed as a full hash is",
     () =>
       Effect.gen(function* () {
-        const Turn = Action.define("mb/Turn", Schema.Struct({}));
+        const Turn = Action.define("mb/Turn", { payload: Schema.Struct({}) });
         const turn = Action.handler(Turn, function* () {
           (yield* Query.View(Spinning)).each((_position, rotation) => {
             if (rotation !== undefined) {

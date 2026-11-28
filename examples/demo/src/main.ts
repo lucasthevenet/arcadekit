@@ -73,10 +73,9 @@ const thaw = Action.handler(Thaw, function* () {
     commands.remove(entity, Frozen);
   }
 });
-const Launch = Action.define(
-  "demo/Launch",
-  Schema.Struct({ speed: Schema.Number })
-);
+const Launch = Action.define("demo/Launch", {
+  payload: Schema.Struct({ speed: Schema.Number }),
+});
 const launch = Action.handler(Launch, function* ({ speed }) {
   (yield* Commands.spawns(Position, Velocity)).spawn(
     Position.of({ x: 0, y: 0 }),

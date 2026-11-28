@@ -35,14 +35,12 @@ const Log = Singleton.define(
   { firing: 0, shots: [], waves: [] }
 );
 
-const Trigger = Action.define(
-  "tm/Trigger",
-  Schema.Struct({ held: Schema.Boolean })
-);
-const Reload = Action.define(
-  "tm/Reload",
-  Schema.Struct({ seconds: Schema.Number })
-);
+const Trigger = Action.define("tm/Trigger", {
+  payload: Schema.Struct({ held: Schema.Boolean }),
+});
+const Reload = Action.define("tm/Reload", {
+  payload: Schema.Struct({ seconds: Schema.Number }),
+});
 
 const trigger = Action.handler(Trigger, function* ({ held }) {
   (yield* Singleton.Write(Log)).firing = held ? 1 : 0;
@@ -160,7 +158,7 @@ describe("a cooldown", () => {
 });
 
 const Spark = Component.define("tm/Spark", { x: Field.f32 });
-const Light = Action.define("tm/Light", Schema.Struct({}));
+const Light = Action.define("tm/Light", { payload: Schema.Struct({}) });
 const Sparks = System.tick("tm/Sparks", function* () {
   (yield* Commands.spawns(Spark, Timer.Lifetime)).spawn(
     Spark.of({ x: 0 }),
@@ -270,7 +268,7 @@ describe("a system that runs every so often", () => {
           { open: Field.u8 },
           { open: 1 }
         );
-        const Shut = Action.define("tm/Shut", Schema.Struct({}));
+        const Shut = Action.define("tm/Shut", { payload: Schema.Struct({}) });
         const shut = Action.handler(Shut, function* () {
           (yield* Singleton.Write(Gate)).open = 0;
         });

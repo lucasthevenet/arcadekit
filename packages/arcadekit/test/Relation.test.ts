@@ -794,13 +794,14 @@ describe("relations against a simple model", () => {
 
 // --- in an app --------------------------------------------------------------------
 
-const Fell = Action.define("rl/Fell", Schema.Struct({ tree: EntityId }));
+const Fell = Action.define("rl/Fell", {
+  payload: Schema.Struct({ tree: EntityId }),
+});
 class NoSuchTree extends Schema.TaggedError<NoSuchTree>()("NoSuchTree", {}) {}
-const Graft = Action.define(
-  "rl/Graft",
-  Schema.Struct({ branch: EntityId, onto: EntityId }),
-  { error: NoSuchTree }
-);
+const Graft = Action.define("rl/Graft", {
+  payload: Schema.Struct({ branch: EntityId, onto: EntityId }),
+  error: NoSuchTree,
+});
 const fell = Action.handler(Fell, function* ({ tree }) {
   (yield* Commands).despawn(tree);
 });

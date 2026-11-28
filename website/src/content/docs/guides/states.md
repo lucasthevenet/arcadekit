@@ -27,7 +27,7 @@ const StartLevel = State.onEnter(
 );
 
 class NotPaused extends Schema.TaggedError<NotPaused>()("NotPaused", {}) {}
-const Resume = Action.define("game/Resume", Schema.Void, {
+const Resume = Action.define("game/Resume", {
   error: NotPaused,
 });
 
@@ -100,10 +100,11 @@ const StartRun = State.onTransition(
   }
 );
 
-export const Go = Action.define(
-  "game/Go",
-  Schema.Struct({ to: Schema.Literals(["menu", "playing", "paused"]) })
-);
+export const Go = Action.define("game/Go", {
+  payload: Schema.Struct({
+    to: Schema.Literals(["menu", "playing", "paused"]),
+  }),
+});
 const go = Action.handler(Go, function* ({ to }) {
   (yield* State.Setter(Phase)).set(to);
 });

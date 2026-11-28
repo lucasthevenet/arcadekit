@@ -35,8 +35,10 @@ const Seen = Query.all(Piece);
 const Score = Singleton.define("st/Score", { moves: Field.i32 }, { moves: 0 });
 const Phase = State.define("st/Phase", ["title", "playing"]);
 
-const Begin = Action.define("st/Begin", Schema.Struct({}));
-const Move = Action.define("st/Move", Schema.Struct({ by: Schema.Int }));
+const Begin = Action.define("st/Begin", { payload: Schema.Struct({}) });
+const Move = Action.define("st/Move", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
 const Moved = Event.define("st/Moved", Schema.Struct({ by: Schema.Int }));
 const Landed = Event.define("st/Landed", Schema.Struct({}));
 
@@ -60,10 +62,9 @@ const Opening = State.onEnter(Phase, "playing", "st/Opening", function* () {
 });
 
 /** Says that a piece has landed, or has moved, with no piece doing either. */
-const Declare = Action.define(
-  "st/Declare",
-  Schema.Struct({ landed: Schema.Boolean })
-);
+const Declare = Action.define("st/Declare", {
+  payload: Schema.Struct({ landed: Schema.Boolean }),
+});
 const declare = Action.handler(Declare, function* ({ landed }) {
   if (landed) {
     (yield* Event.Emitter(Landed)).emit({});
@@ -416,7 +417,9 @@ describe("a game that ticks when its player moves", () => {
 // tick. Nothing an app can see is waiting while it runs: no action, no
 // state, no event. The system says so itself.
 const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
-const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
+const Wind = Action.define("st/Wind", {
+  payload: Schema.Struct({ ticks: Schema.Int }),
+});
 const wind = Action.handler(Wind, function* ({ ticks }) {
   (yield* Singleton.Write(Clock)).left = ticks;
 });
@@ -518,11 +521,10 @@ describe("a game that changes", () => {
     () =>
       Effect.gen(function* () {
         class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
-        const Ask = Action.define(
-          "st/Ask",
-          Schema.Struct({ refuse: Schema.Boolean }),
-          { error: Refused }
-        );
+        const Ask = Action.define("st/Ask", {
+          payload: Schema.Struct({ refuse: Schema.Boolean }),
+          error: Refused,
+        });
         const ask = Action.handler(Ask, function* ({ refuse }) {
           (yield* Singleton.Write(Clock)).left = 9;
           if (refuse) {

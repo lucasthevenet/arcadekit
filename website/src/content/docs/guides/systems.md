@@ -95,10 +95,9 @@ const strike = (
   score.hits += 1;
 };
 
-const Strike = Action.define(
-  "game/Strike",
-  Schema.Struct({ target: EntityId })
-);
+const Strike = Action.define("game/Strike", {
+  payload: Schema.Struct({ target: EntityId }),
+});
 export const struck = Action.handler(Strike, function* ({ target }) {
   strike(
     yield* World.writes(Health),

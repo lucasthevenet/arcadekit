@@ -732,7 +732,7 @@ describe("ticking when needed", () => {
           { left: Field.u8 },
           { left: 0 }
         );
-        const Light = Action.define("dr/Light", Schema.Struct({}));
+        const Light = Action.define("dr/Light", { payload: Schema.Struct({}) });
         const light = Action.handler(Light, function* () {
           (yield* Singleton.Write(Fuse)).left = 6;
         });

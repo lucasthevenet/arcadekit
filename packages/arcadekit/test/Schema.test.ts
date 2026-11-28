@@ -28,19 +28,20 @@ class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()("NoSuchTarget", {
   target: EntityId,
 }) {}
 
-const Damage = Action.define(
-  "Damage",
-  Schema.Struct({
+const Damage = Action.define("Damage", {
+  payload: Schema.Struct({
     target: EntityId,
     amount: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })),
     // Not representable in JSON as it is: the log has to convert it.
     seed: Schema.BigInt,
     note: Schema.optional(Schema.String),
   }),
-  { error: NoSuchTarget }
-);
+  error: NoSuchTarget,
+});
 
-const Rename = Action.define("Rename", Schema.Struct({ name: Schema.String }));
+const Rename = Action.define("Rename", {
+  payload: Schema.Struct({ name: Schema.String }),
+});
 /** No payload: only a name. */
 const Reset = Action.define("Reset");
 

@@ -1309,13 +1309,14 @@ const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
 });
 
 class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
-const Push = Action.define(
-  "ch/Push",
-  Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean }),
-  { error: Refused }
-);
-const Spawn = Action.define("ch/Spawn", Schema.Struct({}));
-const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));
+const Push = Action.define("ch/Push", {
+  payload: Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean }),
+  error: Refused,
+});
+const Spawn = Action.define("ch/Spawn", { payload: Schema.Struct({}) });
+const Cull = Action.define("ch/Cull", {
+  payload: Schema.Struct({ slot: Schema.Int }),
+});
 
 const push = Action.handler(Push, function* ({ refuse, slot }) {
   let n = 0;
@@ -1480,7 +1481,9 @@ describe("change queries in an app", () => {
 
   it.effect("give a handler a place of its own, apart from the systems'", () =>
     Effect.gen(function* () {
-      const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
+      const Inspect = Action.define("ch/Inspect", {
+        payload: Schema.Struct({}),
+      });
       const inspect = Action.handler(Inspect, function* () {
         return (yield* Query.View(Moved)).entities().length;
       });
@@ -1588,7 +1591,7 @@ describe("change queries in an app", () => {
         );
         const Arrived = Query.all(Position).pipe(Query.added(Position));
         const Landed = Query.all(Place).pipe(Query.added(Place));
-        const Look = Action.define("ch/Look", Schema.Struct({}));
+        const Look = Action.define("ch/Look", { payload: Schema.Struct({}) });
         const before = Action.handler(Look, function* () {
           const counts = [
             (yield* Query.View(Moved)).count(),
@@ -1608,10 +1611,9 @@ describe("change queries in an app", () => {
             (yield* Query.View(Landed)).count(),
           ];
         });
-        const Hit = Action.define(
-          "ch/Hit",
-          Schema.Struct({ entity: EntityId })
-        );
+        const Hit = Action.define("ch/Hit", {
+          payload: Schema.Struct({ entity: EntityId }),
+        });
         const hit = Action.handler(Hit, function* ({ entity }) {
           const world = yield* World.writes(Health, Position);
           world.set(entity, Health, { hp: 9 });

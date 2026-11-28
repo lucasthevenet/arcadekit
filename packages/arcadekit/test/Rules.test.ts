@@ -36,7 +36,9 @@ const Damaged = Event.define(
 const Died = Event.define("ru/Died", Schema.Struct({ entity: EntityId }));
 const Ping = Event.define("ru/Ping", Schema.Number);
 // Says a number: how code outside the simulation has an event emitted.
-const Say = Action.define("ru/Say", Schema.Struct({ n: Schema.Number }));
+const Say = Action.define("ru/Say", {
+  payload: Schema.Struct({ n: Schema.Number }),
+});
 const say = Action.handler(Say, function* ({ n }) {
   (yield* Event.Emitter(Ping)).emit(n);
 });
@@ -240,22 +242,19 @@ class NoSuchTarget extends Schema.TaggedError<NoSuchTarget>()(
   {}
 ) {}
 
-const Attack = Action.define(
-  "Attack",
-  Schema.Struct({ attacker: EntityId, target: EntityId }),
-  { error: Schema.Union([NotYourTurn, NotEnoughEnergy, NoSuchTarget]) }
-);
-const EndTurn = Action.define(
-  "EndTurn",
-  Schema.Struct({ player: Schema.Number }),
-  { error: NotYourTurn }
-);
-const Summon = Action.define(
-  "Summon",
-  Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
-  { error: NoSuchTarget }
-);
-const Unhandled = Action.define("Unhandled", Schema.Struct({}));
+const Attack = Action.define("Attack", {
+  payload: Schema.Struct({ attacker: EntityId, target: EntityId }),
+  error: Schema.Union([NotYourTurn, NotEnoughEnergy, NoSuchTarget]),
+});
+const EndTurn = Action.define("EndTurn", {
+  payload: Schema.Struct({ player: Schema.Number }),
+  error: NotYourTurn,
+});
+const Summon = Action.define("Summon", {
+  payload: Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
+  error: NoSuchTarget,
+});
+const Unhandled = Action.define("Unhandled", { payload: Schema.Struct({}) });
 
 const TurnQuery = Query.all(Turn).pipe(Query.writes(Turn));
 const currentTurn = Effect.gen(function* () {
@@ -734,25 +733,22 @@ describe("actions", () => {
           }
         );
         expect(() =>
-          Action.define("ru/Plain", Schema.Void, {
+          Action.define("ru/Plain", {
             // @ts-expect-error a Data.TaggedError has no schema to encode it with
             error: Plain,
           })
         ).toThrow(TypeError);
-        Action.define("ru/Untagged", Schema.Void, {
+        Action.define("ru/Untagged", {
           // @ts-expect-error a refusal has a _tag, which Action.Rejected reads
           error: Schema.String,
         });
         const Offside = Schema.TaggedStruct("ru/Offside", {
           by: Schema.Number,
         });
-        const Kick = Action.define(
-          "ru/Kick",
-          Schema.Struct({ by: Schema.Number }),
-          {
-            error: Offside,
-          }
-        );
+        const Kick = Action.define("ru/Kick", {
+          payload: Schema.Struct({ by: Schema.Number }),
+          error: Offside,
+        });
         const kick = Action.handler(Kick, function* ({ by }) {
           return yield* Effect.fail(Offside.make({ by }));
         });
@@ -777,7 +773,7 @@ describe("actions", () => {
     "fail the tick when a queued action's handler dies, and leave the game as it was",
     () =>
       Effect.gen(function* () {
-        const Crash = Action.define("ru/Crash", Schema.Struct({}));
+        const Crash = Action.define("ru/Crash", { payload: Schema.Struct({}) });
         const crash = Action.handler(Crash, function* () {
           (yield* Query.View(Turns.pipe(Query.writes(Turn)))).each((turn) => {
             turn.number += 100;

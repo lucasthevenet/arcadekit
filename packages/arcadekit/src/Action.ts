@@ -9,7 +9,7 @@
  * be refused with, as `Rpc.make` does, and each error has a `_tag`.
  *
  *   class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {}) {}
- *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { error: NotYourTurn })
+ *   const PlayCard = Action.define("cards/PlayCard", { payload: Schema.Struct({ card: EntityId, target: EntityId }), error: NotYourTurn })
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
  *     const turn = yield* Singleton.Read(Turn)
@@ -120,18 +120,20 @@ type Tagged = Schema.Codec<
 >;
 
 /**
- * Defines an action, with the schema of its payload. The payload type is
- * inferred from the schema, and every payload is validated against it:
- * `Action.define("duel/Strike", Schema.Struct({ ... }))`. An action with no
- * payload takes only its name, `Action.define("duel/Pass")`, and is issued
- * with none, `app.dispatch(Pass)`.
+ * Defines an action, with the schemas of its payload and its error, as
+ * `Rpc.make` takes them: `Action.define("duel/Strike", { payload, error })`.
  *
- * The third argument declares the schema of the error its handler refuses
- * the action with, as `Rpc.make` does: `{ error: NotYourTurn }`, or
+ * The payload type is inferred from `payload`, and every payload is
+ * validated against it: `{ payload: Schema.Struct({ ... }) }`. Without it the
+ * payload is `Schema.Void`, and the action is issued with none,
+ * `app.dispatch(Pass)`. An action with neither takes only its name,
+ * `Action.define("duel/Pass")`.
+ *
+ * `error` declares the schema of the error its handler refuses the action
+ * with: `{ error: NotYourTurn }`, or
  * `{ error: Schema.Union([NotYourTurn, TooTired]) }` for several. Without it
  * the error is `Schema.Never`, and the handler can't refuse the action. A
- * handler that fails with an error outside the schema doesn't compile. An
- * action with no payload and an error takes `Schema.Void` as its payload.
+ * handler that fails with an error outside the schema doesn't compile.
  *
  * The error is tagged: each value it takes, and its encoded form, has a
  * `_tag`, as a class made with `Schema.TaggedError` or a `Schema.TaggedStruct`
@@ -146,21 +148,22 @@ type Tagged = Schema.Codec<
  *
  * @category Constructors
  */
-export function define<const N extends string>(name: N): Action<N, void, never>;
 export function define<
   const N extends string,
-  S extends Schema.Codec<unknown, unknown>,
+  S extends Schema.Codec<unknown, unknown> = typeof Schema.Void,
   Err extends Tagged = typeof Schema.Never,
 >(
   name: N,
-  payload: S,
-  options?: { readonly error?: Err }
+  options?: { readonly payload?: S; readonly error?: Err }
 ): Action<N, S["Type"], Err["Type"]>;
 export function define(
   name: string,
-  payload: Schema.Codec<unknown, unknown> = Schema.Void,
-  options?: { readonly error?: Tagged }
+  options?: {
+    readonly payload?: Schema.Codec<unknown, unknown>;
+    readonly error?: Tagged;
+  }
 ): Any {
+  const payload = options?.payload ?? Schema.Void;
   const error = options?.error ?? Schema.Never;
   // The JSON codec turns values such as dates and bigints into JSON on the
   // way out and back on the way in, so the log is always safe to serialize.

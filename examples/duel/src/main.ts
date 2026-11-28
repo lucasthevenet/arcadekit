@@ -72,16 +72,14 @@ class NoSuchFighter extends Schema.TaggedError<NoSuchFighter>()(
 // Defined with schemas, so a move is checked however it arrives (from this
 // program, a save file or the network) and the log can be written as JSON.
 // Each declares what its handler may refuse it with.
-const Strike = Action.define(
-  "Strike",
-  Schema.Struct({ attacker: EntityId, target: EntityId }),
-  { error: Schema.Union([NoSuchFighter, NotYourTurn, TooTired]) }
-);
-const Pass = Action.define(
-  "Pass",
-  Schema.Struct({ player: Schema.Literals([1, 2]) }),
-  { error: NotYourTurn }
-);
+const Strike = Action.define("Strike", {
+  payload: Schema.Struct({ attacker: EntityId, target: EntityId }),
+  error: Schema.Union([NoSuchFighter, NotYourTurn, TooTired]),
+});
+const Pass = Action.define("Pass", {
+  payload: Schema.Struct({ player: Schema.Literals([1, 2]) }),
+  error: NotYourTurn,
+});
 
 const STRIKE_COST = 2;
 const STRIKE_DAMAGE = 4;
