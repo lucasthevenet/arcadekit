@@ -56,8 +56,8 @@ type Fields = {
   readonly value: FieldDef<string, string[]>;
   /** The requested state that hasn't been entered yet, or null. */
   readonly next: FieldDef<string | null, (string | null)[]>;
-  /** 1 once the enter hooks of the first state have run. */
-  readonly entered: FieldDef<number, Uint8Array>;
+  /** True once the enter hooks of the first state have run. */
+  readonly entered: FieldDef<boolean, Uint8Array>;
 };
 
 /**
@@ -109,7 +109,7 @@ export class State<
   N extends string = string,
 > implements SingletonSpec<Fields> {
   readonly component: ComponentDef<Fields>;
-  readonly initial: { value: string; next: string | null; entered: number };
+  readonly initial: { value: string; next: string | null; entered: boolean };
 
   constructor(
     readonly name: N,
@@ -121,9 +121,9 @@ export class State<
       {
         value: Field.json<string>(first),
         next: Field.json<string | null>(null),
-        entered: Field.u8,
+        entered: Field.bool,
       },
-      { value: first, next: null, entered: 0 }
+      { value: first, next: null, entered: false }
     );
     this.component = spec.component;
     this.initial = spec.initial;
