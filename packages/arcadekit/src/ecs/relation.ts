@@ -12,6 +12,9 @@ import type {
   Schema,
 } from "./component.ts";
 
+declare const TargetBrand: unique symbol;
+declare const RetargetBrand: unique symbol;
+
 /**
  * A relation's `target` field, the id of an entity that the world keeps track
  * of. A loop reads it like any field and cannot assign it. It differs from a
@@ -20,8 +23,8 @@ import type {
  * @category Models
  */
 export interface TargetField extends FieldDef<Entity, ReadonlyColumn<Entity>> {
-  /** Never set: it tells the field apart from a `Field.entity` in the type. */
-  readonly _target: true;
+  /** Holds no value. It tells the field apart from a `Field.entity` in the type. */
+  readonly [TargetBrand]: true;
 }
 
 /** A relation's fields: its target, then any of its own. */
@@ -55,7 +58,7 @@ export type PatchOf<S extends Schema> = {
 /** What `set` is told of a relation's `target`: a message, which no value is. */
 type Retarget =
   "A relation's target is not set like a field: add the relation again, with its .of({ target }), on Commands or on the world." & {
-    readonly _retarget: true;
+    readonly [RetargetBrand]: true;
   };
 
 /**

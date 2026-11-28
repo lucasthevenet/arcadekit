@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
+import type { ComponentDef } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -189,6 +190,12 @@ describe("a lifetime", () => {
       expect(counts).toEqual([1, 1, 0, 0, 1, 1]);
     })
   );
+
+  it("is marked as Timer.plugin's under a key a game is not offered", () => {
+    expectTypeOf<
+      Exclude<keyof typeof Timer.Lifetime, symbol | keyof ComponentDef>
+    >().toBeNever();
+  });
 
   it("does not compile in a game that spawns or adds one and leaves out Timer.plugin", () => {
     const made = {
