@@ -33,6 +33,20 @@ const root = path.resolve(site, "..");
 const DOCS = "website/src/content/docs";
 const out = path.join(site, ".snippets");
 
+// tsc, Oxlint and Vitest are the workspace's, found as `pnpm run` finds them, whatever started the
+// script: the site's `node_modules/.bin` and the repository's first on the PATH.
+const PATH =
+  Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ??
+  "PATH";
+const env = {
+  ...process.env,
+  [PATH]: [
+    path.join(site, "node_modules", ".bin"),
+    path.join(root, "node_modules", ".bin"),
+    process.env[PATH],
+  ].join(path.delimiter),
+};
+
 const pages = readdirSync(path.join(root, DOCS), { recursive: true })
   .map((file) => String(file).split(path.sep).join("/"))
   .filter((file) => file.endsWith(".md"))
@@ -115,6 +129,7 @@ writeFileSync(
 
 const tsc = spawnSync("tsc", ["-p", out, "--pretty", "false"], {
   cwd: site,
+  env,
   encoding: "utf-8",
   shell: process.platform === "win32",
 });
@@ -162,7 +177,7 @@ writeFileSync(
 const oxlint = spawnSync(
   "oxlint",
   ["-c", oxlintrc, "--format", "unix", ...origins.keys()],
-  { cwd: out, encoding: "utf-8", shell: process.platform === "win32" }
+  { cwd: out, env, encoding: "utf-8", shell: process.platform === "win32" }
 );
 if (oxlint.status !== 0) {
   const PROBLEM = /^(?<file>[^:]+):(?<line>\d+):\d+: (?<message>.*)$/u;
@@ -187,7 +202,7 @@ if (tests.length > 0) {
   const vitest = spawnSync(
     "vitest",
     ["run", ...tests.map((file) => path.join(out, file))],
-    { cwd: root, stdio: "inherit", shell: process.platform === "win32" }
+    { cwd: root, env, stdio: "inherit", shell: process.platform === "win32" }
   );
   if (vitest.status !== 0) {
     console.error(`\nThe tests of the site's pages fail: ${tests.join(", ")}.`);
