@@ -2354,7 +2354,7 @@ export class World {
    * row was added or removed, and a sparse component that changed at all.
    * The rest costs one step per component of each table. Hashing a column
    * again costs about 1.4 ns per 32-bit field per entity, measured, with an
-   * entity's id counting as two fields when rows were added or removed: 0.4
+   * entity's id counting as two fields when rows were added or removed: 0.57
    * ms for 100,000 entities whose four float fields were all written. A field
    * of a sparse component costs about four times as much.
    */
