@@ -65,7 +65,7 @@ const Coins = Query.all(Position, Fall).pipe(Query.writes(Position));
 
 const Drop = System.tick("catch/Drop", function* () {
   const { delta } = yield* Time;
-  (yield* Coins).each((position, fall) => {
+  (yield* Query.View(Coins)).each((position, fall) => {
     position.y -= fall.speed * delta;
   });
 });
@@ -80,10 +80,10 @@ export const Caught = Event.define(
 );
 
 const Land = System.tick("catch/Land", function* () {
-  const basket = yield* Basket.writes;
+  const basket = yield* Singleton.Write(Basket);
   const commands = yield* Commands;
-  const caught = yield* Caught.emits;
-  (yield* Coins).each((position, _fall, coin) => {
+  const caught = yield* Event.Emitter(Caught);
+  (yield* Query.View(Coins)).each((position, _fall, coin) => {
     if (position.y > 0) {
       return;
     }
@@ -112,16 +112,16 @@ export const Move = Input.axis("catch/Move", {
 });
 
 const Steer = System.tick("catch/Steer", function* () {
-  const basket = yield* Basket.writes;
+  const basket = yield* Singleton.Write(Basket);
   if (basket.lives === 0) {
     return;
   }
   const { delta } = yield* Time;
-  basket.x += (yield* Move) * BASKET_SPEED * delta;
+  basket.x += (yield* Input.Read(Move)) * BASKET_SPEED * delta;
 });
 ```
 
-`yield* Move` is 1 while a right key is held, -1 while a left one is, 0 while both or neither are, and how far the stick is pushed. Before each tick the app reads the devices and reports what the control says as an action, so every system of the tick reads the same value, and a replay reads it from the log with no keyboard at all.
+`yield* Input.Read(Move)` is 1 while a right key is held, -1 while a left one is, 0 while both or neither are, and how far the stick is pushed. Before each tick the app reads the devices and reports what the control says as an action, so every system of the tick reads the same value, and a replay reads it from the log with no keyboard at all.
 
 A player changes the game in one other way, through actions. An action has a name and a payload. The app validates the payload against a schema before the handler runs. The handler applies the action or refuses it with a typed error, and a refused action changes nothing. Here a player starts again once the game is over, and not before.
 
@@ -133,7 +133,7 @@ export const Restart = Action.define("catch/Restart", Schema.Void, {
 });
 
 const restart = Action.handler(Restart, function* () {
-  const basket = yield* Basket.writes;
+  const basket = yield* Singleton.Write(Basket);
   if (basket.lives > 0) {
     return yield* NotOver.make({});
   }
@@ -180,7 +180,15 @@ Each method of an app returns an Effect, so a test is an Effect too: `it.effect`
 
 ```ts title="rules.test.ts"
 import { expect, it } from "@effect/vitest";
-import { App, Commands, Plugin, Replay, Test, World } from "arcadekit";
+import {
+  App,
+  Commands,
+  Plugin,
+  Replay,
+  Singleton,
+  Test,
+  World,
+} from "arcadekit";
 import { Effect, Exit } from "effect";
 
 import { Basket, Fall, Position, Restart, Rules } from "./rules.ts";
@@ -200,7 +208,7 @@ const OneCoin = Plugin.make("catch/OneCoin", {
 /** No lives left. */
 const Over = Plugin.make("catch/Over", {
   setup: Effect.gen(function* () {
-    (yield* Basket.writes).lives = 0;
+    (yield* Singleton.Write(Basket)).lives = 0;
   }),
 });
 
@@ -210,7 +218,7 @@ it.effect("catches a coin that lands in the basket", () =>
     for (let i = 0; i < 60; i++) {
       yield* app.tick(1 / 60);
     }
-    expect((yield* app.read(Basket)).caught).toBe(1);
+    expect((yield* app.read(Singleton.Read(Basket))).caught).toBe(1);
   })
 );
 
@@ -221,7 +229,7 @@ it.effect("refuses a restart while the game goes on", () =>
     expect(Exit.isFailure(restarted)).toBe(true);
     const over = yield* App.make(App.define({ plugins: [Rules, Over] }));
     yield* over.dispatch(Restart);
-    expect((yield* over.read(Basket)).lives).toBe(3);
+    expect((yield* over.read(Singleton.Read(Basket))).lives).toBe(3);
   })
 );
 ```
@@ -242,7 +250,7 @@ it.effect(
       for (let i = 0; i < 30; i++) {
         yield* game.step();
       }
-      expect((yield* game.app.read(Basket)).x).toBeCloseTo(3);
+      expect((yield* game.app.read(Singleton.Read(Basket))).x).toBeCloseTo(3);
       game.input.release("ArrowRight");
       for (let i = 0; i < 270; i++) {
         yield* game.step();
@@ -270,7 +278,16 @@ The rules steer with their control and need nothing of the page. The page adds a
 Drawing happens in the frame stage, between ticks, where the world is read-only. A frame system can read anything and change nothing, so drawing never affects the simulation.
 
 ```ts title="main.ts"
-import { Action, App, Driver, Input, Plugin, Query, System } from "arcadekit";
+import {
+  Action,
+  App,
+  Driver,
+  Input,
+  Plugin,
+  Query,
+  Singleton,
+  System,
+} from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Context, Effect, Layer } from "effect";
 
@@ -281,7 +298,7 @@ const canvas = document.querySelector("canvas")!;
 const Again = Input.button("catch/Again", ["Enter", Input.padButton(0, 9)]);
 
 const Keys = System.input("catch/Keys", function* () {
-  if ((yield* Again).pressed) {
+  if ((yield* Input.Read(Again)).pressed) {
     (yield* Action.Actions).enqueue(Restart);
   }
 });
@@ -300,11 +317,11 @@ const scale = 40;
 
 const Draw = System.frame("catch/Draw", function* () {
   const { context } = yield* Screen;
-  const basket = yield* Basket;
+  const basket = yield* Singleton.Read(Basket);
   context.clearRect(0, 0, canvas.width, canvas.height);
   const toX = (x: number) => canvas.width / 2 + x * scale;
   const toY = (y: number) => canvas.height - 20 - y * scale;
-  (yield* Coins).each((position) => {
+  (yield* Query.View(Coins)).each((position) => {
     context.fillRect(toX(position.x) - 4, toY(position.y) - 4, 8, 8);
   });
   context.fillRect(toX(basket.x) - scale / 2, toY(0), scale, 6);

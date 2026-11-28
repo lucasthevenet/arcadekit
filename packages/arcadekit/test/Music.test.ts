@@ -41,13 +41,13 @@ const Step = Action.define("mu/Step", Schema.Struct({ hard: Schema.Boolean }));
 const Rules = Plugin.make("mu/Rules", {
   handlers: [
     Action.handler(Go, function* ({ to }) {
-      (yield* Level.sets).set(to);
+      (yield* State.Setter(Level)).set(to);
     }),
     Action.handler(SetHush, function* ({ on }) {
-      (yield* Hush.writes).on = on ? 1 : 0;
+      (yield* Singleton.Write(Hush)).on = on ? 1 : 0;
     }),
     Action.handler(Step, function* ({ hard }) {
-      (yield* Stepped.emits).emit({ hard });
+      (yield* Event.Emitter(Stepped)).emit({ hard });
     }),
   ],
 });
@@ -76,11 +76,11 @@ const Score = Sound.music(
   "mu/Score",
   function* () {
     asked++;
-    const level = (yield* Level).value;
+    const level = (yield* State.Reader(Level)).value;
     if (level === "menu") {
       return undefined;
     }
-    if ((yield* Hush).on === 1) {
+    if ((yield* Singleton.Read(Hush)).on === 1) {
       return { track: T.theme, volume: 0.2 };
     }
     // The cave has a track of its own, quieter and slower to come.
@@ -196,7 +196,7 @@ describe("Sound.music", () => {
         const sound = Sound.makeRecorder();
         let wanted: Sound.TrackOf = T.a;
         const Plain = Sound.music("mu/Plain", function* () {
-          yield* Level;
+          yield* State.Reader(Level);
           return wanted;
         });
         const { app } = yield* play(
@@ -230,10 +230,10 @@ describe("Sound.music", () => {
         // A fanfare in the cave, for as long as the game is there; hushed, the
         // same piece goes round and round, softly.
         const Fanfare = Sound.music("mu/Fanfare", function* () {
-          if ((yield* Level).value !== "cave") {
+          if ((yield* State.Reader(Level)).value !== "cave") {
             return undefined;
           }
-          return (yield* Hush).on === 1
+          return (yield* Singleton.Read(Hush)).on === 1
             ? { track: T.fanfare, volume: 0.5 }
             : { track: T.fanfare, once: true };
         });
@@ -264,7 +264,7 @@ describe("Sound.music", () => {
         ]);
         // Once again, at the same volume, is told too.
         const Twice = Sound.music("mu/Twice", function* () {
-          return (yield* Hush).on === 1
+          return (yield* Singleton.Read(Hush)).on === 1
             ? { track: T.fanfare, once: true }
             : T.fanfare;
         });
@@ -359,11 +359,13 @@ describe("Sound.music", () => {
         // A menu's music and a level's, each a system of its own that runs
         // while the game is there: two that are meant as one score.
         const MenuScore = Sound.music("mu/MenuScore", function* () {
-          yield* Level;
+          yield* State.Reader(Level);
           return T.theme;
         }).pipe(System.runIf(State.is(Level, "menu")));
         const LevelScore = Sound.music("mu/LevelScore", function* () {
-          return (yield* Level).value === "forest" ? T.theme : T.drip;
+          return (yield* State.Reader(Level)).value === "forest"
+            ? T.theme
+            : T.drip;
         }).pipe(System.runIf(State.is(Level, "forest", "cave")));
         // Whichever of the two is listed first: silence gives way to a track.
         for (const game of [
@@ -398,11 +400,11 @@ describe("Sound.music", () => {
         const sound = Sound.makeRecorder();
         // The first to speak says another thing when the game is hushed.
         const One = Sound.music("mu/One", function* () {
-          return (yield* Hush).on === 1 ? T.calm : T.theme;
+          return (yield* Singleton.Read(Hush)).on === 1 ? T.calm : T.theme;
         });
         let other: Sound.TrackOf = T.wind;
         const Two = Sound.music("mu/Two", function* () {
-          return (yield* Hush).on === 1 ? undefined : other;
+          return (yield* Singleton.Read(Hush)).on === 1 ? undefined : other;
         });
         const { app, step } = yield* play(
           App.define({ plugins, systems: [One, Two] }),
@@ -451,7 +453,7 @@ describe("Sound.music", () => {
         const Wind = Sound.music(
           "mu/Wind",
           function* () {
-            return (yield* Level).value === "menu"
+            return (yield* State.Reader(Level)).value === "menu"
               ? undefined
               : { track: T.wind, volume: 0.3 };
           },
@@ -461,7 +463,9 @@ describe("Sound.music", () => {
         const Breeze = Sound.music(
           "mu/Breeze",
           function* () {
-            return (yield* Level).value === "menu" ? T.breeze : undefined;
+            return (yield* State.Reader(Level)).value === "menu"
+              ? T.breeze
+              : undefined;
           },
           { channel: "wind", fade: 4 }
         );
@@ -492,7 +496,7 @@ describe("Sound.music", () => {
       const Wind = Sound.music(
         "mu/Wind",
         function* () {
-          return (yield* Level).value === "menu"
+          return (yield* State.Reader(Level)).value === "menu"
             ? undefined
             : { track: T.wind, volume: 0.3 };
         },
@@ -545,7 +549,9 @@ describe("Sound.music", () => {
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
         const Gated = Score.pipe(
-          System.runIf(Effect.map(Hush, (hush) => hush.on === 0))
+          System.runIf(
+            Effect.map(Singleton.Read(Hush), (hush) => hush.on === 0)
+          )
         );
         const { app, step } = yield* play(
           App.define({ plugins, systems: [Gated] }),
@@ -597,14 +603,16 @@ describe("Sound.music", () => {
         const Wind = Sound.music(
           "mu/Wind",
           function* () {
-            return (yield* Level).value === "cave" ? undefined : T.wind;
+            return (yield* State.Reader(Level)).value === "cave"
+              ? undefined
+              : T.wind;
           },
           { channel: "wind" }
         );
         const Never = Sound.music(
           "mu/Never",
           function* () {
-            yield* Level;
+            yield* State.Reader(Level);
             return undefined;
           },
           { channel: "never" }
@@ -628,7 +636,7 @@ describe("Sound.music", () => {
   it("gives a track or nothing, and needs Sound.plugin: anything else does not compile", () => {
     // @ts-expect-error a number is no track
     Sound.music("mu/Wrong", function* () {
-      yield* Level;
+      yield* State.Reader(Level);
       return 3;
     });
     const made = App.make(App.define({ plugins: [Rules], systems: [Score] }));
@@ -1137,7 +1145,7 @@ describe("a level's music", () => {
         const sound = Sound.makeRecorder();
         const { Forest, Keep, clips } = makeForest();
         const Ambience = Sound.music("mu/Ambience", function* () {
-          const forest = yield* Forest;
+          const forest = yield* Assets.Status(Forest);
           return forest._tag === "Ready"
             ? { track: forest.assets.wind, volume: 0.4 }
             : undefined;
@@ -1194,7 +1202,7 @@ describe("a level's music", () => {
       const sound = Sound.makeRecorder();
       const hum = Sound.clip("hum");
       const Hum = Sound.music("mu/Hum", function* () {
-        return (yield* Level).value === "menu" ? hum : undefined;
+        return (yield* State.Reader(Level)).value === "menu" ? hum : undefined;
       });
       const { app, step } = yield* play(
         App.define({ plugins, systems: [Hum] }),

@@ -63,7 +63,7 @@ const context = document.querySelector("canvas")!.getContext("2d")!;
 
 const Draw = System.frame("game/Draw", function* () {
   const smooth = yield* Transform2d.smooth;
-  (yield* Players).each((position, entity) => {
+  (yield* Query.View(Players)).each((position, entity) => {
     const at = smooth.position(entity, position, 64); // 64 is a jump, not motion
     context.fillRect(at.x, at.y, 8, 8);
   });

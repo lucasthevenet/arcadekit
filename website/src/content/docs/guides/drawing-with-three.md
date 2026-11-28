@@ -125,7 +125,7 @@ const Player = Singleton.define("game/Player", { x: Field.f32 }, { x: 0 });
 // Each frame, before the scene is rendered.
 const Follow = System.frame("game/Follow", function* () {
   const { camera } = yield* Three.Scene;
-  camera.position.x = (yield* Player).x;
+  camera.position.x = (yield* Singleton.Read(Player)).x;
 });
 ```
 

@@ -212,7 +212,7 @@ const byHand = (): Measured => {
       );
       return {
         entities: (yield* app.read(
-          Query.all().pipe(Query.with(Thing))
+          Query.View(Query.all().pipe(Query.with(Thing)))
         )).entities(),
         world: yield* app.read(World),
       };

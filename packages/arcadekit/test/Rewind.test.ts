@@ -61,7 +61,7 @@ const stretch = Effect.fnUntraced(function* (
 ) {
   const dice = new EcsWorld({ seed }).random;
   const world = yield* app.read(World);
-  const lying = yield* app.read(Lying);
+  const lying = yield* app.read(Query.View(Lying));
   const hashes: number[] = [];
   for (let i = 0; i < ticks; i++) {
     const roll = dice.int(1, 5);
@@ -230,7 +230,7 @@ describe("a game that is put back to a moment", () => {
         { ticks: 2 }
       );
       const Clock = System.tick("rw/Clock", function* () {
-        const left = yield* Left.writes;
+        const left = yield* Singleton.Write(Left);
         if (left.ticks > 0) {
           left.ticks -= 1;
         }
@@ -302,10 +302,10 @@ describe("a game that is put back to a moment", () => {
         const heard: number[][] = [];
         // Listed before the system that emits: it hears each event a tick late.
         const Listen = System.tick("rw/Listen", function* () {
-          heard.push((yield* Rang).read().map((rang) => rang.n));
+          heard.push((yield* Event.Reader(Rang)).read().map((rang) => rang.n));
         });
         const Ring = System.tick("rw/Ring", function* () {
-          (yield* Rang.emits).emit({ n: (yield* Time).tick });
+          (yield* Event.Emitter(Rang)).emit({ n: (yield* Time).tick });
         });
         yield* withApp(
           App.make(App.define({ systems: [Listen, Ring] })),
@@ -336,10 +336,10 @@ describe("a game that is put back to a moment", () => {
         const NewDots = Query.all(Dot).pipe(Query.added(Dot));
         const seen = { tick: [] as number[], frame: [] as number[] };
         const Count = System.tick("rw/Count", function* () {
-          seen.tick.push((yield* NewDots).entities().length);
+          seen.tick.push((yield* Query.View(NewDots)).entities().length);
         });
         const Draw = System.frame("rw/Draw", function* () {
-          seen.frame.push((yield* NewDots).entities().length);
+          seen.frame.push((yield* Query.View(NewDots)).entities().length);
         });
         const Grow = System.tick("rw/Grow", function* () {
           (yield* Commands.spawns(Dot)).spawn(Dot.of({ x: 1 }));
@@ -437,7 +437,7 @@ describe("a game that is put back to a moment", () => {
         const Move = Action.define("rw/Move", Schema.Struct({}));
         const Sprites = Query.all(Sprite).pipe(Query.writes(Sprite));
         const move = Action.handler(Move, function* () {
-          (yield* Sprites).each((sprite) => {
+          (yield* Query.View(Sprites)).each((sprite) => {
             sprite.x += 1;
           });
         });
@@ -620,24 +620,30 @@ describe("what the stages between ticks hear across a rewind", () => {
   const Chimed = Event.define("rw/Chimed", Schema.Struct({ n: Schema.Int }));
   const Chime = Action.define("rw/Chime", Schema.Struct({ n: Schema.Int }));
   const chime = Action.handler(Chime, function* ({ n }) {
-    (yield* Chimed.emits).emit({ n });
+    (yield* Event.Emitter(Chimed)).emit({ n });
   });
   // Each tick rings its number twice, and once more for each bell.
   const Ring = System.tick("rw/Ring", function* () {
-    const rang = yield* Rang.emits;
+    const rang = yield* Event.Emitter(Rang);
     const { tick } = yield* Time;
     rang.emit({ n: tick });
     rang.emit({ n: tick });
-    (yield* Bells).each((bell) => rang.emit({ n: tick * 100 + bell.extra }));
+    (yield* Query.View(Bells)).each((bell) =>
+      rang.emit({ n: tick * 100 + bell.extra })
+    );
   });
   /** A game whose stages between ticks listen to one of the two events. */
   const listening = (to: typeof Rang = Rang) => {
     const heard = { frame: [] as number[], input: [] as number[] };
     const Draw = System.frame("rw/Draw", function* () {
-      heard.frame.push(...(yield* to).read().map((rang) => rang.n));
+      heard.frame.push(
+        ...(yield* Event.Reader(to)).read().map((rang) => rang.n)
+      );
     });
     const Keys = System.input("rw/Keys", function* () {
-      heard.input.push(...(yield* to).read().map((rang) => rang.n));
+      heard.input.push(
+        ...(yield* Event.Reader(to)).read().map((rang) => rang.n)
+      );
     });
     const game = App.define({
       systems: [Ring, Draw, Keys],
@@ -994,7 +1000,7 @@ describe("what the stages between ticks visit across a rewind", () => {
   );
   // Spawns a dot, despawns one, or moves one.
   const act = Action.handler(Act, function* ({ op, pick, x }) {
-    const dots = (yield* Dots).entities();
+    const dots = (yield* Query.View(Dots)).entities();
     const dot = dots[pick % Math.max(1, dots.length)];
     if (op === 0 || dot === undefined) {
       (yield* Commands.spawns(Dot)).spawn(Dot.of({ x }));
@@ -1008,7 +1014,7 @@ describe("what the stages between ticks visit across a rewind", () => {
   const shown = new Map<Entity, number>();
   const Show = System.frame("rw/Show", function* () {
     const world = yield* World;
-    for (const dot of (yield* Moved).entities()) {
+    for (const dot of (yield* Query.View(Moved)).entities()) {
       shown.set(dot, world.get(dot, Dot)?.x ?? -1);
     }
   });
@@ -1085,7 +1091,7 @@ describe("what the stages between ticks visit across a rewind", () => {
                 }
                 if (dice.int(0, 2) > 0) {
                   yield* app.frame(0);
-                  const dots = (yield* app.read(Dots)).entities();
+                  const dots = (yield* app.read(Query.View(Dots))).entities();
                   for (const dot of dots) {
                     if (shown.get(dot) !== world.get(dot, Dot)?.x) {
                       wrong.push(
@@ -1231,14 +1237,16 @@ describe("Session.syncTest", () => {
       const seen = { heard: [] as number[], added: [] as number[] };
       const keys: number[] = [];
       const Ring = System.tick("vr/Ring", function* () {
-        (yield* Rang.emits).emit({ n: (yield* Time).tick });
+        (yield* Event.Emitter(Rang)).emit({ n: (yield* Time).tick });
       });
       const Draw = System.frame("vr/Draw", function* () {
-        seen.heard.push(...(yield* Rang).read().map((rang) => rang.n));
-        seen.added.push((yield* New).entities().length);
+        seen.heard.push(
+          ...(yield* Event.Reader(Rang)).read().map((rang) => rang.n)
+        );
+        seen.added.push((yield* Query.View(New)).entities().length);
       });
       const Keys = System.input("vr/Keys", function* () {
-        keys.push(...(yield* Rang).read().map((rang) => rang.n));
+        keys.push(...(yield* Event.Reader(Rang)).read().map((rang) => rang.n));
       });
       yield* withMade(
         Session.syncTest(App.define({ systems: [Steady, Ring, Draw, Keys] })),
@@ -1251,7 +1259,7 @@ describe("Session.syncTest", () => {
             expect(seen).toEqual({ heard: [1, 2, 3], added: [1, 1, 1] });
             // The input stage runs before each tick: it has heard the first two.
             expect(keys).toEqual([1, 2]);
-            expect((yield* test.app.read(Marks)).count()).toBe(3);
+            expect((yield* test.app.read(Query.View(Marks))).count()).toBe(3);
           })
       );
     })
@@ -1328,13 +1336,13 @@ const Puzzle = App.define({
       systems: [
         Keys,
         View.publish(Where, function* () {
-          const { x, y } = yield* Cell;
+          const { x, y } = yield* Singleton.Read(Cell);
           return { x, y };
         }),
       ],
       handlers: [
         Action.handler(Step, function* ({ dx, dy }) {
-          const cell = yield* Cell.writes;
+          const cell = yield* Singleton.Write(Cell);
           cell.x += dx;
           cell.y += dy;
         }),
@@ -1405,7 +1413,10 @@ describe("the turns of a game kept by Timeline.keep", () => {
           press(code);
           hashes.push(world.hash());
         }
-        expect(yield* app.read(Cell)).toMatchObject({ x: 2, y: 2 });
+        expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+          x: 2,
+          y: 2,
+        });
         expect(new Set(hashes).size).toBe(5);
 
         // Two turns back from the keys, and one from the UI.
@@ -1435,7 +1446,10 @@ describe("the turns of a game kept by Timeline.keep", () => {
         press("ArrowRight");
         press("KeyY");
         // The tick that applied it ran, and went nowhere.
-        expect(yield* app.read(Cell)).toMatchObject({ x: 2, y: 1 });
+        expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+          x: 2,
+          y: 1,
+        });
         expect(yield* Timeline.redo(app)).toBe(false);
         expect(yield* Timeline.undo(app)).toBe(true);
         expect(world.hash()).toBe(hashes[2]);
@@ -1493,7 +1507,10 @@ describe("the turns of a game kept by Timeline.keep", () => {
           // By the actions a game's keys and UI issue, then from outside it.
           yield* app.enqueue(Timeline.Undo);
           yield* app.tick(1 / 60);
-          expect(yield* app.read(Cell)).toMatchObject({ x: 0, y: 0 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+            x: 0,
+            y: 0,
+          });
           // An undo with no turn to go back to gives up none either.
           yield* app.enqueue(Timeline.Undo);
           yield* app.tick(1 / 60);
@@ -1519,7 +1536,10 @@ describe("the turns of a game kept by Timeline.keep", () => {
           yield* app.enqueue(Step, { dx: 0, dy: 1 });
           yield* app.tick(1 / 60);
           expect(yield* Timeline.redo(app)).toBe(false);
-          expect(yield* app.read(Cell)).toMatchObject({ x: 0, y: 1 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+            x: 0,
+            y: 1,
+          });
           const moment = yield* captured(app);
           yield* app.enqueue(Step, { dx: 1, dy: 0 });
           yield* app.tick(1 / 60);
@@ -1541,7 +1561,7 @@ describe("the turns of a game kept by Timeline.keep", () => {
             plugins: [Timeline.plugin],
             handlers: [
               Action.handler(Oops, function* () {
-                (yield* Cell.writes).y += 10;
+                (yield* Singleton.Write(Cell)).y += 10;
                 (yield* Action.Actions).enqueue(Timeline.Undo, undefined);
               }),
             ],
@@ -1553,15 +1573,21 @@ describe("the turns of a game kept by Timeline.keep", () => {
           yield* Timeline.keep(app);
           yield* app.enqueue(Oops);
           yield* app.tick(1 / 60);
-          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+            y: 10,
+          });
           yield* app.tick(1 / 60);
-          expect(yield* app.read(Cell)).toMatchObject({ y: 0 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({ y: 0 });
           expect(yield* Timeline.redo(app)).toBe(true);
-          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+            y: 10,
+          });
           // The undo the rules asked for was applied, and isn't asked again.
           yield* app.tick(1 / 60);
           yield* app.tick(1 / 60);
-          expect(yield* app.read(Cell)).toMatchObject({ y: 10 });
+          expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({
+            y: 10,
+          });
         }).pipe(Effect.scoped)
       );
     }

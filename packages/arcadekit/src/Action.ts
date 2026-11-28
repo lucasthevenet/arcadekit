@@ -12,11 +12,11 @@
  *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { error: NotYourTurn })
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
- *     const turn = yield* Turn
+ *     const turn = yield* Singleton.Read(Turn)
  *     if (turn.player !== owner) return yield* NotYourTurn.make({})
  *     const commands = yield* Commands
  *     commands.despawn(card)
- *     const played = yield* CardPlayed.emits
+ *     const played = yield* Event.Emitter(CardPlayed)
  *     played.emit({ card, target })
  *   })
  *
@@ -280,7 +280,7 @@ export interface AnyHandler {
  * names the peer that issued the action.
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
- *     const turn = yield* Turn
+ *     const turn = yield* Singleton.Read(Turn)
  *     if (turn.player !== from) return yield* NotYourTurn.make({})
  *     ...
  *   })

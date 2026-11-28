@@ -196,16 +196,18 @@ describe("a term an entity may lack", () => {
       Effect.gen(function* () {
         const Turn = Action.define("mb/Turn", Schema.Struct({}));
         const turn = Action.handler(Turn, function* () {
-          (yield* Spinning).each((_position, rotation) => {
+          (yield* Query.View(Spinning)).each((_position, rotation) => {
             if (rotation !== undefined) {
               rotation.a += 10;
             }
           });
-          (yield* Spinning).eachChunk((start, end, _position, rotation) => {
-            for (let i = start; rotation !== undefined && i < end; i++) {
-              rotation.a[i] = rotation.a[i]! + 1;
+          (yield* Query.View(Spinning)).eachChunk(
+            (start, end, _position, rotation) => {
+              for (let i = start; rotation !== undefined && i < end; i++) {
+                rotation.a[i] = rotation.a[i]! + 1;
+              }
             }
-          });
+          );
         });
         yield* withApp(App.make(App.define({ handlers: [turn] })), (app) =>
           Effect.gen(function* () {

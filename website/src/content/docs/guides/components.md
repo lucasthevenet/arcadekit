@@ -93,7 +93,7 @@ const program = Effect.gen(function* () {
   const thrown = yield* app.dispatch(Throw, { x: 4 });
   const world = yield* app.read(World);
   world.get(thrown, Position)?.x; // 4
-  (yield* app.read(Placed)).count(); // 2
+  (yield* app.read(Query.View(Placed))).count(); // 2
 });
 ```
 

@@ -52,13 +52,13 @@ const Refused = Action.define("tr/Refused", Schema.Struct({}), {
 const Begin = Action.define("tr/Begin", Schema.Struct({}));
 
 const Grow = System.tick("tr/Grow", function* () {
-  (yield* Counted).each((count) => {
+  (yield* Query.View(Counted)).each((count) => {
     count.n += 1;
   });
 });
 const Roll = System.tick("tr/Roll", function* () {
   const random = yield* Random;
-  (yield* Counted).each((count) => {
+  (yield* Query.View(Counted)).each((count) => {
     count.n += random.int(0, 10);
   });
 });
@@ -71,7 +71,7 @@ const Read = System.input("tr/Read", function* () {});
 
 const handlers = [
   Action.handler(Add, function* ({ by }) {
-    (yield* Counted).each((count) => {
+    (yield* Query.View(Counted)).each((count) => {
       count.n += by;
     });
   }),
@@ -79,7 +79,7 @@ const handlers = [
     return yield* NotNow.make({});
   }),
   Action.handler(Begin, function* () {
-    (yield* Phase.sets).set("playing");
+    (yield* State.Setter(Phase)).set("playing");
   }),
 ] as const;
 

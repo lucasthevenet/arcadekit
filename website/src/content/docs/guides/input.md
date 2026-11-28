@@ -26,12 +26,12 @@ const Hero = Singleton.define(
 );
 
 const Walk = System.tick("game/Walk", function* () {
-  const hero = yield* Hero.writes;
+  const hero = yield* Singleton.Write(Hero);
   const { delta } = yield* Time;
-  const move = yield* Move; // { x, y }: y up, of length 1 at most
+  const move = yield* Input.Read(Move); // { x, y }: y up, of length 1 at most
   hero.x += move.x * 5 * delta;
   hero.y += move.y * 5 * delta;
-  if ((yield* Jump).pressed) {
+  if ((yield* Input.Read(Jump)).pressed) {
     hero.jumps += 1;
   }
 });
@@ -78,7 +78,7 @@ const Jump = Input.button("game/Jump", ["Space", Input.padButton(0, 0)]);
 const Asking = System.local(() => ({ asking: false }));
 
 const Settings = System.input("game/Settings", function* () {
-  const menu = yield* Asking;
+  const menu = yield* System.Kept(Asking);
   const { pressed } = yield* Input.Devices;
   if (!menu.asking) {
     menu.asking = pressed.includes("KeyR");
@@ -124,7 +124,10 @@ Browser.runMain(
         // declares when what was kept no longer reads.
         yield* settings.rebind(
           Jump,
-          yield* Effect.orElseSucceed(JumpKeys, () => Jump.bindings)
+          yield* Effect.orElseSucceed(
+            Setting.get(JumpKeys),
+            () => Jump.bindings
+          )
         );
         const run = Effect.runForkWith(yield* Effect.context<Setting.Store>());
         // The menu makes K the jump, now and after a reload.

@@ -135,8 +135,8 @@ describe.runIf(built)("a module's page", () => {
 
   it("leaves private and @internal members out of a class, with their comments", () => {
     const state = signatureOf("State", "State");
-    expect(state).toContain("get sets(): Effect.Effect<Setter<V>");
-    expect(state).not.toMatch(/private|effect:|writing:/u);
+    expect(state).toContain("readonly values: readonly V[];");
+    expect(state).not.toMatch(/private|@internal/u);
     const world = signatureOf("ecs", "World", "ecs/index.ts");
     expect(world).toContain("class World");
     expect(world).not.toMatch(/private|@internal|_recTable|_reserve/u);

@@ -274,7 +274,7 @@ type OnRun = (table: Table, start: number, end: number) => void;
 
 /**
  * A query resolved against one world, as `World.view` returns it and a system
- * gets it from `yield* SomeQuery`. `each` and `eachChunk` visit the entities
+ * gets it from `yield* Query.View(SomeQuery)`. `each` and `eachChunk` visit the entities
  * that match, `single` hands out the one it matches, and `count` and
  * `entities` read them.
  *
@@ -1369,7 +1369,7 @@ export class QueryView<D extends Terms = Terms> {
    * such as its player.
    *
    *   const Players = Query.all(Position).pipe(Query.with(Player))
-   *   const [position, player] = (yield* Players).single()
+   *   const [position, player] = (yield* Query.View(Players)).single()
    *
    * It throws when the view matches no entity, or more than one, and the
    * error names the query and how many it matched. A change query has no

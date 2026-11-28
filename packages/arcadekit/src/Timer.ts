@@ -4,7 +4,7 @@
  *
  *   const Gun = Component.define("game/Gun", { cooldown: Timer.field })
  *
- *   (yield* Guns).each((gun) => {
+ *   (yield* Query.View(Guns)).each((gun) => {
  *     gun.cooldown = Timer.tick(gun.cooldown, delta)
  *     if (firing && Timer.ready(gun.cooldown)) {
  *       gun.cooldown = 0.2
@@ -130,7 +130,7 @@ const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 const Expire = System.tick("arcadekit/Timer.Expire", function* () {
   const { delta } = yield* Time;
   const commands = yield* Commands;
-  (yield* Mortal).each((life, entity) => {
+  (yield* Query.View(Mortal)).each((life, entity) => {
     life.left = tick(life.left, delta);
     if (life.left <= 0) {
       commands.despawn(entity);
@@ -211,7 +211,7 @@ export const every: {
     );
     const due = Effect.zipWith(
       Effect.service(Time),
-      clock.writes,
+      Singleton.Write(clock),
       (time, timer) => {
         const left = timer.left - time.delta;
         if (left > 0) {

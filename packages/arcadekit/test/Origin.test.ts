@@ -6,8 +6,10 @@ import { readSnapshot } from "../src/ecs/index.ts";
 import {
   Action,
   App,
+  Event,
   Replay,
   Save,
+  Singleton,
   System,
   Time,
   Timeline,
@@ -226,7 +228,7 @@ describe("who issued an action", () => {
             hashEvery: 1,
           });
           yield* app.tick(DELTA);
-          const { ada, grace } = yield* app.read(Purse);
+          const { ada, grace } = yield* app.read(Singleton.Read(Purse));
           expect({ ada, grace }).toEqual({ ada: 0, grace: 6 });
         }
       })
@@ -236,7 +238,7 @@ describe("who issued an action", () => {
     Effect.gen(function* () {
       const heard: (string | undefined)[] = [];
       const Hear = System.tick("or/Hear", function* () {
-        for (const refusal of (yield* Action.Rejected).read()) {
+        for (const refusal of (yield* Event.Reader(Action.Rejected)).read()) {
           heard.push(refusal.from);
         }
       });

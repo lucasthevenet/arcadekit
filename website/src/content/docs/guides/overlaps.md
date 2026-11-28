@@ -30,14 +30,14 @@ const Moving = Query.all(Transform2d.Position, Velocity).pipe(
 );
 
 export const Steer = System.tick("game/Steer", function* () {
-  (yield* Steered).each((velocity, stick) => {
+  (yield* Query.View(Steered)).each((velocity, stick) => {
     Vec2.clampLength(velocity, stick.x * 5, stick.y * 5, 5);
   });
 });
 
 export const Move = System.tick("game/Move", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity) => {
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x += velocity.x * delta;
     position.y += velocity.y * delta;
   });
@@ -90,11 +90,16 @@ const Enemies = Query.all(Transform2d.Position, Overlap.Circle, Enemy);
 export const Hit = System.tick("game/Hit", function* () {
   const world = yield* World.writes(Enemy);
   const commands = yield* Commands;
-  Overlap.pairs(commands, yield* Bullets, yield* Enemies, (_bullet, enemy) => {
-    const hp = world.get(enemy, Enemy)!.hp - 1;
-    world.set(enemy, Enemy, { hp });
-    return hp > 0 ? "first" : "both";
-  });
+  Overlap.pairs(
+    commands,
+    yield* Query.View(Bullets),
+    yield* Query.View(Enemies),
+    (_bullet, enemy) => {
+      const hp = world.get(enemy, Enemy)!.hp - 1;
+      world.set(enemy, Enemy, { hp });
+      return hp > 0 ? "first" : "both";
+    }
+  );
 });
 ```
 

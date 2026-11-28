@@ -1108,19 +1108,23 @@ Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Fores
         );
         const Move = System.tick("th/Move", function* () {
           const { delta } = yield* Time;
-          (yield* Moving).eachChunk((from, to, position, velocity) => {
-            for (let i = from; i < to; i++) {
-              position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-              position.y[i] = position.y[i]! + velocity.y[i]! * delta;
-              position.z[i] = position.z[i]! + velocity.z[i]! * delta;
+          (yield* Query.View(Moving)).eachChunk(
+            (from, to, position, velocity) => {
+              for (let i = from; i < to; i++) {
+                position.x[i] = position.x[i]! + velocity.x[i]! * delta;
+                position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+                position.z[i] = position.z[i]! + velocity.z[i]! * delta;
+              }
             }
-          });
-          (yield* MovingFlat).eachChunk((from, to, position, velocity) => {
-            for (let i = from; i < to; i++) {
-              position.x[i] = position.x[i]! + velocity.x[i]! * delta;
-              position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+          );
+          (yield* Query.View(MovingFlat)).eachChunk(
+            (from, to, position, velocity) => {
+              for (let i = from; i < to; i++) {
+                position.x[i] = position.x[i]! + velocity.x[i]! * delta;
+                position.y[i] = position.y[i]! + velocity.y[i]! * delta;
+              }
             }
-          });
+          );
         });
         // Half of them in three dimensions, and half in the plane: a kind of
         // each transform.
@@ -1765,16 +1769,16 @@ describe("an entity drawn between two ticks", () => {
   const Flat = Transform2d;
   /** Moves every rock ten along x a tick, and every flat one too. */
   const Slide = System.tick("th/Slide", function* () {
-    (yield* Query.all(Position).pipe(Query.writes(Position))).each(
+    (yield* Query.View(Query.all(Position).pipe(Query.writes(Position)))).each(
       (position) => {
         position.x += 10;
       }
     );
-    (yield* Query.all(Flat.Position).pipe(Query.writes(Flat.Position))).each(
-      (position) => {
-        position.x += 10;
-      }
-    );
+    (yield* Query.View(
+      Query.all(Flat.Position).pipe(Query.writes(Flat.Position))
+    )).each((position) => {
+      position.x += 10;
+    });
   });
   const smoothed = <const O extends Three.KindOptions["of"]>(
     name: string,
@@ -2515,8 +2519,8 @@ describe("an entity drawn between two ticks", () => {
               systems: [Smoothed],
               handlers: [
                 Action.handler(Go, function* () {
-                  (yield* Query.all(Position).pipe(
-                    Query.writes(Position)
+                  (yield* Query.View(
+                    Query.all(Position).pipe(Query.writes(Position))
                   )).each((position) => {
                     position.x += 10;
                   });
@@ -2645,7 +2649,7 @@ describe("an entity drawn between two ticks", () => {
         const followed: number[] = [];
         const Follow = System.frame("th/Follow", function* () {
           const smooth = yield* Transform3d.smooth;
-          (yield* Query.all(Position).pipe(Query.with(Rock))).each(
+          (yield* Query.View(Query.all(Position).pipe(Query.with(Rock)))).each(
             (position, entity) => {
               followed.push(smooth.position(entity, position).x);
             }
@@ -3136,7 +3140,7 @@ describe("a colour per instance", () => {
           Query.writes(Color.Rgb)
         );
         const Spoil = System.tick("th/Spoil", function* () {
-          (yield* Painting).eachChunk((from, to, color) => {
+          (yield* Query.View(Painting)).eachChunk((from, to, color) => {
             for (let i = from; i < to; i++) {
               color.r[i] = color.r[i]! / 0;
             }
@@ -3861,11 +3865,11 @@ describe("Three.plugin", () => {
             Ship,
             Rotation
           );
-          (yield* Query.all(Position).pipe(Query.writes(Position))).each(
-            (position) => {
-              position.x += delta * 3;
-            }
-          );
+          (yield* Query.View(
+            Query.all(Position).pipe(Query.writes(Position))
+          )).each((position) => {
+            position.x += delta * 3;
+          });
           if (tick % 7 === 0) {
             commands.spawn(Rock, Position.of({ x: tick, y: 0, z: 0 }));
             commands.spawn(

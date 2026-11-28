@@ -37,19 +37,19 @@ const Caught = Event.define("vm/Caught");
 const Rules = Plugin.make("vm/Rules", {
   handlers: [
     Action.handler(Choose, function* ({ effects, music }) {
-      const settings = yield* Settings.writes;
+      const settings = yield* Singleton.Write(Settings);
       settings.music = music;
       settings.effects = effects ? 1 : 0;
     }),
     Action.handler(Catch, function* () {
-      (yield* Caught.emits).emit(undefined);
+      (yield* Event.Emitter(Caught)).emit(undefined);
     }),
   ],
 });
 
 /** Each frame, the buses are as loud as the settings say. */
 const Volumes = System.frame("vm/Volumes", function* () {
-  const settings = yield* Settings;
+  const settings = yield* Singleton.Read(Settings);
   const player = yield* Sound.Player;
   player.volume(Sound.MusicBus, settings.music);
   player.volume(Sound.EffectsBus, settings.effects === 1 ? 1 : 0);

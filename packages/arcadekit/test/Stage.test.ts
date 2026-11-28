@@ -30,15 +30,15 @@ const Phase = State.define("stg/Phase", ["menu", "playing"]);
 const Turn = Singleton.define("stg/Turn", { player: Field.u8 }, { player: 1 });
 
 const Move = System.tick("stg/Move", function* () {
-  const moved = yield* Moved.emits;
-  (yield* Moving).each((position) => {
+  const moved = yield* Event.Emitter(Moved);
+  (yield* Query.View(Moving)).each((position) => {
     position.x += 1;
   });
   moved.emit({ x: 1 });
 });
 
 const Read = System.frame("stg/Read", function* () {
-  for (const step of (yield* Moved).read()) {
+  for (const step of (yield* Event.Reader(Moved)).read()) {
     seen.push(step.x);
   }
 });
@@ -62,7 +62,7 @@ describe("a system's stage", () => {
       yield* app.frame();
       expect(seen).toEqual([1]);
       const world = yield* app.read(World);
-      const positions = (yield* app.read(Placed))
+      const positions = (yield* app.read(Query.View(Placed)))
         .entities()
         .map((id) => world.get(id, Position)?.x);
       expect(positions).toEqual([1]);
@@ -109,7 +109,7 @@ describe("a system's stage", () => {
       "stg/BadEmit",
       // @ts-expect-error emitting is the tick's
       function* () {
-        (yield* Moved.emits).emit({ x: 1 });
+        (yield* Event.Emitter(Moved)).emit({ x: 1 });
       }
     );
     System.frame(
@@ -123,21 +123,21 @@ describe("a system's stage", () => {
       "stg/BadWrite",
       // @ts-expect-error a writing query is the tick's
       function* () {
-        yield* Moving;
+        yield* Query.View(Moving);
       }
     );
     System.frame(
       "stg/BadState",
       // @ts-expect-error setting a state is the tick's
       function* () {
-        (yield* Phase.sets).set("playing");
+        (yield* State.Setter(Phase)).set("playing");
       }
     );
     System.frame(
       "stg/BadTurn",
       // @ts-expect-error writing a singleton is the tick's
       function* () {
-        (yield* Turn.writes).player = 2;
+        (yield* Singleton.Write(Turn)).player = 2;
       }
     );
     System.input(
@@ -149,10 +149,10 @@ describe("a system's stage", () => {
     );
     System.tick("stg/Reader", function* () {
       // @ts-expect-error emit is not on the reader
-      (yield* Moved).emit({ x: 1 });
+      (yield* Event.Reader(Moved)).emit({ x: 1 });
     });
     System.frame("stg/ReadTurn", function* () {
-      const turn = yield* Turn;
+      const turn = yield* Singleton.Read(Turn);
       // @ts-expect-error the read is read-only
       turn.player = 2;
     });
@@ -178,7 +178,7 @@ describe("a system's stage", () => {
       drawn
     );
     const moved = System.tick("stg/MovedSys", function* () {
-      void (yield* Phase).value;
+      void (yield* State.Reader(Phase)).value;
     });
     System.inStage("frame")(
       // @ts-expect-error a frame system is System.frame

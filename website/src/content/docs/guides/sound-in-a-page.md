@@ -50,7 +50,7 @@ const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak }) => [
 const Air = Sound.music(
   "forest/Air",
   function* () {
-    const forest = yield* Forest;
+    const forest = yield* Assets.Status(Forest);
     return forest._tag === "Ready"
       ? { track: forest.assets.wind, volume: 0.3 }
       : undefined;

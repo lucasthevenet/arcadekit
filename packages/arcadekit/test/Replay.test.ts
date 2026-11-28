@@ -62,7 +62,7 @@ const take = Action.handler(Take, function* ({ coin }) {
 
 const Drift = System.tick("Drift", function* () {
   const random = yield* Random;
-  (yield* Coins).each((coin) => {
+  (yield* Query.View(Coins)).each((coin) => {
     coin.x += random.next() - 0.5;
   });
 });
@@ -78,7 +78,7 @@ const fault = (onTick: number, kind: "nudge" | "lose") =>
     }
     const commands = yield* Commands;
     let first = true;
-    (yield* Coins).each((coin, entity) => {
+    (yield* Query.View(Coins)).each((coin, entity) => {
       if (!first) {
         return;
       }
@@ -363,7 +363,7 @@ describe("hash checks", () => {
           yield* withApp(game({ coins: [5] }), (app, world) =>
             Effect.gen(function* () {
               expect(app.actionLog).toEqual([]);
-              const [coin] = (yield* app.read(Lying)).entities();
+              const [coin] = (yield* app.read(Query.View(Lying))).entities();
               assert(coin !== undefined);
               const starting = world.hash();
               yield* first(app, coin);
@@ -568,7 +568,7 @@ describe("a replay that checks itself", () => {
                 stoppedAt: diverged.tick,
                 tick: app.time.tick,
                 hash: (yield* app.read(World)).hash(),
-                coins: (yield* app.read(Lying)).count(),
+                coins: (yield* app.read(Query.View(Lying))).count(),
                 reason,
               };
               // The replay closed it, and it is an app of the game all the
@@ -583,7 +583,7 @@ describe("a replay that checks itself", () => {
               return {
                 ...seen,
                 dropped: Exit.isSuccess(dropped),
-                after: (yield* app.read(Lying)).count(),
+                after: (yield* app.read(Query.View(Lying))).count(),
               };
             })
           )
@@ -934,7 +934,7 @@ const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
   const tallies = yield* app.read(
     Effect.gen(function* () {
       const world = yield* World;
-      return (yield* Counted).entities().flatMap((entity) => {
+      return (yield* Query.View(Counted)).entities().flatMap((entity) => {
         const tally = world.get(entity, Tally);
         return tally === undefined
           ? []
@@ -958,7 +958,7 @@ const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
 // the order actions were applied in.
 const double = Action.handler(Double, function* () {
   let refuse = false;
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value *= 2;
     refuse = tally.value > 1e12;
   });
@@ -967,7 +967,7 @@ const double = Action.handler(Double, function* () {
   }
 });
 const add = Action.handler(Add, function* ({ by }) {
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value += by;
   });
 });
@@ -989,8 +989,8 @@ const Bot = System.tick("Bot", function* () {
 });
 /** Counts refusals in the world, so that a refusal a replay misses shows. */
 const Referee = System.tick("Referee", function* () {
-  const refused = (yield* Action.Rejected).read().length;
-  (yield* Tallies).each((tally) => {
+  const refused = (yield* Event.Reader(Action.Rejected)).read().length;
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.rejections += refused;
   });
 });
@@ -1003,7 +1003,7 @@ const Patience = Singleton.define(
 /** A system that makes a move of its own now and then. */
 const Heckler = System.tick("Heckler", function* () {
   const random = yield* Random;
-  const patience = yield* Patience.writes;
+  const patience = yield* Singleton.Write(Patience);
   if (patience.left > 1) {
     patience.left -= 1;
     return;
@@ -1458,9 +1458,11 @@ describe("a recording", () => {
   const Walker = Component.define("rp/Walker", { x: Field.f64 });
   const Walk = System.tick("rp/Walk", function* () {
     const { delta } = yield* Time;
-    (yield* Query.all(Walker).pipe(Query.writes(Walker))).each((walker) => {
-      walker.x += delta;
-    });
+    (yield* Query.View(Query.all(Walker).pipe(Query.writes(Walker)))).each(
+      (walker) => {
+        walker.x += delta;
+      }
+    );
   });
   const Start = Plugin.make("rp/Walking", {
     setup: Effect.map(Commands.spawns(Walker), (commands) => {
@@ -1878,27 +1880,27 @@ const Race = App.define({
   systems: [
     System.tick("rp/Run", function* () {
       const { delta } = yield* Time;
-      (yield* Running).each((runner) => {
+      (yield* Query.View(Running)).each((runner) => {
         runner.x += runner.speed * delta;
       });
     }),
     System.frame("rp/Draw", function* () {
       let lead = 0;
-      (yield* Runners).each((runner) => {
+      (yield* Query.View(Runners)).each((runner) => {
         lead = Math.max(lead, runner.x);
       });
       shown.drawn.push(lead);
-      for (const { by } of (yield* Sprinted).read()) {
+      for (const { by } of (yield* Event.Reader(Sprinted)).read()) {
         shown.heard.push(by);
       }
     }),
   ],
   handlers: [
     Action.handler(Sprint, function* ({ by }) {
-      (yield* Running).each((runner) => {
+      (yield* Query.View(Running)).each((runner) => {
         runner.speed += by;
       });
-      (yield* Sprinted.emits).emit({ by });
+      (yield* Event.Emitter(Sprinted)).emit({ by });
     }),
   ],
 });

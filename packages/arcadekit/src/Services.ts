@@ -117,7 +117,7 @@ export interface ReadingWorld extends Pick<
   /**
    * Returns a singleton, read-only, as a `Singleton.Read`: the world's own
    * object, the same on every call. A system writes one with
-   * `yield* Score.writes`.
+   * `yield* Singleton.Write(Score)`.
    */
   singleton<S extends Schema>(spec: SingletonSpec<S>): Singleton.Read<S>;
 }
@@ -372,8 +372,8 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
 
 /**
  * The app's event channels, to read. A system usually reaches them through an
- * event's definition, with `yield* SomeEvent` to read and
- * `yield* SomeEvent.emits` to emit, which only the tick may.
+ * event's definition, with `yield* Event.Reader(SomeEvent)` to read and
+ * `yield* Event.Emitter(SomeEvent)` to emit, which only the tick may.
  *
  * @category Services
  */

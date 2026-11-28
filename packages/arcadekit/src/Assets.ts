@@ -21,7 +21,7 @@
  *   })
  *
  *   const Draw = System.frame("Draw", function*() {
- *     const forest = yield* Forest               // the bundle's current status
+ *     const forest = yield* Assets.Status(Forest)               // the bundle's current status
  *     if (forest._tag === "Ready") draw(forest.assets.backdrop)
  *   })
  *
@@ -38,7 +38,6 @@ import {
   Data,
   Effect,
   Random as EffectRandom,
-  Effectable,
   Exit,
   Fiber,
   Layer,
@@ -53,6 +52,8 @@ import * as Event from "./Event.ts";
 import * as Field from "./Field.ts";
 import * as Input from "./Input.ts";
 import { fetching } from "./internal/fetching.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
 import {
@@ -293,7 +294,7 @@ interface StatusOf extends Data.TaggedEnum.WithGenerics<1> {
   readonly taggedEnum: Status<this["A"]>;
 }
 
-const Status = Data.taggedEnum<StatusOf>();
+const Statuses = Data.taggedEnum<StatusOf>();
 
 /**
  * What `Assets.match` does with each status of a bundle: a function for each
@@ -311,7 +312,7 @@ export type StatusCases<A, R> = {
  * Returns what the case of a bundle's status returns, one function for each
  * of the four:
  *
- *   const label = Assets.match(yield* Forest, {
+ *   const label = Assets.match(yield* Assets.Status(Forest), {
  *     Absent: () => "",
  *     Loading: () => "Loading",
  *     Ready: ({ assets }) => assets.title.text,
@@ -326,38 +327,41 @@ export type StatusCases<A, R> = {
 export const match: {
   <A, R>(cases: StatusCases<A, R>): (status: Status<A>) => R;
   <A, R>(status: Status<A>, cases: StatusCases<A, R>): R;
-} = Status.$match;
+} = Statuses.$match;
 
-const ABSENT = Status.Absent();
-const LOADING = Status.Loading();
+const ABSENT = Statuses.Absent();
+const LOADING = Statuses.Loading();
 
 /**
  * Assets that are loaded and released together, such as a level's or a menu's.
- * It is an Effect, so in a frame-stage or input-stage system `yield*` returns
- * its current status in the app.
+ * In a frame-stage or input-stage system, `yield* Assets.Status(bundle)`
+ * returns its current status in the app.
  *
  * @category Models
  */
-export class Bundle<B extends Entries> extends Effectable.Class<
-  Status<Loaded<B>>,
-  never,
-  Store
-> {
-  private effect: Effect.Effect<Status<Loaded<B>>, never, Store> | undefined;
-
+export class Bundle<B extends Entries> {
   constructor(
     readonly name: string,
     readonly assets: B
-  ) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<Status<Loaded<B>>, never, Store> {
-    return (this.effect ??= Effect.map(Effect.service(Store), (store) =>
-      store.status(this)
-    ));
-  }
+  ) {}
 }
+
+const statusOf = <B extends Entries>(
+  given: Given,
+  bundle: Bundle<B>
+): Status<Loaded<B>> => service(given, Store).status(bundle);
+
+/**
+ * Asks for a bundle's current status in the app. A frame-stage or an
+ * input-stage system can ask.
+ *
+ *   const label = Assets.match(yield* Assets.Status(Forest), { ... })
+ *
+ * @category Capabilities
+ */
+export const Status = <B extends Entries>(
+  bundle: Bundle<B>
+): Effect.Effect<Status<Loaded<B>>, never, Store> => lookup(statusOf, bundle);
 
 /**
  * Groups assets that belong together. The name identifies the bundle in the
@@ -520,7 +524,7 @@ export interface StoreShape {
 
 /**
  * The bundles an app has loaded. `Assets.plugin` provides it, `Assets.during`
- * holds and drops bundles in it, and `yield*` on a bundle reads it. Your own
+ * holds and drops bundles in it, and `Assets.Status` reads it. Your own
  * frame-stage or input-stage system can hold a bundle too. A bundle stays
  * loaded while anyone holds it.
  *
@@ -600,7 +604,7 @@ const storeLayer = Layer.effect(
         Effect.flatMap(
           loadEach(bundle, (asset) => RcMap.get(values, asset)),
           (assets) => {
-            entry.status = Status.Ready({ assets });
+            entry.status = Statuses.Ready({ assets });
             return Effect.never;
           }
         )
@@ -611,7 +615,7 @@ const storeLayer = Layer.effect(
             return Effect.void;
           }
           const error = Cause.squash(cause);
-          entry.status = Status.Failed({
+          entry.status = Statuses.Failed({
             error:
               error instanceof Failed
                 ? error
@@ -824,7 +828,7 @@ const handover = <P, A, E, R>(
     },
     handle: ({ key, payload }, origin) =>
       Effect.provideService(
-        Effect.flatMap(Handed.writes, (handed) => {
+        Effect.flatMap(Singleton.Write(Handed), (handed) => {
           // Handed already, by another peer or before a save was made.
           if (Object.hasOwn(handed.by, name) && handed.by[name] === key) {
             return Effect.succeed(undefined);
@@ -861,7 +865,7 @@ const handing = <P, A, E, R, K extends Key | null = Key | null>(
     if (status._tag !== "Ready") {
       return;
     }
-    const { by } = yield* Handed;
+    const { by } = yield* Singleton.Read(Handed);
     if (Object.hasOwn(by, name) && by[name] === at) {
       seen.set(status, "handed");
       return;
@@ -1003,7 +1007,7 @@ export function onReady<P, A, E, R>(
 export const forget = (
   source: Bundle<Entries> | Family<Key, Entries>
 ): Effect.Effect<void, never, World | Sim> =>
-  Effect.map(Handed.writes, (handed) => {
+  Effect.map(Singleton.Write(Handed), (handed) => {
     if (Object.hasOwn(handed.by, source.name)) {
       const { [source.name]: _gone, ...rest } = handed.by;
       handed.by = rest;

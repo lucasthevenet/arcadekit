@@ -5,7 +5,7 @@
  *   const Bullets = Query.all(Transform2d.Position, Overlap.Circle, Bullet)
  *   const Enemies = Query.all(Transform2d.Position, Overlap.Circle, Enemy)
  *
- *   Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
+ *   Overlap.pairs(commands, yield* Query.View(Bullets), yield* Query.View(Enemies), (bullet, enemy) => {
  *     ...
  *     return "first"                      // despawns the bullet
  *   })
@@ -352,7 +352,7 @@ const boxesWithBoxes = (): void => {
  * enemy dies once.
  *
  *   const commands = yield* Commands
- *   Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
+ *   Overlap.pairs(commands, yield* Query.View(Bullets), yield* Query.View(Enemies), (bullet, enemy) => {
  *     const hp = world.get(enemy, Enemy)!.hp - 1
  *     world.set(enemy, Enemy, { hp })
  *     return hp > 0 ? "first" : "both"

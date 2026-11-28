@@ -41,7 +41,7 @@ export const Falling = Bodies.pipe(Query.writes(Position, Velocity));
 export const Physics = System.tick("Physics", function* () {
   const gravity = yield* Gravity;
   const { delta } = yield* Time;
-  (yield* Falling).eachChunk((start, end, pos, vel) =>
+  (yield* Query.View(Falling)).eachChunk((start, end, pos, vel) =>
     fall(start, end, pos.x, pos.y, vel.x, vel.y, gravity, delta)
   );
 });

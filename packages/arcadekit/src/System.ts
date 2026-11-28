@@ -3,7 +3,7 @@
  * once per frame, with plain synchronous loops inside.
  *
  *   const Movement = System.tick("Movement", function*() {
- *     const moving = yield* Moving
+ *     const moving = yield* Query.View(Moving)
  *     const { delta } = yield* Time
  *     moving.each((pos, vel) => { pos.x += vel.x * delta })
  *   })
@@ -18,7 +18,7 @@
  * system would react a tick late to another doesn't compile. See
  * `System.Misordered`.
  */
-import { Context, Effect, Effectable } from "effect";
+import { Context, Effect } from "effect";
 import type { Layer, Scope } from "effect";
 import { dual } from "effect/Function";
 import type { Pipeable } from "effect/Pipeable";
@@ -31,6 +31,8 @@ import type {
   Keyboard,
   Pointer,
 } from "./Input.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { build, make, simulating } from "./internal/system.ts";
 import type { Intake } from "./internal/view.ts";
 import type { Installed } from "./Plugin.ts";
@@ -375,9 +377,9 @@ export function tick<
  * between ticks, and leaves the world as it found it.
  *
  * `System.inStage("preFrame")` or `System.inStage("postFrame")` moves it
- * within the frame. Requiring `Commands`, `World.writes`, a writing query, an
- * event's `emits`, a state's `sets`, a singleton's `writes`, `Input.Devices`
- * or a `Scope` does not compile. A system has no scope of its own, so what it
+ * within the frame. Requiring `Commands`, `World.writes`, a writing query,
+ * `Event.Emitter`, `State.Setter`, `Singleton.Write`, `Input.Devices` or a
+ * `Scope` does not compile. A system has no scope of its own, so what it
  * would open, such as with `Assets.load`, has nowhere to be released.
  *
  * @category Constructors
@@ -403,8 +405,8 @@ export function frame<
  * Defines a system of the input stage. It reads `Input.Devices` and enqueues
  * actions just before a tick, and leaves the world as it found it.
  *
- * Requiring `Commands`, `World.writes`, a writing query, an event's `emits`, a
- * state's `sets`, a singleton's `writes`, `Frame`, `Sound`, `View` or a
+ * Requiring `Commands`, `World.writes`, a writing query, `Event.Emitter`,
+ * `State.Setter`, `Singleton.Write`, `Frame`, `Sound`, `View` or a
  * `Scope` does not compile. Reading a bundle of `Assets` does, so an input system can issue an
  * action once the assets are there.
  *
@@ -444,7 +446,7 @@ export class Locals extends Context.Service<
 
 /**
  * What a frame or an input system keeps from one frame to the next, a value
- * for each app, as `System.local` defines it. It is an Effect, and `yield*`
+ * for each app, as `System.local` defines it. `yield* System.Kept(local)`
  * returns this app's value, the same object on every frame until the app is
  * closed.
  *
@@ -452,24 +454,28 @@ export class Locals extends Context.Service<
  *
  * @category Models
  */
-export class Local<A> extends Effectable.Class<A, never, Locals> {
-  private effect: Effect.Effect<A, never, Locals> | undefined;
-
+export class Local<A> {
   constructor(
     /** Makes an app's value, the first time a system of the app asks for it. */
     readonly make: () => A,
     /** Lets go of an app's value when the app is closed. */
     readonly release: ((value: A) => void) | undefined
-  ) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<A, never, Locals> {
-    return (this.effect ??= Effect.map(Effect.service(Locals), (locals) =>
-      locals.get(this)
-    ));
-  }
+  ) {}
 }
+
+const keptOf = <A>(given: Given, local: Local<A>): A =>
+  service(given, Locals).get(local);
+
+/**
+ * Asks for this app's value of a local, the same object on every frame until
+ * the app is closed. A frame or an input system can ask.
+ *
+ *   const orbit = yield* System.Kept(Orbit)
+ *
+ * @category Capabilities
+ */
+export const Kept = <A>(local: Local<A>): Effect.Effect<A, never, Locals> =>
+  lookup(keptOf, local);
 
 /**
  * Defines what a frame or an input system keeps from one frame to the next,
@@ -479,7 +485,7 @@ export class Local<A> extends Effectable.Class<A, never, Locals> {
  *   const Orbit = System.local(() => ({ angle: 0 }))
  *
  *   const Camera = System.frame("game/Camera", function* () {
- *     const orbit = yield* Orbit
+ *     const orbit = yield* System.Kept(Orbit)
  *     orbit.angle += (yield* Frame).delta
  *   })
  *
@@ -496,7 +502,7 @@ export class Local<A> extends Effectable.Class<A, never, Locals> {
  *
  * - The value is outside the world. A save, the hash, the log and a rewind
  *   don't hold it, and a rewind leaves it as it is.
- * - A system of the tick that yields a local doesn't compile, nor does an
+ * - A system of the tick that asks for a local doesn't compile, nor does an
  *   action's handler, a state's hook or a plugin's setup. What the tick keeps
  *   from one tick to the next is the game's, and is kept in the world.
  *
@@ -606,7 +612,7 @@ type StageGate<St, R2> = St extends TickStage
  *
  * - A system that doesn't run reads nothing, and sees nothing of what happened
  *   while it was off. The events of the ticks it skipped are gone when it runs
- *   again. Its change queries and `Query.removed` readers skip what changed in
+ *   again. Its change queries and `Query.Removed` readers skip what changed in
  *   those ticks, and see only what changed after its last skipped turn. A
  *   change query it has never visited still visits everything that matches.
  *

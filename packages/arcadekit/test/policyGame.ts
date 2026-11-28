@@ -92,8 +92,8 @@ const refused = (attempt: () => void): void => {
 
 const Movement = System.tick("policy/Movement", function* () {
   const { delta } = yield* Time;
-  const stats = yield* Stats.writes;
-  (yield* Moving).each((position, velocity) => {
+  const stats = yield* Singleton.Write(Stats);
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x += velocity.x * delta;
     position.y += velocity.y * delta;
     stats.moved += 1;
@@ -101,7 +101,7 @@ const Movement = System.tick("policy/Movement", function* () {
 });
 
 const Ageing = System.tick("policy/Ageing", function* () {
-  (yield* Sheets).each((sheet, entity) => {
+  (yield* Query.View(Sheets)).each((sheet, entity) => {
     sheet.hp -= 1;
     sheet.gold += 3;
     sheet.level += 1;
@@ -115,9 +115,9 @@ const Ageing = System.tick("policy/Ageing", function* () {
 
 const Fire = System.tick("policy/Fire", function* () {
   const { delta, tick } = yield* Time;
-  const stats = yield* Stats.writes;
+  const stats = yield* Singleton.Write(Stats);
   const commands = yield* Commands;
-  (yield* OnFire).each((position, burning, entity) => {
+  (yield* Query.View(OnFire)).each((position, burning, entity) => {
     burning.seconds -= delta;
     position.y -= 1;
     stats.burnt += 1;
@@ -127,7 +127,7 @@ const Fire = System.tick("policy/Fire", function* () {
   });
   if (tick === 2) {
     // A query that only reads refuses a write, and says which field.
-    (yield* Moving).each((_, velocity) => {
+    (yield* Query.View(Moving)).each((_, velocity) => {
       refused(() => {
         (velocity as { x: number }).x = 9;
       });
@@ -138,7 +138,7 @@ const Fire = System.tick("policy/Fire", function* () {
 const Following = System.tick("policy/Following", function* () {
   const { tick } = yield* Time;
   // Four terms: the loop that hands out any number of them.
-  (yield* Followers).each((follows, position, velocity, sheet) => {
+  (yield* Query.View(Followers)).each((follows, position, velocity, sheet) => {
     follows.since += 1;
     position.x += sheet.level;
     sheet.gold += velocity.x > 0 ? 1 : 0;
@@ -153,7 +153,7 @@ const Following = System.tick("policy/Following", function* () {
 
 let noticed = 0;
 const Watching = System.tick("policy/Watching", function* () {
-  (yield* Moved).each((position, sheet) => {
+  (yield* Query.View(Moved)).each((position, sheet) => {
     noticed += 1;
     sheet.hp += position.x > 1000 ? 1 : 0;
   });
@@ -161,7 +161,7 @@ const Watching = System.tick("policy/Watching", function* () {
 
 let drawn = 0;
 const Draw = System.frame("policy/Draw", function* () {
-  (yield* Drawn).each((position) => {
+  (yield* Query.View(Drawn)).each((position) => {
     drawn += position.x;
     // The frame stage reads, and a write there is refused where it is made.
     refused(() => {
@@ -177,7 +177,7 @@ const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }), {
 });
 const tax = Action.handler(Tax, function* ({ amount }) {
   let poorest = Infinity;
-  (yield* Sheets).each((sheet) => {
+  (yield* Query.View(Sheets)).each((sheet) => {
     sheet.gold -= amount;
     poorest = Math.min(poorest, sheet.gold);
   });
@@ -282,10 +282,12 @@ export const play = (): Record<string, unknown> =>
         loaded: (yield* again.read(World)).hash(),
         bytes: bytes.length,
         stats: { ...world.singleton(Stats) },
-        sheets: (yield* app.read(Ledger)).entities().map((entity) => {
-          const sheet = world.get(entity, Sheet)!;
-          return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
-        }),
+        sheets: (yield* app.read(Query.View(Ledger)))
+          .entities()
+          .map((entity) => {
+            const sheet = world.get(entity, Sheet)!;
+            return [sheet.hp, sheet.gold, sheet.name, sheet.born.getTime()];
+          }),
         noticed,
         drawn,
         outcomes,

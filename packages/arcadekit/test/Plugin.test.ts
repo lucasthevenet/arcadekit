@@ -51,8 +51,8 @@ const Bounds = Resource.make<{
 }>("pl/Bounds", { width: 100, clamp: (x) => Math.min(x, 100) });
 
 const Movement = System.tick("Movement", function* () {
-  const moving = yield* Query.all(Position, Velocity).pipe(
-    Query.writes(Position)
+  const moving = yield* Query.View(
+    Query.all(Position, Velocity).pipe(Query.writes(Position))
   );
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
@@ -62,9 +62,9 @@ const Movement = System.tick("Movement", function* () {
 
 const Walls = System.tick("Walls", function* () {
   const { clamp, width } = yield* Bounds;
-  const bumped = yield* Bumped.emits;
-  const moving = yield* Query.all(Position, Velocity).pipe(
-    Query.writes(Position, Velocity)
+  const bumped = yield* Event.Emitter(Bumped);
+  const moving = yield* Query.View(
+    Query.all(Position, Velocity).pipe(Query.writes(Position, Velocity))
   );
   moving.each((pos, vel, entity) => {
     if (pos.x > width) {
@@ -101,7 +101,9 @@ const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }), {
 });
 
 const heal = Action.handler(Heal, function* ({ amount }) {
-  const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
+  const wounded = yield* Query.View(
+    Query.all(Health).pipe(Query.writes(Health))
+  );
   if (wounded.count() === 0) {
     return yield* NothingToHeal.make({});
   }
@@ -115,7 +117,7 @@ const heal = Action.handler(Heal, function* ({ amount }) {
 
 const BumpDamage = System.tick("BumpDamage", function* () {
   const world = yield* World.writes(Health);
-  for (const { entity } of (yield* Bumped).read()) {
+  for (const { entity } of (yield* Event.Reader(Bumped)).read()) {
     const health = world.get(entity, Health);
     if (health === undefined) {
       continue;
@@ -137,7 +139,7 @@ const Combat = Plugin.make("Combat", {
 const Wound = Action.define("pl/Wound", Schema.Struct({ hp: Schema.Int }));
 const wound = Action.handler(Wound, function* ({ hp }) {
   const commands = yield* Commands.spawns(Health);
-  for (const entity of (yield* Query.all(Position)).entities()) {
+  for (const entity of (yield* Query.View(Query.all(Position))).entities()) {
     commands.add(entity, Health.of({ hp }));
   }
 });
@@ -186,7 +188,9 @@ describe("plugins", () => {
         // Physics' setup spawned the ball.
         const world = yield* app.read(World);
         expect(world.entityCount).toBe(1);
-        const [ball] = (yield* app.read(Query.all(Position))).entities();
+        const [ball] = (yield* app.read(
+          Query.View(Query.all(Position))
+        )).entities();
         expect(yield* Effect.exit(app.dispatch(Wound, { hp: 3 }))).toEqual(
           Exit.void
         );
@@ -220,7 +224,7 @@ describe("plugins", () => {
         });
         const seen: number[] = [];
         const Watch = System.tick("Watch", function* () {
-          seen.push((yield* Bumped).read().length);
+          seen.push((yield* Event.Reader(Bumped)).read().length);
         });
         yield* withApp(
           App.make(
@@ -344,8 +348,8 @@ describe("plugins", () => {
         const seen: string[] = [];
         const Look = System.frame("Look", function* () {
           const arena = yield* Arena;
-          const walls = yield* Query.all(Position).pipe(
-            Query.without(Velocity)
+          const walls = yield* Query.View(
+            Query.all(Position).pipe(Query.without(Velocity))
           );
           walls.each((wall) => {
             seen.push(
@@ -388,8 +392,8 @@ describe("plugins", () => {
           // @ts-expect-error a layer writes no component
           layer: Layer.effectDiscard(
             Effect.gen(function* () {
-              const all = yield* Query.all(Position).pipe(
-                Query.writes(Position)
+              const all = yield* Query.View(
+                Query.all(Position).pipe(Query.writes(Position))
               );
               all.each((position) => {
                 position.x = 0;
@@ -437,7 +441,7 @@ describe("plugins", () => {
         systems: [
           System.frame("BumpSound", function* () {
             const audio = yield* Audio;
-            for (const _ of (yield* Bumped).read()) {
+            for (const _ of (yield* Event.Reader(Bumped)).read()) {
               audio.play("boing");
             }
           }),
@@ -589,7 +593,7 @@ describe("plugins", () => {
         const Second = Plugin.make("pl/Second", {
           plugins: [First],
           setup: Effect.gen(function* () {
-            seen = (yield* Query.all(Health)).entities().length;
+            seen = (yield* Query.View(Query.all(Health))).entities().length;
           }),
         });
         yield* withApp(App.make(App.define({ plugins: [Second] })), () =>

@@ -51,7 +51,7 @@ import { Schema } from "effect";
 const Cell = Singleton.define("game/Cell", { x: Field.i32 }, { x: 0 });
 const Step = Action.define("game/Step", Schema.Struct({ dx: Schema.Int }));
 const step = Action.handler(Step, function* ({ dx }) {
-  (yield* Cell.writes).x += dx;
+  (yield* Singleton.Write(Cell)).x += dx;
 });
 const Keys = System.input("game/Keys", function* () {
   const { pressed } = yield* Input.Devices;

@@ -1,7 +1,7 @@
 /**
  * Two-dimensional vectors as plain numbers, for the inside of a loop.
  *
- *   (yield* Moving).each((velocity, steer) => {
+ *   (yield* Query.View(Moving)).each((velocity, steer) => {
  *     Vec2.clampLength(velocity, steer.x, steer.y, 1)   // writes the row
  *   })
  *
