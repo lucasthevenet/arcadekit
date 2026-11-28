@@ -114,10 +114,10 @@ const holds: Record<
 > = {
   f32: { whole: false, min: -Infinity, max: Infinity },
   f64: { whole: false, min: -Infinity, max: Infinity },
-  i32: { whole: true, min: -(2 ** 31), max: 2 ** 31 - 1 },
-  u32: { whole: true, min: 0, max: 2 ** 32 - 1 },
-  u16: { whole: true, min: 0, max: 2 ** 16 - 1 },
-  u8: { whole: true, min: 0, max: 2 ** 8 - 1 },
+  i32: { whole: true, min: -2_147_483_648, max: 2_147_483_647 },
+  u32: { whole: true, min: 0, max: 4_294_967_295 },
+  u16: { whole: true, min: 0, max: 65_535 },
+  u8: { whole: true, min: 0, max: 255 },
   entity: { whole: true, min: 0, max: Number.MAX_SAFE_INTEGER },
 };
 

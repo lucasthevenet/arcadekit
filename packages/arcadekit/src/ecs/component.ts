@@ -58,12 +58,12 @@ export declare namespace Entity {
 export const INDEX_BITS = 22;
 export const INDEX_MASK = (1 << INDEX_BITS) - 1;
 /** The number of indexes: what an id's generation is multiplied by. */
-const INDEX_RANGE = 2 ** INDEX_BITS;
+const INDEX_RANGE = 1 << INDEX_BITS;
 /**
  * The number of generations a slot has, from 0 up to this minus one. Once a
  * slot's last generation is used, the slot is retired.
  */
-export const GENERATIONS = 2 ** (53 - INDEX_BITS);
+export const GENERATIONS = (Number.MAX_SAFE_INTEGER + 1) / INDEX_RANGE;
 
 // The one place an id and its number are converted, either way. The storage
 // core keeps ids as numbers in `Float64Array`s.
