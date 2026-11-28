@@ -246,8 +246,16 @@ export class Sampling {
         this.unheard.get(control.name) ?? new Map();
       for (const [way, codes] of after.entries()) {
         for (const code of codes ?? []) {
-          if (devices.down.has(code) && before[way]?.includes(code) !== true) {
+          if (before[way]?.includes(code) === true) {
+            continue;
+          }
+          if (devices.down.has(code)) {
             waiting.set(code, "held since bound");
+          } else if (
+            devices.released.includes(code) &&
+            !devices.pressed.includes(code)
+          ) {
+            waiting.set(code, "let go this sample");
           }
         }
       }

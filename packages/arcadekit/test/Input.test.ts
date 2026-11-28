@@ -2545,6 +2545,50 @@ describe("controls", () => {
   );
 
   it.effect(
+    "hear no release of a key bound while it is held and let go before the next sample, and hear its next press",
+    () =>
+      Effect.gen(function* () {
+        const source = Input.makeManualSource();
+        yield* Effect.gen(function* () {
+          const seen: string[] = [];
+          const Choose = System.input("in/Choose", function* () {
+            if ((yield* Input.Devices).pressed.includes("KeyK")) {
+              yield* Input.rebind(Jump, ["KeyK"]);
+            }
+          });
+          const Hear = System.input("in/Hear", function* () {
+            seen.push(said(0, yield* Input.Read(Jump)));
+          });
+          const Look = System.tick("in/Look", function* () {
+            seen.push(said((yield* Time).tick, yield* Input.Read(Jump)));
+          });
+          const app = yield* App.make(
+            App.define({ plugins: [Controls], systems: [Choose, Hear, Look] }),
+            { hashEvery: 0 }
+          );
+          const step = Effect.fnUntraced(function* () {
+            yield* app.input();
+            yield* app.tick(1);
+          });
+          source.press("KeyK");
+          yield* step();
+          source.release("KeyK");
+          yield* step();
+          source.press("KeyK");
+          yield* step();
+          expect(seen).toEqual([
+            "0:",
+            "1:",
+            "0:",
+            "2:",
+            "0: held pressed",
+            "3: held pressed",
+          ]);
+        }).pipe(withSource(source));
+      })
+  );
+
+  it.effect(
     "hear a key a menu outside the systems binds while it is held only from its next press, and the keys that stay bound as before",
     () =>
       Effect.gen(function* () {
