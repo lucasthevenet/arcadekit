@@ -88,6 +88,61 @@ App.make(App.define({ plugins: [Sfx] })).pipe(Effect.provide(AudioLive));
 
 If a layer or setup fails, `App.make` fails with that error.
 
+## Require the plugin that keeps a component
+
+Some components do nothing without their plugin: a velocity that only `Physics` moves, or [`Timer.Lifetime`](timers.md#despawn-an-entity-after-a-while), which only `Timer.plugin` counts down. A game that spawns one and leaves the plugin out runs, and the component never changes. Mark such a component with [`Plugin.KeptBy`](/reference/arcadekit/Plugin#keptby) and the plugin's name, and that game doesn't compile:
+
+```ts title="physics.ts"
+import { Component, Field, Plugin, Query, System, Time } from "arcadekit";
+
+export const Position = Component.define("physics/Position", { x: Field.f32 });
+const VelocityDef = Component.define("physics/Velocity", { x: Field.f32 });
+export const Velocity: typeof VelocityDef & Plugin.KeptBy<"physics/Physics"> =
+  VelocityDef;
+
+const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
+
+const Movement = System.tick("physics/Movement", function* () {
+  const { delta } = yield* Time;
+  (yield* Query.View(Moving)).each((position, velocity) => {
+    position.x += velocity.x * delta;
+  });
+});
+
+export const Physics = Plugin.make("physics/Physics", { systems: [Movement] });
+```
+
+A game that spawns a velocity lists the plugin:
+
+```ts title="game.ts"
+import { Commands, Plugin } from "arcadekit";
+import { Effect } from "effect";
+
+import { Physics, Position, Velocity } from "./physics.ts";
+
+export const Game = Plugin.make("game/Game", {
+  plugins: [Physics],
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Position, Velocity)).spawn(
+      Position.of({ x: 0 }),
+      Velocity.of({ x: 1 })
+    );
+  }),
+});
+```
+
+`Commands.spawns(Position, Velocity)` requires `Plugin.Installed<"physics/Physics">`, and every plugin provides `Plugin.Installed` of the name it was made with. Without `Physics` among the game's plugins, nothing provides it, and the game doesn't compile where it is run, in `Browser.runMain` or `Effect.runPromise`. The error names the plugin:
+
+```text
+Type 'Installed<"physics/Physics">' is not assignable to type 'never'.
+```
+
+- A system, a handler or a setup that names the component in `Commands.spawns` requires the plugin, whether it spawns the component or adds it. The game lists the plugin itself, or through one of its plugins.
+- Reading the component in a query doesn't require the plugin.
+- Give `Plugin.KeptBy` the name the plugin was made with. A plugin whose name the compiler knows only as `string` provides no `Plugin.Installed`, so a game with it still doesn't compile.
+- A component that `requires` a marked one is not marked itself, so a game that spawns it alone compiles without the plugin.
+- The mark is part of the component's type and nothing else, so the export names it in its type, as above. The game runs as it would without it.
+
 ## Configure a plugin with a resource
 
 A `Resource` is a value with a default that a layer can override. Nothing has to provide it:
