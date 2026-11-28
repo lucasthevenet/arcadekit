@@ -1296,7 +1296,7 @@ const Tallies = Query.all(Tally).pipe(Query.writes(Tally));
 const Tallied = Query.all(Tally);
 const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
   let out: Record<string, number> = {};
-  (yield* app.read(Tallied)).each((tally) => {
+  (yield* app.read(Query.View(Tallied))).each((tally) => {
     out = {
       moved: tally.moved,
       hurt: tally.hurt,
@@ -1319,7 +1319,7 @@ const Cull = Action.define("ch/Cull", Schema.Struct({ slot: Schema.Int }));
 
 const push = Action.handler(Push, function* ({ refuse, slot }) {
   let n = 0;
-  (yield* Positions).each((pos) => {
+  (yield* Query.View(Positions)).each((pos) => {
     if (n++ === slot) {
       pos.x += 1;
     }
@@ -1335,7 +1335,7 @@ const spawn = Action.handler(Spawn, function* () {
   );
 });
 const cull = Action.handler(Cull, function* ({ slot }) {
-  const all = (yield* Positions).entities();
+  const all = (yield* Query.View(Positions)).entities();
   if (all[slot] !== undefined) {
     (yield* Commands).despawn(all[slot]);
   }
@@ -1343,15 +1343,15 @@ const cull = Action.handler(Cull, function* ({ slot }) {
 
 /** Runs before the system that writes, so it sees those writes a tick late. */
 const Early = System.tick("Early", function* () {
-  const moved = (yield* Moved).count();
-  (yield* Moved).entities();
-  (yield* Tallies).each((tally) => {
+  const moved = (yield* Query.View(Moved)).count();
+  (yield* Query.View(Moved)).entities();
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.early += moved;
   });
 });
 const Drift = System.tick("Drift", function* () {
   const { tick } = yield* Time;
-  (yield* Positions).each((pos, entity) => {
+  (yield* Query.View(Positions)).each((pos, entity) => {
     if ((entityIndex(entity) + tick) % 3 === 0) {
       pos.y += 1;
     }
@@ -1359,15 +1359,15 @@ const Drift = System.tick("Drift", function* () {
 });
 const Count = System.tick("Count", function* () {
   let moved = 0;
-  (yield* Moved).each(() => {
+  (yield* Query.View(Moved)).each(() => {
     moved++;
   });
   let born = 0;
-  (yield* Born).each(() => {
+  (yield* Query.View(Born)).each(() => {
     born++;
   });
-  const gone = (yield* Query.removed(Position)).read().length;
-  (yield* Tallies).each((tally) => {
+  const gone = (yield* Query.Removed(Position)).read().length;
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.moved += moved;
     tally.born += born;
     tally.gone += gone;
@@ -1400,25 +1400,25 @@ const game = (
 > => App.make(Game, { hashEvery: options.hashEvery ?? 1 });
 
 /** A game with a move every tick, some of them refused. */
-const play = Effect.fnUntraced(function* (
-  app: App.App,
-  from: number,
-  to: number
-) {
-  for (let tick = from; tick < to; tick++) {
-    // Refused on every third tick, as the game says.
-    yield* Effect.exit(
-      app.dispatchByName("ch/Push", { slot: tick % 5, refuse: tick % 3 === 1 })
-    );
-    if (tick % 4 === 0) {
-      yield* app.enqueueByName("ch/Spawn", {});
+const play = (app: App.App, from: number, to: number) =>
+  Effect.gen(function* () {
+    for (let tick = from; tick < to; tick++) {
+      // Refused on every third tick, as the game says.
+      const refuse = tick % 3 === 1;
+      expect(
+        yield* Effect.exit(
+          app.dispatchByName("ch/Push", { slot: tick % 5, refuse })
+        )
+      ).toEqual(refuse ? Exit.fail(Refused.make({})) : Exit.void);
+      if (tick % 4 === 0) {
+        yield* app.enqueueByName("ch/Spawn", {});
+      }
+      if (tick % 7 === 3) {
+        yield* app.enqueueByName("ch/Cull", { slot: 1 });
+      }
+      yield* app.tick(1);
     }
-    if (tick % 7 === 3) {
-      yield* app.enqueueByName("ch/Cull", { slot: 1 });
-    }
-    yield* app.tick(1);
-  }
-});
+  });
 
 describe("change queries in an app", () => {
   it.effect(
@@ -1482,11 +1482,11 @@ describe("change queries in an app", () => {
     Effect.gen(function* () {
       const Inspect = Action.define("ch/Inspect", Schema.Struct({}));
       const inspect = Action.handler(Inspect, function* () {
-        return (yield* Moved).entities().length;
+        return (yield* Query.View(Moved)).entities().length;
       });
       const watched: number[] = [];
       const Watch = System.tick("Watch", function* () {
-        watched.push((yield* Moved).entities().length);
+        watched.push((yield* Query.View(Moved)).entities().length);
       });
       const Three = Plugin.make("ch/Three", {
         setup: Effect.map(Commands.spawns(Position), (commands) => {
@@ -1591,21 +1591,21 @@ describe("change queries in an app", () => {
         const Look = Action.define("ch/Look", Schema.Struct({}));
         const before = Action.handler(Look, function* () {
           const counts = [
-            (yield* Moved).count(),
-            (yield* Hurt).count(),
-            (yield* Arrived).count(),
+            (yield* Query.View(Moved)).count(),
+            (yield* Query.View(Hurt)).count(),
+            (yield* Query.View(Arrived)).count(),
           ];
           // Counting is not visiting: these are.
-          (yield* Moved).entities();
-          (yield* Hurt).entities();
-          (yield* Arrived).entities();
+          (yield* Query.View(Moved)).entities();
+          (yield* Query.View(Hurt)).entities();
+          (yield* Query.View(Arrived)).entities();
           return counts;
         });
         const after = Action.handler(Look, function* () {
           return [
-            (yield* Placed).count(),
-            (yield* Hurt).count(),
-            (yield* Landed).count(),
+            (yield* Query.View(Placed)).count(),
+            (yield* Query.View(Hurt)).count(),
+            (yield* Query.View(Landed)).count(),
           ];
         });
         const Hit = Action.define(

@@ -16,13 +16,13 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity) => {
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x += velocity.x * delta;
   });
 });
 ```
 
-The body gets what it needs with `yield*`: queries, singletons, states, events, resources, `Time`, `Random`, `Commands` and `World`. A system of the frame or the input stage can also require a service of your own. Anything a system needs that no plugin provides becomes a requirement of the app, and a missing one is a compile error.
+The body asks for what it needs with `yield*`. A query, a singleton, a state and an event are plain definitions, and a capability applied to one gives what the system uses: `Query.View(Moving)` a query's view, `Singleton.Read(Score)` and `Singleton.Write(Score)` a singleton's value, `State.Reader(Phase)` and `State.Setter(Phase)` a state, and `Event.Reader(Collided)` and `Event.Emitter(Collided)` an event. A resource and the services `Time`, `Random`, `Commands` and `World` are yielded as they are. A system of the frame or the input stage can also require a service of your own. Anything a system needs that no plugin provides becomes a requirement of the app, and a missing one is a compile error.
 
 - A system finishes within its tick. A system that waits throws, and the error names it.
 - A system changes which entities exist only through `Commands`.
@@ -44,7 +44,7 @@ const Spray = Singleton.define(
 );
 
 const Fountain = System.tick("game/Fountain", function* () {
-  const spray = yield* Spray.writes;
+  const spray = yield* Singleton.Write(Spray);
   if (spray.wave >= 5) {
     return;
   }
@@ -103,7 +103,7 @@ export const struck = Action.handler(Strike, function* ({ target }) {
   strike(
     yield* World.writes(Health),
     yield* Commands.spawns(Spark),
-    yield* Score.writes,
+    yield* Singleton.Write(Score),
     target
   );
 });
@@ -113,8 +113,8 @@ const Falling = Query.all(Position).pipe(Query.with(Health));
 export const Fall = System.tick("game/Fall", function* () {
   const world = yield* World.writes(Health, Position);
   const commands = yield* Commands.spawns(Spark, Position);
-  const score = yield* Score.writes;
-  for (const target of (yield* Falling).entities()) {
+  const score = yield* Singleton.Write(Score);
+  for (const target of (yield* Query.View(Falling)).entities()) {
     if (world.get(target, Position)!.x < 0) {
       strike(world, commands, score, target);
       world.set(target, Position, { x: 0 });
@@ -124,7 +124,7 @@ export const Fall = System.tick("game/Fall", function* () {
 ```
 
 - `WritingWorld<N>` is the world that sets the components named `N`. A world that sets more is one too, so `Fall`'s world, which sets health and positions, is a world that sets health. One that sets less, or only reads, doesn't compile.
-- `Spawning<N>` is the same for commands, and `Singleton.Write<typeof Score>` is what `yield* Score.writes` gives.
+- `Spawning<N>` is the same for commands, and `Singleton.Write<typeof Score>` is what `yield* Singleton.Write(Score)` gives.
 - The function asks for nothing with `yield*`, so it adds nothing to a system's requirements. What the system asked for is what the [order check](#order-systems) reads, so the system names what the function writes.
 
 ## Order systems
@@ -140,12 +140,12 @@ const Moving = Query.all(Position).pipe(Query.writes(Position));
 const Moved = Query.all(Position).pipe(Query.changed(Position));
 
 const Move = System.tick("game/Move", function* () {
-  (yield* Moving).each((position) => {
+  (yield* Query.View(Moving)).each((position) => {
     position.x += 1;
   });
 });
 const Trail = System.tick("game/Trail", function* () {
-  (yield* Moved).each((position) => {});
+  (yield* Query.View(Moved)).each((position) => {});
 });
 
 App.define({ systems: [Move, Trail] }); // Trail sees each move in its tick
@@ -162,7 +162,7 @@ The error names both systems and says which to list after the other:
 - Hooks, handlers, and systems of the frame and input stages run at another moment. The check doesn't compare them with the tick's systems.
 - Write the list where you give it to `App.define` or `Plugin.make`. Write a system's stage out in `System.inStage`. The compiler can't read the order of a list or a stage held in a variable of a wider type, and refuses it when the order would matter.
 - The compiler learns what a system changes from what it requests: a query that names a component with `Query.writes`, `World.writes`, and `Commands.spawns`. A component an entity gains counts as written, so list a system that watches with `Query.changed` or `Query.added` after the systems that spawn or add the component.
-- The check doesn't cover `Query.removed`. A despawn doesn't say which components its entity had. A system that reads removals therefore reads them a tick late when it is listed ahead of the system that despawns.
+- The check doesn't cover `Query.Removed`. A despawn doesn't say which components its entity had. A system that reads removals therefore reads them a tick late when it is listed ahead of the system that despawns.
 
 ## Place a system in a stage
 
@@ -190,15 +190,15 @@ import { Frame, System } from "arcadekit";
 const Orbit = System.local(() => ({ angle: 0 }));
 
 const Camera = System.frame("game/Camera", function* () {
-  const orbit = yield* Orbit;
+  const orbit = yield* System.Kept(Orbit);
   orbit.angle += (yield* Frame).delta;
 });
 ```
 
-- Each app has its own value, made the first time one of its systems yields the local, and let go of when the app closes. `System.local(make, release)` passes it to `release` then.
-- Every system that yields the local shares its value, so an input system can set what a frame system reads.
+- Each app has its own value, made the first time one of its systems asks for the local, and let go of when the app closes. `System.local(make, release)` passes it to `release` then.
+- Every system that asks for the local shares its value, so an input system can set what a frame system reads.
 - The value is outside the world: a save, the hash and a rewind leave it as it is.
-- A system of the tick, a hook or a handler that yields a local doesn't compile. What the tick keeps belongs in the world.
+- A system of the tick, a hook or a handler that asks for a local doesn't compile. What the tick keeps belongs in the world.
 - Keep it in a local and not in a variable of the module, which every app of the game would share, and none would let go of.
 
 ## Run a system only when a condition holds
@@ -213,7 +213,7 @@ const Movement = System.tick("game/Movement", function* () {
 
 - Given several conditions, the system runs when all of them hold. They are checked in order until one fails.
 - A condition's requirements and errors become the system's.
-- A system without a condition checks nothing. A condition costs about 0.35 µs per tick, and a system that doesn't run costs that and nothing more.
+- A system without a condition checks nothing. `State.is` costs a little less than a system that runs and does nothing, and a system that doesn't run costs that and nothing more. The [performance guide](performance.md#idle-ticks-and-frames) has the numbers.
 - A system of the frame or the input stage takes a condition too, checked each time its stage runs.
 
 A system that doesn't run doesn't read, and sees nothing of what happened while it was off. The events from the ticks it skipped are gone when it runs again, and its change queries skip what changed in them. When it runs again, have it read the state it needs with an ordinary query or a singleton, rather than count on hearing of every change.
@@ -233,7 +233,7 @@ const Sparks = Query.all(Spark).pipe(Query.writes(Spark));
 
 const Scatter = System.tick("game/Scatter", function* () {
   const random = yield* Random;
-  (yield* Sparks).each((spark) => {
+  (yield* Query.View(Sparks)).each((spark) => {
     spark.x += random.next() - 0.5; // from 0 inclusive to 1 exclusive
   });
   const speed = random.range(2, 5); // from 2 inclusive to 5 exclusive

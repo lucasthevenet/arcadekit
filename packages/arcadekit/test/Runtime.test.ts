@@ -45,7 +45,7 @@ const Moving = Query.all(Position, Velocity).pipe(
 const Movers = Query.all(Position, Velocity).pipe(Query.without(Stunned));
 
 const Movement = System.tick("Movement", function* () {
-  const moving = yield* Moving;
+  const moving = yield* Query.View(Moving);
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
     pos.x += vel.x * delta;
@@ -145,8 +145,8 @@ describe("systems", () => {
         const Reaper = System.tick("Reaper", function* () {
           const commands = yield* Commands;
           const { delta } = yield* Time;
-          const mortal = yield* Query.all(Lifetime).pipe(
-            Query.writes(Lifetime)
+          const mortal = yield* Query.View(
+            Query.all(Lifetime).pipe(Query.writes(Lifetime))
           );
           counts.push(mortal.count());
           mortal.each((life, entity) => {
@@ -188,14 +188,14 @@ describe("systems", () => {
         );
 
         const Burn = System.tick("Burn", function* () {
-          const onFire = yield* OnFire;
+          const onFire = yield* Query.View(OnFire);
           const { delta } = yield* Time;
           onFire.each((health, burning) => {
             health.hp -= burning.dps * delta;
           });
         });
         const Extinguish = System.tick("Extinguish", function* () {
-          const onFire = yield* OnFire;
+          const onFire = yield* Query.View(OnFire);
           const commands = yield* Commands;
           const { delta } = yield* Time;
           onFire.eachChunk((start, end, _health, burning, entities) => {
@@ -329,7 +329,7 @@ describe("systems", () => {
         );
         const Beep = System.frame("Beep", function* () {
           const audio = yield* Audio;
-          const things = yield* Query.all(Position);
+          const things = yield* Query.View(Query.all(Position));
           audio.play(`beep x${things.count()}`);
         });
         const Seed = Plugin.make("rt/Seed", {
@@ -370,7 +370,7 @@ describe("systems", () => {
           readonly x: number;
         }> {}
         const Bounds = System.tick("Bounds", function* () {
-          const things = yield* Query.all(Position);
+          const things = yield* Query.View(Query.all(Position));
           let worst = 0;
           things.each((pos) => {
             worst = Math.max(worst, pos.x);
@@ -645,7 +645,7 @@ describe("determinism", () => {
       const run = Effect.fnUntraced(function* () {
         const trace: string[] = [];
         const Bounce = System.tick("Bounce", function* () {
-          const moving = yield* Moving;
+          const moving = yield* Query.View(Moving);
           moving.each((pos, vel) => {
             if (pos.x > 10 || pos.x < 0) {
               vel.x = -vel.x;
@@ -688,7 +688,7 @@ describe("determinism", () => {
                 maxStepsPerCall: 10_000,
               });
               yield* step(5);
-              (yield* app.read(Movers)).each((pos, vel, entity) => {
+              (yield* app.read(Query.View(Movers))).each((pos, vel, entity) => {
                 trace.push(`${idOf(entity)}:${pos.x},${pos.y},${vel.x}`);
               });
               trace.push(

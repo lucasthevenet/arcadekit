@@ -1,9 +1,9 @@
 ---
 title: "Components"
-description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags and singletons."
+description: "A component is a kind of data an entity can have. Learn how to define components, choose field types, and use tags."
 ---
 
-A **component** is a kind of data an entity can have, such as a position, health or a `Stunned` tag. For a component that points at another entity, see [relations](relations.md).
+A **component** is a kind of data an entity can have, such as a position, health or a `Stunned` tag. For a component that points at another entity, see [relations](relations.md), and for data that exists once per world, [singletons](singletons.md).
 
 ## Define a component
 
@@ -18,9 +18,9 @@ interface Sprite {
 const Hero = Component.define("game/Hero", {
   hp: Field.i32, // a number, in a typed array
   target: Field.entity, // an entity's id
-  name: Field.json<string>(), // plain data
-  inventory: Field.json<readonly string[]>(),
-  born: Field.schema(Schema.Date), // any value a schema describes
+  name: Field.json<string>(""), // plain data
+  inventory: Field.json<readonly string[]>([]),
+  born: Field.schema(Schema.Date, new Date(0)), // any value a schema describes
   sprite: Field.transient<Sprite>(), // not saved
 });
 ```
@@ -39,14 +39,16 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
-| `Field.json<T>()` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
-| `Field.schema(schema)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
-| `Field.ref<T>(codec)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
+| `Field.bool` | `true` or `false`, as 1 or 0 in a `Uint8Array`, which `eachChunk` hands out as it is | As a `u8`, so a save written while the field was a `Field.u8` loads with no migration |
+| `Field.json<T>(initial)` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
+| `Field.schema(schema, initial)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
+| `Field.ref<T>(codec, initial)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
 | `Field.transient<T>()` | A handle or cache that another system can rebuild | Neither. It is `undefined` in a world loaded from a snapshot, and after a [rewind](capturing-and-rewinding.md) in a table that changed since the moment |
 
 - The hash covers exactly what a snapshot saves, in its saved form, so a world loaded from a snapshot has the same hash.
 - A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
-- A `json` field takes only a type that JSON holds. `Field.json<Date>()`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
+- `initial` is what a `json`, `schema` or `ref` field holds in a component [added without a value](#create-and-change-entities), where a number field holds 0 and a `bool` field `false`. A `transient` field holds `undefined` there, as its type says.
+- A `json` field takes only a type that JSON holds. `Field.json<Date>(new Date())`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
 - The value of a `json`, `ref`, `schema` or `transient` field is read-only all the way down. Replace it with `world.set` or by assigning the field in `each`. A change in place doesn't compile, because no change query would see it and no refused action would undo it.
 - An `entity` field takes an entity and reads as an `Entity.Ref`, an id whose entity may be gone. The world's calls take an `Entity`, so pass the field through `world.live(hero.target)` first: it returns the entity while it is alive, and `undefined` once it is despawned.
 - Every hash encodes each `schema` and `ref` value, and stringifies each array or object in a `json` field. Use these fields for small or rarely changing data, and keep numbers that change every tick in numeric fields.
@@ -91,7 +93,7 @@ const program = Effect.gen(function* () {
   const thrown = yield* app.dispatch(Throw, { x: 4 });
   const world = yield* app.read(World);
   world.get(thrown, Position)?.x; // 4
-  (yield* app.read(Placed)).count(); // 2
+  (yield* app.read(Query.View(Placed))).count(); // 2
 });
 ```
 
@@ -111,9 +113,9 @@ Inside the simulation, you name the components where you request what changes th
 
 - Spawning, adding or setting a component you didn't name doesn't compile, and the error says where to name it.
 - The names tell the compiler what a system changes, so it can [check the order of your systems](systems.md#order-systems).
-- The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes.
+- The world a system requests has no `spawn`, `despawn`, `add` or `remove`. The set of entities changes through `Commands` alone, which applies the change when the system finishes. Until then an entity queued to despawn is alive, and `commands.despawning(entity)` says it is queued.
 
-A component added without a value is all zeros, unless it gives `initial`. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
+A component added without a value is all zeros, but for the `initial` of each `json`, `schema` and `ref` field, unless the component gives `initial` of its own. A number omitted from a value is 0, never `NaN`. `world.set` writes the fields you pass and leaves the others unchanged. Give `initial` to a component whose zeros are wrong, such as a size. It is the value the component has when added bare:
 
 ```ts
 import { Component, Field } from "arcadekit";
@@ -174,42 +176,10 @@ const Dazed = Query.all(Health).pipe(Query.with(Stunned));
 
 A query requires a tag with `Query.with`, as `Dazed` does. See [queries](queries.md#find-entities-by-their-components).
 
-## Store data that exists once in a singleton
-
-A **singleton** is data that exists once per world, such as the score, whose turn it is, or the current level. Its fields are component fields, of the same types, and the third argument of `Singleton.define` is its initial value. `yield* Score` gives you the world's value to read. `yield* Score.writes` gives the same value with fields you can assign. Only the simulation can ask for it: a system of the tick, an action handler or a plugin's `setup`.
-
-```ts
-import { Field, Plugin, Singleton, System } from "arcadekit";
-
-const Score = Singleton.define(
-  "game/Score",
-  { points: Field.i32 },
-  { points: 0 }
-);
-
-const Bonus = System.tick("game/Bonus", function* () {
-  const score = yield* Score.writes;
-  score.points += 1;
-});
-
-const Rules = Plugin.make("game/Rules", {
-  systems: [Bonus],
-});
-```
-
-A singleton lives in the world, so it is saved, hashed, and restored when an action is refused.
-
-- Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.
-- Loading a save in which a singleton was never written gives it the initial value of the build that loads it.
-- Its name is one of the world's component names, and a save finds it by that name. To rename or change it, write a [migration](migrating-saves.md) with `Migrate`, as for a component.
-- No entity can have it, and no query visits it. Spawning or adding it throws.
-
-A [`Resource`](plugins.md#configure-a-plugin-with-a-resource) is the other kind of single value. It is configuration with a default that a layer can override, such as gravity. It isn't game state, and isn't saved.
-
 ## Place an entity in space
 
 `Transform3d` provides three components for an entity's place in three dimensions, `Position`, `Rotation` and `Scale`, and `Transform2d` provides the same for flat games. They live in arcadekit rather than in a renderer, so your rules and whatever draws them agree on where things are. See [transforms](transforms.md).
 
 ## Read more
 
-- [`Field`](/reference/arcadekit/Field), [`Entity`](/reference/arcadekit/ecs#entity), [`Component`](/reference/arcadekit/ecs#component), [`Singleton`](/reference/arcadekit/Singleton) and [`Transform3d`](/reference/arcadekit/Transform3d) in the API reference.
+- [`Field`](/reference/arcadekit/Field), [`Entity`](/reference/arcadekit/ecs#entity), [`Component`](/reference/arcadekit/ecs#component) and [`Transform3d`](/reference/arcadekit/Transform3d) in the API reference.

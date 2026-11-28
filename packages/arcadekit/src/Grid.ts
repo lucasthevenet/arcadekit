@@ -7,11 +7,11 @@
  *     { tiles: Grid.fill(80, 50, WALL) }
  *   )
  *
- *   const floor = yield* Floor
+ *   const floor = yield* Singleton.Read(Floor)
  *   floor.tiles.at(3, 4)                                  // WALL
- *   (yield* Floor.writes).tiles = floor.tiles.with(3, 4, DOOR)
+ *   (yield* Singleton.Write(Floor)).tiles = floor.tiles.with(3, 4, DOOR)
  *
- *   const here = Grid.occupants(floor.tiles, yield* Creatures)
+ *   const here = Grid.occupants(floor.tiles, yield* Query.View(Creatures))
  *   here.first(3, 4)                                      // who stands there
  *
  * A map is a `Grid.Tiles`: a number from 0 to 255 for each tile, in a field
@@ -24,7 +24,12 @@
  * refused action and a load alike.
  */
 import { Field } from "./ecs/component.ts";
-import type { ComponentDef, Entity, FieldDef } from "./ecs/component.ts";
+import type {
+  ComponentDef,
+  Entity,
+  FieldDef,
+  RefCodec,
+} from "./ecs/component.ts";
 import type { QueryView } from "./ecs/query.ts";
 
 const HEX = "0123456789abcdef";
@@ -144,7 +149,8 @@ export const fill = (width: number, height: number, value = 0): Tiles => {
 
 /**
  * A field that holds a map of `width` by `height` tiles. A save holds it as
- * text, two hex digits a tile, and the hash covers it.
+ * text, two hex digits a tile, and the hash covers it. In a component spawned
+ * or added bare, every tile is 0.
  *
  *   const Floor = Singleton.define(
  *     "rogue/Floor",
@@ -163,7 +169,7 @@ export const fill = (width: number, height: number, value = 0): Tiles => {
  */
 export const tiles = (width: number, height: number) => {
   refuseSize(width, height);
-  return Field.ref<Tiles>({
+  const codec: RefCodec<Tiles> = {
     encode: (map) => {
       if (!(map instanceof TileMap)) {
         throw new Error("a map is made by Grid.fill, and changed by its with");
@@ -191,7 +197,8 @@ export const tiles = (width: number, height: number) => {
       }
       return new TileMap(width, height, cells);
     },
-  });
+  };
+  return Field.ref(codec, fill(width, height));
 };
 
 /**
@@ -280,7 +287,7 @@ let places: number[] = [];
  * Returns who is on each tile of `map`: the entities of `view`, by the `x`
  * and `y` of the query's first term.
  *
- *   const here = Grid.occupants(floor.tiles, yield* Creatures)
+ *   const here = Grid.occupants(floor.tiles, yield* Query.View(Creatures))
  *   const blocker = here.first(player.x + 1, player.y)
  *
  * **Details**

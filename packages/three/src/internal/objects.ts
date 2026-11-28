@@ -14,7 +14,7 @@ import { Holdings, heldIn } from "./holdings.ts";
 import type { Kept } from "./holdings.ts";
 import { isFlat, placedBy, required } from "./kind.ts";
 import type { Placeable, Placing } from "./kind.ts";
-import { smoothOf, stores } from "./smooth.ts";
+import { smoothOf, storesOf } from "./smooth.ts";
 import type { Smooth, Stores } from "./smooth.ts";
 
 /** The options of `Three.objectsFrom`, as its system reads them. */
@@ -328,6 +328,7 @@ class Objects<O extends Object3D> implements Kept {
 /** Reads a kind's query each frame and places its objects. */
 const placer = <O extends Object3D>(options: ObjectsShared<O> & Placing) => {
   const smooth = options.smooth === true;
+  const flat = isFlat(options);
   const { Position, Rotation, Scale } = options.transform;
   // One query for every entity of the kind, handed a rotation and a scale
   // for the tables that have them.
@@ -340,10 +341,10 @@ const placer = <O extends Object3D>(options: ObjectsShared<O> & Placing) => {
     Query.without(...(options.without ?? []))
   );
   return function* (held: Objects<O>) {
-    const placed = yield* Placed;
+    const placed = yield* Query.View(Placed);
     // Every entity that is one of these is found here, and its object made
     // if it is missing; whatever was not found is let go at the end.
-    held.begin(smooth ? yield* stores : undefined);
+    held.begin(smooth ? yield* storesOf(flat, false) : undefined);
     placed.eachChunk(held.draw);
     held.finish();
   };

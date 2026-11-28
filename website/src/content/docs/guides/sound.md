@@ -39,7 +39,7 @@ Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
 });
 ```
 
-- `Sound.sheet(name, files)` makes a clip for each sound, from the URL of its file or from a clip such as `Audio.stream(url)`. A frame system yields the sheet for its sounds, as `Sound.cues(name, Sfx, ({ coin }) => mappings)` does, so `coni` doesn't compile. A level's own sounds are assets of its bundle instead, which [playing sound in a page](sound-in-a-page.md#play-a-levels-own-sounds) covers.
+- `Sound.sheet(name, files)` makes a clip for each sound, from the URL of its file or from a clip such as `Audio.stream(url)`. A frame system asks for the sheet's sounds with `yield* Sound.Clips(Sfx)`, as `Sound.cues(name, Sfx, ({ coin }) => mappings)` does, so `coni` doesn't compile. A level's own sounds are assets of its bundle instead, which [playing sound in a page](sound-in-a-page.md#play-a-levels-own-sounds) covers.
 - `Sound.cues` makes a frame-stage system. Each frame, it plays the cues for the events since the last frame. Like every frame system, it sees each event once, however many ticks ran in between.
 - `Sound.on(event, cue)` maps an event to a cue. The cue is a clip, a clip with a `volume`, a `rate` and a `bus`, or a function of the payload that returns either one or nothing. `rate` is the playback speed, so it also sets the pitch. A volume below 0 counts as 0. Several mappings can share an event, and each one receives it.
 - A cue requested several times in one frame plays once, at the loudest requested volume. Forty coins caught in one tick make one sound, not forty. The same holds across systems. If a plugin and your game both play the same cue in a frame, it plays once.
@@ -47,7 +47,7 @@ Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
 - A cue plays once, to its end.
 - Events emitted by a refused action are rolled back with everything else, so they are never heard.
 
-`Sound.plugin` provides `Sound.Player`, the service that plays sounds. A frame system plays a sound that no event stands for through it, as in `player.play((yield* Sfx).click, { volume: 0.5 })`. The sound plays with the rest of its frame, merged with any other request for the same cue. A system of the tick or the input stage, or an action handler, that requires `Sound.Player` doesn't compile.
+`Sound.plugin` provides `Sound.Player`, the service that plays sounds. A frame system plays a sound that no event stands for through it, as in `player.play((yield* Sound.Clips(Sfx)).click, { volume: 0.5 })`. The sound plays with the rest of its frame, merged with any other request for the same cue. A system of the tick or the input stage, or an action handler, that requires `Sound.Player` doesn't compile.
 
 ## Play music that follows the game
 
@@ -60,11 +60,11 @@ const Tracks = Sound.sheet("game/Tracks", { theme: "/theme.ogg" });
 const Score = Sound.music(
   "game/Score",
   function* () {
-    const phase = yield* Phase;
+    const phase = yield* State.Reader(Phase);
     if (phase.is("menu")) {
       return undefined; // silence
     }
-    const { theme } = yield* Tracks;
+    const { theme } = yield* Sound.Clips(Tracks);
     return { track: theme, volume: phase.is("paused") ? 0.1 : 0.4 };
   },
   { fade: 1 }
@@ -112,7 +112,7 @@ const Choose = Action.define(
 );
 
 const Volumes = System.frame("game/Volumes", function* () {
-  const settings = yield* Settings;
+  const settings = yield* Singleton.Read(Settings);
   const player = yield* Sound.Player;
   player.volume(Sound.MusicBus, settings.music);
   player.volume(Sound.EffectsBus, settings.effects === 1 ? 1 : 0);
@@ -122,7 +122,7 @@ const Menu = Plugin.make("game/Menu", {
   plugins: [Sound.plugin],
   handlers: [
     Action.handler(Choose, function* ({ music, effects }) {
-      const settings = yield* Settings.writes;
+      const settings = yield* Singleton.Write(Settings);
       settings.music = music;
       settings.effects = effects ? 1 : 0;
     }),
@@ -144,7 +144,7 @@ Sound follows real time and isn't part of the game. A game with sound has the sa
 
 `Sound.Output` is where sound goes: how to open a speaker. It is a `Context.Reference` whose default goes nowhere, and then the cue system reads nothing. `Sound.plugin` opens the output when the app is made, and lets go of the speaker when the app is closed. `Sound.layer(speaker)` provides a speaker made by hand, open already. A test provides `Sound.makeRecorder()`, which plays nothing and records what it was asked. It records the cues in `played`, what each channel was told in `scored`, and what each channel plays now in `playing`. See [testing](testing.md#record-the-sound).
 
-A system that yields a sheet has the sheet's `Sound.Plays` in its type, and so has the game, and only what says where the sound goes provides it. A page provides it for each sheet in its `sounds`, so a page not given one [doesn't compile](sound-in-a-page.md#give-the-page-its-cue-sheets). `Sound.layer(speaker)` and `Test.make` provide it for every sheet, and so does `Sound.layerNowhere`, which a server or a replay of such a game provides.
+A system that asks for a sheet's clips has the sheet's `Sound.Plays` in its type, and so has the game, and only what says where the sound goes provides it. A page provides it for each sheet in its `sounds`, so a page not given one [doesn't compile](sound-in-a-page.md#give-the-page-its-cue-sheets). `Sound.layer(speaker)` and `Test.make` provide it for every sheet, and so does `Sound.layerNowhere`, which a server or a replay of such a game provides.
 
 A recorder records a sound of a sheet by its name, a sheet's `coin` as `"coin"`, at the volume it was played at, its bus's included. `Sound.clip(name, data)` makes a clip by hand, for a speaker of your own or for a test, which needs nothing to play. A recorder records such a clip by its `name`, with the clip itself as `clip`.
 

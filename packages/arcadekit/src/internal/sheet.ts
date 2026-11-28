@@ -19,8 +19,8 @@ export class Entry {
 }
 
 /**
- * The sounds of each sheet, which only a `yield*` of the sheet gives a
- * game, and which a page reads to fetch their files.
+ * The sounds of each sheet, which only `Sound.Clips` gives a game, and
+ * which a page reads to fetch their files.
  *
  * @internal
  */

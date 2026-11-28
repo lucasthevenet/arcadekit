@@ -30,7 +30,7 @@ const Heat = Component.define(
   { storage: "sparse" }
 );
 const Boss = Component.tag("in/Boss");
-const Name = Component.define("in/Name", { text: Field.json<string>() });
+const Name = Component.define("in/Name", { text: Field.json<string>("") });
 const ChildOf = Component.relation("in/ChildOf", {
   onTargetDespawn: "despawn",
 });
@@ -52,34 +52,34 @@ const Refuse = Action.define("in/Refuse", Schema.Struct({}), {
 
 const Moved = Query.all(Position).pipe(Query.writes(Position));
 const Move = System.tick("in/Move", function* () {
-  (yield* Moved).each((position) => {
+  (yield* Query.View(Moved)).each((position) => {
     position.x += 1;
   });
 });
 const Scorer = System.tick("in/Scorer", function* () {
-  const hits = (yield* Hit).read();
+  const hits = (yield* Event.Reader(Hit)).read();
   for (const { by } of hits) {
-    (yield* Score.writes).points += by;
+    (yield* Singleton.Write(Score)).points += by;
   }
 });
 const Asleep = System.tick("in/Asleep", function* () {}).pipe(
   System.runIf(Effect.succeed(false))
 );
 const Opening = State.onEnter(Phase, "playing", "in/Opening", function* () {
-  (yield* Spawned.emits).emit({});
+  (yield* Event.Emitter(Spawned)).emit({});
 });
 const Draw = System.frame("in/Draw", function* () {});
 const Read = System.input("in/Read", function* () {});
 
 const handlers = [
   Action.handler(Strike, function* ({ by }) {
-    (yield* Hit.emits).emit({ by });
+    (yield* Event.Emitter(Hit)).emit({ by });
   }),
   Action.handler(Begin, function* () {
-    (yield* Phase.sets).set("playing");
+    (yield* State.Setter(Phase)).set("playing");
   }),
   Action.handler(Refuse, function* () {
-    (yield* Hit.emits).emit({ by: 1000 });
+    (yield* Event.Emitter(Hit)).emit({ by: 1000 });
     return yield* NotNow.make({});
   }),
 ] as const;

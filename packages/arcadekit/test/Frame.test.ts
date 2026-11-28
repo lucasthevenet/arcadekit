@@ -72,7 +72,7 @@ const Kept = Plugin.make("fr/Kept", {
 
 const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
-  (yield* Balls).each((ball) => {
+  (yield* Query.View(Balls)).each((ball) => {
     ball.x += ball.vx * delta;
   });
 });
@@ -91,7 +91,7 @@ const racked = (...balls: readonly { x: number; vx: number }[]) =>
 /** Each ball, where it is and how fast it rolls. */
 const ballsOf = Effect.fnUntraced(function* (app: App.Any) {
   const found: { x: number; vx: number }[] = [];
-  (yield* app.read(Seen)).each(({ x, vx }) => {
+  (yield* app.read(Query.View(Seen))).each(({ x, vx }) => {
     found.push({ x, vx });
   });
   return found;
@@ -298,7 +298,7 @@ describe("the frame stage", () => {
         };
         const Pause = Action.define("fr/Pause", Schema.Struct({}));
         const pause = Action.handler(Pause, function* () {
-          (yield* Phase.sets).set("paused");
+          (yield* State.Setter(Phase)).set("paused");
         });
         const app = yield* App.make(
           App.define({
@@ -401,7 +401,7 @@ describe("the frame stage", () => {
       "Vandal",
       // @ts-expect-error a frame system cannot write a singleton
       function* () {
-        (yield* Score.writes).points = 1;
+        (yield* Singleton.Write(Score)).points = 1;
       }
     );
     const pre = System.frame("Pre", function* () {}).pipe(
@@ -422,7 +422,7 @@ describe("the frame stage", () => {
         const { delta } = yield* Time;
         frames.push({ ...frame });
         // Where the ball is now: where the last tick left it, and on.
-        (yield* Seen).each((ball) => {
+        (yield* Query.View(Seen)).each((ball) => {
           drawn.push(ball.x + ball.vx * delta * frame.alpha);
         });
       });
@@ -481,7 +481,7 @@ describe("the frame stage", () => {
       "Assign",
       // @ts-expect-error a frame system cannot write a query
       function* () {
-        (yield* Balls).each((ball) => {
+        (yield* Query.View(Balls)).each((ball) => {
           ball.x = 99;
         });
       }
@@ -490,7 +490,7 @@ describe("the frame stage", () => {
       "Set",
       // @ts-expect-error a frame system cannot set a component
       function* () {
-        const [first] = (yield* Seen).entities();
+        const [first] = (yield* Query.View(Seen)).entities();
         (yield* World.writes(Ball)).set(first!, Ball, { x: 99 });
       }
     );
@@ -505,28 +505,28 @@ describe("the frame stage", () => {
       "Despawn",
       // @ts-expect-error a frame system cannot despawn
       function* () {
-        (yield* Commands).despawn((yield* Seen).entities()[0]!);
+        (yield* Commands).despawn((yield* Query.View(Seen)).entities()[0]!);
       }
     );
     System.frame(
       "Score",
       // @ts-expect-error a frame system cannot write a singleton
       function* () {
-        (yield* Score.writes).points = 1;
+        (yield* Singleton.Write(Score)).points = 1;
       }
     );
     System.frame(
       "Phase",
       // @ts-expect-error a frame system cannot set a state
       function* () {
-        (yield* Phase.sets).set("paused");
+        (yield* State.Setter(Phase)).set("paused");
       }
     );
     System.frame(
       "Ping",
       // @ts-expect-error a frame system cannot emit
       function* () {
-        (yield* Pinged.emits).emit({});
+        (yield* Event.Emitter(Pinged)).emit({});
       }
     );
     const Bus = System.frame("Bus", function* () {
@@ -627,7 +627,7 @@ describe("the frame stage", () => {
           Schema.Struct({ by: Schema.Int })
         );
         const kick = Action.handler(Kick, function* ({ by }) {
-          (yield* Balls).each((ball) => {
+          (yield* Query.View(Balls)).each((ball) => {
             ball.vx += by;
           });
         });
@@ -762,19 +762,19 @@ describe("what the frame stage reads", () => {
         const heard: number[] = [];
         const late: number[] = [];
         const Listen = System.frame("Listen", function* () {
-          for (const { at } of (yield* Bounced).read()) {
+          for (const { at } of (yield* Event.Reader(Bounced)).read()) {
             heard.push(at);
           }
         });
         const Late = System.tick("Late", function* () {
           if ((yield* Time).tick >= 4) {
-            for (const { at } of (yield* Bounced).read()) {
+            for (const { at } of (yield* Event.Reader(Bounced)).read()) {
               late.push(at);
             }
           }
         });
         const Emit = System.tick("Emit", function* () {
-          (yield* Bounced.emits).emit({ at: (yield* Time).tick });
+          (yield* Event.Emitter(Bounced)).emit({ at: (yield* Time).tick });
         });
         const app = yield* App.make(
           App.define({ systems: [Late, Emit, Listen] })
@@ -818,13 +818,13 @@ describe("what the frame stage reads", () => {
         // again it goes no further back than it could with no frame stage.
         const sat: number[] = [];
         const Sometimes = System.tick("Sometimes", function* () {
-          for (const { at } of (yield* Bounced).read()) {
+          for (const { at } of (yield* Event.Reader(Bounced)).read()) {
             sat.push(at);
           }
         }).pipe(
           System.runIf(Effect.map(Time, ({ tick }) => tick === 1 || tick === 6))
         );
-        const run = Effect.fnUntraced(function* (each: App.App) {
+        const run = Effect.fnUntraced(function* (each: App.Any<never>) {
           sat.length = 0;
           yield* each.tick(1);
           yield* each.frame();
@@ -858,10 +858,10 @@ describe("what the frame stage reads", () => {
       Effect.gen(function* () {
         const heard: number[] = [];
         const Listen = System.frame("Listen", function* () {
-          heard.push((yield* Bounced).read().length);
+          heard.push((yield* Event.Reader(Bounced)).read().length);
         });
         const Emit = System.tick("Emit", function* () {
-          (yield* Bounced.emits).emit({ at: (yield* Time).tick });
+          (yield* Event.Emitter(Bounced)).emit({ at: (yield* Time).tick });
         });
         const app = yield* App.make(App.define({ systems: [Emit, Listen] }));
         // A frame stage that keeps running is kept for, however long.
@@ -902,17 +902,17 @@ describe("what the frame stage reads", () => {
         const Draw = System.frame("Draw", function* () {
           let rows = 0;
           // Raw columns of what it watches: nothing is written in a frame.
-          (yield* Watched).eachChunk((start, end) => {
+          (yield* Query.View(Watched)).eachChunk((start, end) => {
             rows += end - start;
           });
           drawn.push(rows);
         });
         const Count = System.tick("Count", function* () {
-          counted.push((yield* Moved).entities().length);
+          counted.push((yield* Query.View(Moved)).entities().length);
         });
         const Nudge = System.tick("Nudge", function* () {
           const { tick } = yield* Time;
-          (yield* Balls).each((ball, entity) => {
+          (yield* Query.View(Balls)).each((ball, entity) => {
             if (entityIndex(entity) === tick % 3) {
               ball.x += 1;
             }
@@ -972,23 +972,25 @@ describe("what the frame stage reads", () => {
       Effect.gen(function* () {
         const Watch = System.frame("Watch", function* () {
           let sum = 0;
-          (yield* Seen).each((ball) => {
+          (yield* Query.View(Seen)).each((ball) => {
             sum += ball.x;
           });
-          (yield* Watched).each(() => {});
-          (yield* Bounced).read();
-          void (yield* Score).points;
-          void (yield* Phase).value;
+          (yield* Query.View(Watched)).each(() => {});
+          (yield* Event.Reader(Bounced)).read();
+          void (yield* Singleton.Read(Score)).points;
+          void (yield* State.Reader(Phase)).value;
           void (yield* Random).next();
           void sum;
         });
         const Tally = System.tick("Tally", function* () {
-          (yield* Score.writes).points += (yield* Bounced).read().length;
+          (yield* Singleton.Write(Score)).points += (yield* Event.Reader(
+            Bounced
+          )).read().length;
           const random = yield* Random;
-          (yield* Balls).each((ball) => {
+          (yield* Query.View(Balls)).each((ball) => {
             ball.x += random.next();
           });
-          (yield* Bounced.emits).emit({ at: 0 });
+          (yield* Event.Emitter(Bounced)).emit({ at: 0 });
         });
         const Rack = racked(
           { x: 0, vx: 1 },
@@ -1041,7 +1043,7 @@ describe("a frame stage that is checked", () => {
   const Sneak = (how: "raw" | "random" | "none") =>
     System.frame("Sneak", function* () {
       if (how === "raw") {
-        (yield* Seen).eachChunk((start, end, balls) => {
+        (yield* Query.View(Seen)).eachChunk((start, end, balls) => {
           for (let i = start; i < end; i++) {
             // @ts-expect-error a read query's columns are not assigned
             balls.x[i]! += 1;
@@ -1052,7 +1054,7 @@ describe("a frame stage that is checked", () => {
       }
     });
   const Honest = System.frame("Honest", function* () {
-    void (yield* Seen).count();
+    void (yield* Query.View(Seen)).count();
   });
 
   it.effect(
@@ -1175,7 +1177,7 @@ describe("what a frame or input system keeps", () => {
     );
     const seen: number[] = [];
     const Camera = System.frame("fr/Camera", function* () {
-      const orbit = yield* Orbit;
+      const orbit = yield* System.Kept(Orbit);
       orbit.angle += (yield* Frame).delta;
       seen.push(orbit.angle);
     });
@@ -1242,12 +1244,12 @@ describe("what a frame or input system keeps", () => {
       Effect.gen(function* () {
         const Shown = System.local(() => ({ deck: true }));
         const Toggle = System.input("fr/Toggle", function* () {
-          const shown = yield* Shown;
+          const shown = yield* System.Kept(Shown);
           shown.deck = !shown.deck;
         });
         const drawn: boolean[] = [];
         const Draw = System.frame("fr/DrawDeck", function* () {
-          drawn.push((yield* Shown).deck);
+          drawn.push((yield* System.Kept(Shown)).deck);
         });
         const app = yield* App.make(App.define({ systems: [Toggle, Draw] }));
         yield* app.frame();
@@ -1262,16 +1264,16 @@ describe("what a frame or input system keeps", () => {
   it("is kept by a frame or an input system, and by no code of the tick", () => {
     const { Orbit } = orbiting();
     const Drawn = System.frame("fr/Drawn", function* () {
-      void (yield* Orbit).angle;
+      void (yield* System.Kept(Orbit)).angle;
     });
     System.input("fr/Heard", function* () {
-      void (yield* Orbit).angle;
+      void (yield* System.Kept(Orbit)).angle;
     });
     System.tick(
       "fr/Ticked",
       // @ts-expect-error the tick keeps what it keeps in the world
       function* () {
-        void (yield* Orbit).angle;
+        void (yield* System.Kept(Orbit)).angle;
       }
     );
     const Turn = Action.define("fr/Turn", Schema.Struct({}));
@@ -1279,7 +1281,7 @@ describe("what a frame or input system keeps", () => {
       Turn,
       // @ts-expect-error a handler keeps what it keeps in the world
       function* () {
-        void (yield* Orbit).angle;
+        void (yield* System.Kept(Orbit)).angle;
       }
     );
     expect(Drawn.stage).toBe("frame");

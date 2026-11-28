@@ -19,7 +19,7 @@ const Volume = Setting.define(
 );
 
 const Mixer = System.frame("game/Mixer", function* () {
-  const volume = yield* Volume; // 1 until it is set
+  const volume = yield* Setting.get(Volume); // 1 until it is set
   /* … */
 });
 const Game = App.define({
@@ -40,12 +40,12 @@ Browser.runMain(
 );
 ```
 
-`Setting.define(key, schema, initial)` defines a setting. `yield* Volume` reads its value: the one last set, or `initial` until it is set. `Setting.set(Volume, value)` sets it, and keeps it in `Setting.Store` at once, so the next visit to the page reads it.
+`Setting.define(key, schema, initial)` defines a setting. `yield* Setting.get(Volume)` reads its value: the one last set, or `initial` until it is set. `Setting.set(Volume, value)` sets it, and keeps it in `Setting.Store` at once, so the next visit to the page reads it.
 
 - A system of the frame or input stage reads a setting, and so does a plugin's layer and code outside the game. A system of the tick, an action's handler and a plugin's setup that read one don't compile: a replay, a save and the other peers of a session have none of it.
 - The key is what identifies the setting where it is kept. Prefix it with its feature, as a component's name is.
 - `Setting.set` fails with `Setting.Invalid` for a value the schema doesn't take, and with `Setting.StoreFailed` when the store can't keep it. Either way, the setting keeps the value it had.
-- A kept value the schema no longer takes, after the schema changed, reads as `initial` until it is set again.
+- A kept value the schema no longer takes, after the schema changed, or text that isn't JSON, fails the read with `Setting.Invalid`, which names the key, until it is set again. A frame that fails ends `Driver.run` with the failure, so a game that would rather start from `initial` reads it with `yield* Effect.orElseSucceed(Volume, () => Volume.initial)`.
 
 | Store | Keeps the settings |
 | --- | --- |
@@ -69,12 +69,12 @@ const SetHard = Action.define(
 );
 
 const setHard = Action.handler(SetHard, function* ({ hard }) {
-  (yield* Mode.writes).hard = hard ? 1 : 0;
+  (yield* Singleton.Write(Mode)).hard = hard ? 1 : 0;
 });
 // Before each tick: when the setting and the game differ, the game is told.
 const FollowHard = System.input("game/FollowHard", function* () {
-  const hard = yield* Hard;
-  if (((yield* Mode).hard === 1) !== hard) {
+  const hard = yield* Setting.get(Hard);
+  if (((yield* Singleton.Read(Mode)).hard === 1) !== hard) {
     (yield* Action.Actions).enqueue(SetHard, { hard });
   }
 });

@@ -5,7 +5,7 @@
  *   const Bullets = Query.all(Transform2d.Position, Overlap.Circle, Bullet)
  *   const Enemies = Query.all(Transform2d.Position, Overlap.Circle, Enemy)
  *
- *   Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
+ *   Overlap.pairs(commands, yield* Query.View(Bullets), yield* Query.View(Enemies), (bullet, enemy) => {
  *     ...
  *     return "first"                      // despawns the bullet
  *   })
@@ -227,14 +227,16 @@ const gather = (view: QueryView<Shaped>, into: Side): void => {
   view.each(read);
 };
 
-let despawning: { readonly despawn: (entity: Entity) => void } = {
-  despawn: () => {},
-};
+let queue: {
+  readonly despawn: (entity: Entity) => void;
+  readonly despawning: (entity: Entity) => boolean;
+} = { despawn: () => {}, despawning: () => false };
 let calling: (first: Entity, second: Entity) => Despawn = () => "neither";
 
 /**
- * Hands a pair that touches to the callback and despawns what it says, and
- * returns whether the entity of the first query is spent.
+ * Hands a pair that touches to the callback, unless either entity is queued
+ * to despawn, and despawns what it says. Returns whether the entity of the
+ * first query is spent.
  */
 const meet = (i: number, j: number): boolean => {
   const a = first.ids[i]!;
@@ -242,13 +244,20 @@ const meet = (i: number, j: number): boolean => {
   if (a === b) {
     return false;
   }
+  if (queue.despawning(a)) {
+    return true;
+  }
+  if (queue.despawning(b)) {
+    second.spent[j] = 1;
+    return false;
+  }
   const despawn = calling(a, b);
   if (despawn === "second" || despawn === "both") {
     second.spent[j] = 1;
-    despawning.despawn(b);
+    queue.despawn(b);
   }
   if (despawn === "first" || despawn === "both") {
-    despawning.despawn(a);
+    queue.despawn(a);
     return true;
   }
   return false;
@@ -337,12 +346,13 @@ const boxesWithBoxes = (): void => {
 
 /**
  * Calls `fn` for every pair of an entity of `a` and an entity of `b` whose
- * shapes touch, and despawns what it says to. An entity it despawns takes
- * part in no later pair of the call, so a bullet hits once and an enemy dies
- * once.
+ * shapes touch, and despawns what it says to. An entity queued to despawn,
+ * by what `fn` returns, by `commands.despawn` in `fn` or before the call,
+ * takes part in no later pair of the call, so a bullet hits once and an
+ * enemy dies once.
  *
  *   const commands = yield* Commands
- *   Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
+ *   Overlap.pairs(commands, yield* Query.View(Bullets), yield* Query.View(Enemies), (bullet, enemy) => {
  *     const hp = world.get(enemy, Enemy)!.hp - 1
  *     world.set(enemy, Enemy, { hp })
  *     return hp > 0 ? "first" : "both"
@@ -358,21 +368,23 @@ const boxesWithBoxes = (): void => {
  * - Pairs come in the order of `a`'s entities, and for each, of `b`'s. An
  *   entity that both queries match is not paired with itself.
  * - It despawns through `commands`, which the system applies when it
- *   finishes, as it would any other despawn.
+ *   finishes, as it would any other despawn, and asks `commands.despawning`
+ *   whether an entity is queued to despawn.
  * - It tests every pair, so its cost grows with the product of the two
  *   counts: about 2.5 ms for a thousand circles against a thousand. A call
  *   makes an array of each query's ids, and nothing for each pair.
  *
  * **Gotchas**
  *
- * - An entity `fn` despawns through `commands` itself, rather than by what it
- *   returns, still takes part in the later pairs of the call.
  * - `fn` can't call `Overlap.pairs` again, which throws.
  *
  * @category Utilities
  */
 export const pairs = (
-  commands: { readonly despawn: (entity: Entity) => void },
+  commands: {
+    readonly despawn: (entity: Entity) => void;
+    readonly despawning: (entity: Entity) => boolean;
+  },
   a: QueryView<Shaped>,
   b: QueryView<Shaped>,
   fn: (first: Entity, second: Entity) => Despawn
@@ -386,7 +398,7 @@ export const pairs = (
   try {
     gather(a, first);
     gather(b, second);
-    despawning = commands;
+    queue = commands;
     calling = fn;
     if (first.circle) {
       if (second.circle) {

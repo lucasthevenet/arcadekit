@@ -77,7 +77,9 @@ const Game = App.define({
 const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     const app = yield* make;
-    const [target] = (yield* app.read(Query.all(Health))).entities();
+    const [target] = (yield* app.read(
+      Query.View(Query.all(Health))
+    )).entities();
     assert(target !== undefined, "the game begins with a thing to damage");
     return { app, world: yield* app.read(World), target };
   });
@@ -246,7 +248,7 @@ describe("actions with a schema", () => {
         const rejected: string[] = [];
         const events: (typeof Action.Rejected.codec)["Type"][] = [];
         const Watch = System.tick("Watch", function* () {
-          for (const event of (yield* Action.Rejected).read()) {
+          for (const event of (yield* Event.Reader(Action.Rejected)).read()) {
             rejected.push(`${event.action}: ${event.error._tag}`);
             events.push(event);
           }
@@ -439,8 +441,8 @@ describe("events with a schema", () => {
         const seen: unknown[] = [];
         const Emit = System.tick("Emit", function* () {
           // An event with no payload is emitted with none.
-          (yield* Started.emits).emit();
-          const hit = yield* Hit.emits;
+          (yield* Event.Emitter(Started)).emit();
+          const hit = yield* Event.Emitter(Hit);
           // The payload is typed by the schema: a string here would not compile.
           hit.emit({
             target: entityOf(1),
@@ -465,7 +467,7 @@ describe("events with a schema", () => {
           });
         });
         const Read = System.tick("Read", function* () {
-          for (const hit of (yield* Hit).read()) {
+          for (const hit of (yield* Event.Reader(Hit)).read()) {
             seen.push(hit.amount);
           }
         });
@@ -540,13 +542,13 @@ describe("events with a schema", () => {
       Effect.gen(function* () {
         const Twin = Event.define("sc/Hit", Schema.Number);
         const Both = System.tick("Both", function* () {
-          (yield* Hit.emits).emit({
+          (yield* Event.Emitter(Hit)).emit({
             target: entityOf(1),
             amount: 1,
             at: new Date(1),
             seed: 1n,
           });
-          (yield* Twin.emits).emit(1);
+          (yield* Event.Emitter(Twin)).emit(1);
         });
         yield* withApp(App.make(App.define({ systems: [Both] })), (app) =>
           Effect.gen(function* () {
@@ -557,11 +559,11 @@ describe("events with a schema", () => {
         );
         // Each on its own, in an app of its own, is fine.
         const Alone = System.tick("Alone", function* () {
-          (yield* Twin.emits).emit(2);
+          (yield* Event.Emitter(Twin)).emit(2);
         });
         const heard: number[] = [];
         const Hear = System.tick("Hear", function* () {
-          heard.push(...(yield* Twin).read());
+          heard.push(...(yield* Event.Reader(Twin)).read());
         });
         yield* withApp(
           App.make(App.define({ systems: [Alone, Hear] })),
@@ -573,7 +575,7 @@ describe("events with a schema", () => {
         );
         // An event that is only read is known by its name as well.
         const Shout = System.tick("Shout", function* () {
-          (yield* Hit.emits).emit({
+          (yield* Event.Emitter(Hit)).emit({
             target: entityOf(1),
             amount: 1,
             at: new Date(1),
@@ -609,7 +611,7 @@ describe("saving and replaying", () => {
         yield* app.dispatch(Rename, { name: "x" });
         yield* app.tick(1);
         return {
-          bytes: unwrap(Replay.encode(yield* Replay.record(app))),
+          bytes: yield* Replay.encode(yield* Replay.record(app)),
           hp: world.get(target, Health)!.hp,
         };
       })
@@ -691,7 +693,7 @@ describe("saving and replaying", () => {
             }
             const save = yield* Effect.exit(Save.make(app));
             assert(Exit.isSuccess(save));
-            return unwrap(Replay.encode(yield* Replay.record(app, save.value)));
+            return yield* Replay.encode(yield* Replay.record(app, save.value));
           })
         );
       });
@@ -768,47 +770,51 @@ describe("saving and replaying", () => {
     })
   );
 
-  it("writes a message and a recording in the same bytes as before", () => {
-    // Bytes written once, so a change to how either is laid out, an upgrade
-    // of Effect's SchemaBinary included, fails here and not on a peer.
-    const hex = (bytes: Uint8Array): string =>
-      Buffer.from(bytes).toString("hex");
-    const bytesOf = (text: string): Uint8Array =>
-      Uint8Array.from(Buffer.from(text, "hex"));
-    const message = {
-      from: "ada",
-      tick: 12,
-      actions: [{ name: "g/Move", payload: { dx: 1 } }],
-      checkpoints: [{ tick: 11, hash: 4_294_967_295 }],
-      made: { game: 99, hz: 60, peers: ["ada", "bob"], start: 0 },
-      heard: 10,
-      at: 12,
-      lead: -3,
-    };
-    const messageBytes =
-      "4421f218d829e05c42a21f070c010a000302160afeffffff1f1818036164611401120003107b226478223a317d0c672f4d6f76650f09020361646103626f62c60101780014";
-    expect(hex(unwrap(Message.encode(message)))).toBe(messageBytes);
-    expect(Message.decode(bytesOf(messageBytes))).toEqual(
-      Exit.succeed(message)
-    );
+  it.effect(
+    "writes a message and a recording in the same bytes as before",
+    () =>
+      Effect.gen(function* () {
+        // Bytes written once, so a change to how either is laid out, an upgrade
+        // of Effect's SchemaBinary included, fails here and not on a peer.
+        const hex = (bytes: Uint8Array): string =>
+          Buffer.from(bytes).toString("hex");
+        const bytesOf = (text: string): Uint8Array =>
+          Uint8Array.from(Buffer.from(text, "hex"));
+        const message = {
+          from: "ada",
+          tick: 12,
+          actions: [{ name: "g/Move", payload: { dx: 1 } }],
+          checkpoints: [{ tick: 11, hash: 4_294_967_295 }],
+          made: { game: 99, hz: 60, peers: ["ada", "bob"], start: 0 },
+          heard: 10,
+          at: 12,
+          lead: -3,
+        };
+        const messageBytes =
+          "4421f218d829e05c42a21f070c010a000302160afeffffff1f1818036164611401120003107b226478223a317d0c672f4d6f76650f09020361646103626f62c60101780014";
+        expect(hex(yield* Message.encode(message))).toBe(messageBytes);
+        expect(Message.decode(bytesOf(messageBytes))).toEqual(
+          Exit.succeed(message)
+        );
 
-    const recordingBytes =
-      "73208895aad41f34022a09a8faeec319087b226478223a317da18ac6d52d00b0deb7ce4606672f4d6f7665a887b0f34a03616461070b02feffffff1fe1cab791280ef9cde0ca3200d1dacea33504b0d1d6d56218011600a4e1d8da050200a1f885d80610111111111111913ff1c7a6a76a80890f";
-    const recording = Replay.decode(bytesOf(recordingBytes));
-    assert(Exit.isSuccess(recording));
-    expect(recording.value).toEqual({
-      seed: 7,
-      start: 0,
-      end: 2,
-      endHash: 123_456,
-      deltas: [{ tick: 0, delta: 1 / 60 }],
-      log: [
-        { tick: 0, name: "g/Move", payload: { dx: 1 }, from: "ada" },
-        { tick: 1, hash: 4_294_967_295 },
-      ],
-    });
-    expect(hex(unwrap(Replay.encode(recording.value)))).toBe(recordingBytes);
-  });
+        const recordingBytes =
+          "73208895aad41f34022a09a8faeec319087b226478223a317da18ac6d52d00b0deb7ce4606672f4d6f7665a887b0f34a03616461070b02feffffff1fe1cab791280ef9cde0ca3200d1dacea33504b0d1d6d56218011600a4e1d8da050200a1f885d80610111111111111913ff1c7a6a76a80890f";
+        const recording = Replay.decode(bytesOf(recordingBytes));
+        assert(Exit.isSuccess(recording));
+        expect(recording.value).toEqual({
+          seed: 7,
+          start: 0,
+          end: 2,
+          endHash: 123_456,
+          deltas: [{ tick: 0, delta: 1 / 60 }],
+          log: [
+            { tick: 0, name: "g/Move", payload: { dx: 1 }, from: "ada" },
+            { tick: 1, hash: 4_294_967_295 },
+          ],
+        });
+        expect(hex(yield* Replay.encode(recording.value))).toBe(recordingBytes);
+      })
+  );
 
   it.effect("stops a replay at the first entry that no longer applies", () =>
     Effect.gen(function* () {

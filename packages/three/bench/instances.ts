@@ -8,7 +8,22 @@
  * heap grew by per frame.
  *
  *   pnpm --filter @arcadekit/three bench
+ *
+ * `bench/compare.ts` runs them for two checkouts, turn and turn about, to
+ * say whether a change made any of them slower. A variant is run on its own
+ * as
+ *
+ *   node --import tsx --conditions=source bench/instances.ts <name>
+ *
+ * which prints `{"ns":…,"bytes":…}`. A variant makes what it draws when it
+ * runs, so that a checkout whose source lacks what one variant uses still
+ * runs the others. Run whole, every variant runs in one process, after the
+ * ones before it, and may measure apart from how it measures alone: the
+ * smooth variants of a position measured 3% to 5% faster so, on a shared
+ * 4-core VM.
  */
+import { pathToFileURL } from "node:url";
+
 import {
   App,
   Assets,
@@ -40,10 +55,16 @@ const FlatThing = Component.tag("bench/FlatThing", {
 const geometry = new BoxGeometry(1, 1, 1);
 const material = new MeshBasicMaterial();
 
-const noRenderer = Layer.mergeAll(
-  Three.layer({ render() {} }),
-  Assets.layer(Assets.makeMemory({ "/bark.png": "" }))
-);
+/** What a frame costs: nanoseconds per entity, and bytes. */
+export interface Measured {
+  readonly ns: number;
+  readonly bytes: number;
+}
+
+export interface Variant {
+  readonly label: string;
+  readonly run: () => Measured;
+}
 
 const median = (values: number[]): number =>
   values.toSorted((a, b) => a - b)[values.length >> 1]!;
@@ -64,7 +85,7 @@ const crowd = (parts: () => ComponentInput[]) => {
   });
 };
 
-const measure = (frame: () => void): { ns: number; bytes: number } => {
+const measure = (frame: () => void): Measured => {
   for (let i = 0; i < 300; i++) {
     frame();
   }
@@ -84,9 +105,7 @@ const measure = (frame: () => void): { ns: number; bytes: number } => {
  * `measure` for an app's frame stage: each frame yielded in one fiber, as a
  * driver yields it.
  */
-const measureFrames = (
-  frame: () => Effect.Effect<void>
-): { ns: number; bytes: number } =>
+const measureFrames = (frame: () => Effect.Effect<void>): Measured =>
   Effect.runSync(
     Effect.gen(function* () {
       for (let i = 0; i < 300; i++) {
@@ -105,147 +124,57 @@ const measureFrames = (
     })
   );
 
-const variant = (
-  name: string,
-  parts: () => ComponentInput[],
-  system: System.System<
-    never,
-    Frame | Three.Scene | Time | World | Assets.Store
-  >,
-  // What else the frame runs, for a variant that needs it.
-  also?: System.System<never, Assets.Store>
-): void => {
-  const plugins = [Three.plugin, Assets.plugin, crowd(parts)] as const;
-  const made =
-    also === undefined
-      ? App.make(App.define({ plugins, systems: [system] }))
-      : App.make(App.define({ plugins, systems: [also, system] }));
-  const app = Effect.runSync(Effect.provide(made, noRenderer));
-  const { bytes, ns } = measureFrames(() => app.frame());
-  console.log(
-    `${name.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
-  );
-};
+/** The frames of an app that draws the crowd of `parts` with `system`. */
+const drawn =
+  (
+    parts: () => ComponentInput[],
+    system: () => System.System<
+      never,
+      Frame | Three.Scene | Time | World | Assets.Store
+    >,
+    // What else the frame runs, for a variant that needs it.
+    also?: () => System.System<never, Assets.Store>
+  ) =>
+  (): Measured => {
+    const plugins = [Three.plugin, Assets.plugin, crowd(parts)] as const;
+    const made =
+      also === undefined
+        ? App.make(App.define({ plugins, systems: [system()] }))
+        : App.make(App.define({ plugins, systems: [also(), system()] }));
+    const noRenderer = Layer.mergeAll(
+      Three.layer({ render() {} }),
+      Assets.layer(Assets.makeMemory({ "/bark.png": "" }))
+    );
+    const app = Effect.runSync(Effect.provide(made, noRenderer));
+    return measureFrames(() => app.frame());
+  };
 
 const place = () =>
   Position.of({ x: Math.random(), y: Math.random(), z: Math.random() });
 const turn = () => Rotation.of(Transform3d.axisAngle(0, 1, 0, Math.random()));
 const size = () => Scale.of({ x: 2, y: 2, z: 2 });
-const instanced = <const O extends Three.KindOptions["of"]>(
-  name: string,
-  of: O,
-  transform: Three.TransformOf<O>
-) =>
-  Three.instances(name, {
-    of,
-    transform,
-    geometry,
-    material,
-    capacity: N,
-  });
+const instanced =
+  <const O extends Three.KindOptions["of"]>(
+    name: string,
+    of: O,
+    transform: Three.TransformOf<O>,
+    more: { readonly smooth?: boolean; readonly color?: typeof Color.Rgb } = {}
+  ) =>
+  () =>
+    Three.instances(name, {
+      of,
+      transform,
+      geometry,
+      material,
+      capacity: N,
+      ...more,
+    });
 
-console.log(`${N} entities, one frame:`);
-variant(
-  "instances: a position",
-  () => [Thing, place()],
-  instanced("a", Thing, Transform3d)
-);
-variant(
-  "instances: a position and a scale",
-  () => [Thing, place(), size()],
-  instanced("b", Thing, Transform3d)
-);
-variant(
-  "instances: a position and a rotation",
-  () => [Thing, place(), turn()],
-  instanced("c", Thing, Transform3d)
-);
-variant(
-  "instances: all three",
-  () => [Thing, place(), turn(), size()],
-  instanced("d", Thing, Transform3d)
-);
 // A flat game's entities: fewer columns, and a sine and a cosine for a turn.
 const placeFlat = () =>
   Transform2d.Position.of({ x: Math.random(), y: Math.random() });
 const turnFlat = () => Transform2d.Rotation.of({ angle: Math.random() * 6 });
 const sizeFlat = () => Transform2d.Scale.of({ x: 2, y: 2 });
-variant(
-  "instances, flat: a position",
-  () => [FlatThing, placeFlat()],
-  instanced("f", FlatThing, Transform2d)
-);
-variant(
-  "instances, flat: a position and a scale",
-  () => [FlatThing, placeFlat(), sizeFlat()],
-  instanced("g", FlatThing, Transform2d)
-);
-variant(
-  "instances, flat: a position and a rotation",
-  () => [FlatThing, placeFlat(), turnFlat()],
-  instanced("h", FlatThing, Transform2d)
-);
-variant(
-  "instances, flat: all three",
-  () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
-  instanced("i", FlatThing, Transform2d)
-);
-variant(
-  "objects: an Object3D each, all three copied",
-  () => [Thing, place(), turn(), size()],
-  Three.objects("e", {
-    of: Thing,
-    transform: Transform3d,
-    make: () => new Object3D(),
-  })
-);
-
-variant(
-  "objects, flat: an Object3D each, all three copied",
-  () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
-  Three.objects("j", {
-    of: FlatThing,
-    transform: Transform2d,
-    make: () => new Object3D(),
-  })
-);
-
-// Drawn between two ticks: each value on its way from the one a tick ago,
-// kept per entity by the renderer. No tick runs between these frames; a
-// frame that follows one does the same work.
-const smoothed = <const O extends Three.KindOptions["of"]>(
-  name: string,
-  of: O,
-  transform: Three.TransformOf<O>
-) =>
-  Three.instances(name, {
-    of,
-    transform,
-    geometry,
-    material,
-    capacity: N,
-    smooth: true,
-  });
-variant(
-  "instances, smooth: a position",
-  () => [Thing, place()],
-  smoothed("k", Thing, Transform3d)
-);
-variant(
-  "instances, smooth: all three",
-  () => [Thing, place(), turn(), size()],
-  smoothed("l", Thing, Transform3d)
-);
-variant(
-  "instances, smooth, flat: a position",
-  () => [FlatThing, placeFlat()],
-  smoothed("m", FlatThing, Transform2d)
-);
-variant(
-  "instances, smooth, flat: all three",
-  () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
-  smoothed("n", FlatThing, Transform2d)
-);
 
 // A colour of its own for each: three more numbers, beside the matrix.
 const paint = () =>
@@ -262,43 +191,6 @@ const glow = () =>
     b: Math.random(),
     space: Color.Linear,
   });
-variant(
-  "instances, a colour each: a position",
-  () => [Thing, place(), paint()],
-  Three.instances("o", {
-    of: Thing,
-    transform: Transform3d,
-    geometry,
-    material,
-    capacity: N,
-    color: Color.Rgb,
-  })
-);
-variant(
-  "instances, a colour each, as the renderer has it: a position",
-  () => [Thing, place(), glow()],
-  Three.instances("o2", {
-    of: Thing,
-    transform: Transform3d,
-    geometry,
-    material,
-    capacity: N,
-    color: Color.Rgb,
-  })
-);
-variant(
-  "instances, a colour each, smooth: a position",
-  () => [Thing, place(), paint()],
-  Three.instances("p", {
-    of: Thing,
-    transform: Transform3d,
-    geometry,
-    material,
-    capacity: N,
-    color: Color.Rgb,
-    smooth: true,
-  })
-);
 
 // A look that is made of a bundle's assets, and asked each frame whether
 // they are still there: once by the system, and once before the scene is
@@ -307,23 +199,10 @@ const Level = Assets.bundle("bench/Level", {
   // An asset that needs no file, since none is fetched here.
   bark: Assets.make("/bark.png", () => Effect.succeed(material)),
 });
-const Sourced = Three.instancesFrom("q", {
-  of: Thing,
-  transform: Transform3d,
-  from: Level,
-  look: ({ bark }) => ({ geometry, material: bark }),
-  capacity: N,
-});
-variant(
-  "Three.instancesFrom: a position",
-  () => [Thing, place()],
-  Sourced,
-  Assets.during(Level)
-);
 
-// What the loops above replace: an Object3D per entity, its matrix worked
-// out by Three.js and copied into the mesh, as its documentation shows.
-{
+// What the loops replace: an Object3D per entity, its matrix worked out by
+// Three.js and copied into the mesh, as its documentation shows.
+const byHand = (): Measured => {
   const { entities, world } = Effect.runSync(
     Effect.gen(function* () {
       const app = yield* App.make(
@@ -333,7 +212,7 @@ variant(
       );
       return {
         entities: (yield* app.read(
-          Query.all().pipe(Query.with(Thing))
+          Query.View(Query.all().pipe(Query.with(Thing)))
         )).entities(),
         world: yield* app.read(World),
       };
@@ -341,7 +220,7 @@ variant(
   );
   const mesh = new InstancedMesh(geometry, material, N);
   const dummy = new Object3D();
-  const { bytes, ns } = measure(() => {
+  return measure(() => {
     for (let i = 0; i < N; i++) {
       const entity = entities[i]!;
       const position = world.get(entity, Position)!;
@@ -355,7 +234,176 @@ variant(
     }
     mesh.instanceMatrix.needsUpdate = true;
   });
-  console.log(
-    `${"by hand: world.get and setMatrixAt, per entity".padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
-  );
+};
+
+export const variants: Record<string, Variant> = {
+  position: {
+    label: "instances: a position",
+    run: drawn(() => [Thing, place()], instanced("a", Thing, Transform3d)),
+  },
+  positionScale: {
+    label: "instances: a position and a scale",
+    run: drawn(
+      () => [Thing, place(), size()],
+      instanced("b", Thing, Transform3d)
+    ),
+  },
+  positionRotation: {
+    label: "instances: a position and a rotation",
+    run: drawn(
+      () => [Thing, place(), turn()],
+      instanced("c", Thing, Transform3d)
+    ),
+  },
+  all: {
+    label: "instances: all three",
+    run: drawn(
+      () => [Thing, place(), turn(), size()],
+      instanced("d", Thing, Transform3d)
+    ),
+  },
+  flat: {
+    label: "instances, flat: a position",
+    run: drawn(
+      () => [FlatThing, placeFlat()],
+      instanced("f", FlatThing, Transform2d)
+    ),
+  },
+  flatScale: {
+    label: "instances, flat: a position and a scale",
+    run: drawn(
+      () => [FlatThing, placeFlat(), sizeFlat()],
+      instanced("g", FlatThing, Transform2d)
+    ),
+  },
+  flatRotation: {
+    label: "instances, flat: a position and a rotation",
+    run: drawn(
+      () => [FlatThing, placeFlat(), turnFlat()],
+      instanced("h", FlatThing, Transform2d)
+    ),
+  },
+  flatAll: {
+    label: "instances, flat: all three",
+    run: drawn(
+      () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
+      instanced("i", FlatThing, Transform2d)
+    ),
+  },
+  objects: {
+    label: "objects: an Object3D each, all three copied",
+    run: drawn(
+      () => [Thing, place(), turn(), size()],
+      () =>
+        Three.objects("e", {
+          of: Thing,
+          transform: Transform3d,
+          make: () => new Object3D(),
+        })
+    ),
+  },
+  objectsFlat: {
+    label: "objects, flat: an Object3D each, all three copied",
+    run: drawn(
+      () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
+      () =>
+        Three.objects("j", {
+          of: FlatThing,
+          transform: Transform2d,
+          make: () => new Object3D(),
+        })
+    ),
+  },
+  // Drawn between two ticks: each value on its way from the one a tick ago,
+  // kept per entity by the renderer. No tick runs between these frames; a
+  // frame that follows one does the same work.
+  smooth: {
+    label: "instances, smooth: a position",
+    run: drawn(
+      () => [Thing, place()],
+      instanced("k", Thing, Transform3d, { smooth: true })
+    ),
+  },
+  smoothAll: {
+    label: "instances, smooth: all three",
+    run: drawn(
+      () => [Thing, place(), turn(), size()],
+      instanced("l", Thing, Transform3d, { smooth: true })
+    ),
+  },
+  smoothFlat: {
+    label: "instances, smooth, flat: a position",
+    run: drawn(
+      () => [FlatThing, placeFlat()],
+      instanced("m", FlatThing, Transform2d, { smooth: true })
+    ),
+  },
+  smoothFlatAll: {
+    label: "instances, smooth, flat: all three",
+    run: drawn(
+      () => [FlatThing, placeFlat(), turnFlat(), sizeFlat()],
+      instanced("n", FlatThing, Transform2d, { smooth: true })
+    ),
+  },
+  color: {
+    label: "instances, a colour each: a position",
+    run: drawn(
+      () => [Thing, place(), paint()],
+      instanced("o", Thing, Transform3d, { color: Color.Rgb })
+    ),
+  },
+  colorLinear: {
+    label: "instances, a colour each, as the renderer has it: a position",
+    run: drawn(
+      () => [Thing, place(), glow()],
+      instanced("o2", Thing, Transform3d, { color: Color.Rgb })
+    ),
+  },
+  colorSmooth: {
+    label: "instances, a colour each, smooth: a position",
+    run: drawn(
+      () => [Thing, place(), paint()],
+      instanced("p", Thing, Transform3d, { color: Color.Rgb, smooth: true })
+    ),
+  },
+  instancesFrom: {
+    label: "Three.instancesFrom: a position",
+    run: drawn(
+      () => [Thing, place()],
+      () =>
+        Three.instancesFrom("q", {
+          of: Thing,
+          transform: Transform3d,
+          from: Level,
+          look: ({ bark }) => ({ geometry, material: bark }),
+          capacity: N,
+        }),
+      () => Assets.during(Level)
+    ),
+  },
+  byHand: {
+    label: "by hand: world.get and setMatrixAt, per entity",
+    run: byHand,
+  },
+};
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const name = process.argv[2];
+  if (name === undefined) {
+    console.log(`${N} entities, one frame:`);
+    for (const { label, run } of Object.values(variants)) {
+      const { bytes, ns } = run();
+      console.log(
+        `${label.padEnd(58)} ${ns.toFixed(1).padStart(6)} ns/entity ${String(bytes).padStart(8)} bytes/frame`
+      );
+    }
+  } else {
+    const variant = variants[name];
+    if (variant === undefined) {
+      throw new Error(
+        `bench/instances.ts is given the name of a variant, one of: ${Object.keys(variants).join(", ")}.`
+      );
+    }
+    console.log(JSON.stringify(variant.run()));
+  }
 }

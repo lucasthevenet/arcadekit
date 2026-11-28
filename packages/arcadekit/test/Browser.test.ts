@@ -72,7 +72,7 @@ const told = (devices: Input.Sample) => ({
 const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
-  (yield* Ships).each((ship) => {
+  (yield* Query.View(Ships)).each((ship) => {
     if (keys.down("ArrowLeft")) {
       ship.x -= 10 * delta;
     }
@@ -93,7 +93,7 @@ const Flying = Plugin.make("Flying", {
 });
 const ship = Effect.fnUntraced(function* (app: App.Any) {
   let found = { x: Number.NaN, shots: Number.NaN };
-  (yield* app.read(Flown)).each((one) => {
+  (yield* app.read(Query.View(Flown))).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
   return found;
@@ -597,6 +597,51 @@ describe("a page's devices", () => {
       })
   );
 
+  it.effect(
+    "says once of each code it does not hear that it is not heard, and nothing of a key that has no code",
+    () =>
+      Effect.gen(function* () {
+        const page = new Listened();
+        const logged: string[] = [];
+        yield* run(
+          Effect.gen(function* () {
+            const listener = yield* Input.listen;
+            // Codes a browser sends that the specification does not list.
+            page.send("keydown", { code: "BrightnessUp", repeat: false });
+            page.send("keydown", { code: "BrightnessUp", repeat: true });
+            page.send("keyup", { code: "BrightnessUp" });
+            page.send("keydown", { code: "BrightnessUp", repeat: false });
+            page.send("keyup", { code: "MediaRecord" });
+            page.send("keydown", { code: "", repeat: false });
+            page.send("keydown", { code: "Unidentified", repeat: false });
+            page.send("keydown", { code: "KeyQ", repeat: false });
+            expect(told(listener.sample()).down).toEqual(["KeyQ"]);
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                Browser.layer({
+                  window: page,
+                  gamepads: () => [],
+                  sounds: false,
+                }),
+                Logger.layer([
+                  Logger.make((entry) => {
+                    logged.push(`${entry.logLevel}: ${String(entry.message)}`);
+                  }),
+                ])
+              )
+            )
+          )
+        );
+        const DROPPED = (code: string): string =>
+          `Warn: The page sent a key whose code is "${code}", which is none of Input.KeyCode's, and it is not heard: no control and no Input.Keyboard can read it. Input.KeyCode is the UI Events specification's list, and a browser can send a code the list does not have yet. Report the code at https://github.com/lucasthevenet/arcadekit/issues, so that it is added. This is said once for each code.`;
+        expect(logged).toEqual([
+          DROPPED("BrightnessUp"),
+          DROPPED("MediaRecord"),
+        ]);
+      })
+  );
+
   it.effect("reads the gamepads when it is sampled", () =>
     Effect.gen(function* () {
       const page = new Listened();
@@ -1027,7 +1072,7 @@ describe("what a page keeps beyond a visit", () => {
             return {
               slots: yield* (yield* Save.Store).slots,
               save: yield* Save.read("slot2"),
-              volume: yield* Volume,
+              volume: yield* Setting.get(Volume),
             };
           })
         );
@@ -1043,7 +1088,7 @@ describe("what a page keeps beyond a visit", () => {
             Effect.gen(function* () {
               return {
                 slots: yield* (yield* Save.Store).slots,
-                volume: yield* Volume,
+                volume: yield* Setting.get(Volume),
               };
             }),
             Layer.merge(
@@ -1090,7 +1135,10 @@ describe("what a page keeps beyond a visit", () => {
           })
         );
         expect(
-          yield* Effect.provide(Volume, Setting.layer(Browser.settings("mine")))
+          yield* Effect.provide(
+            Setting.get(Volume),
+            Setting.layer(Browser.settings("mine"))
+          )
         ).toBe(1);
         // What isn't a save's text is refused as one.
         page.items.set("mine/save/bad", "%%%");
@@ -1584,8 +1632,8 @@ describe("a page's sound", () => {
     yield* Effect.promise(() => settle());
     const output = byName(
       opened,
-      yield* Effect.provide(sheet, Sound.layerNowhere),
-      yield* Effect.provide(Elsewhere, Sound.layerNowhere)
+      yield* Effect.provide(Sound.Clips(sheet), Sound.layerNowhere),
+      yield* Effect.provide(Sound.Clips(Elsewhere), Sound.layerNowhere)
     );
     return {
       page,
@@ -1737,7 +1785,10 @@ describe("a page's sound", () => {
           )
         );
         yield* Effect.promise(() => settle());
-        const { coin } = yield* Effect.provide(Sheet, Sound.layerNowhere);
+        const { coin } = yield* Effect.provide(
+          Sound.Clips(Sheet),
+          Sound.layerNowhere
+        );
         output.play(coin, { volume: 1, rate: 1 });
         output.music("score", coin, { volume: 1, fade: 0, once: false });
         page.send("pointerdown");
@@ -2547,7 +2598,7 @@ describe("a page's sound", () => {
         const Scored = Event.define("br/Scored", Schema.Struct({}));
         const Score = System.tick("br/Score", function* () {
           if ((yield* Time).tick === 2) {
-            (yield* Scored.emits).emit({});
+            (yield* Event.Emitter(Scored)).emit({});
           }
         });
         const Cues = Sound.cues("br/Cues", Coins, ({ coin }) => [
@@ -2655,7 +2706,7 @@ describe("a page's sound", () => {
         systems: [
           Sound.cues("br/Cues", Coins, ({ coin }) => [Sound.on(Scored, coin)]),
           Sound.music("br/Theme", function* () {
-            return (yield* Tunes).theme;
+            return (yield* Sound.Clips(Tunes)).theme;
           }),
         ],
       }),
@@ -2728,7 +2779,7 @@ describe("a page's sound", () => {
     plugins: [Sound.plugin],
     systems: [
       System.frame("br/Clink", function* () {
-        (yield* Sound.Player).play((yield* Coins).coin);
+        (yield* Sound.Player).play((yield* Sound.Clips(Coins)).coin);
       }),
     ],
   });
@@ -2739,7 +2790,7 @@ describe("a page's sound", () => {
       Effect.gen(function* () {
         const Plink = System.frame("br/Plink", function* () {
           if ((yield* Input.Keyboard).down("Space")) {
-            (yield* Sound.Player).play((yield* Coins).coin);
+            (yield* Sound.Player).play((yield* Sound.Clips(Coins)).coin);
           }
         });
         const Game = App.define({

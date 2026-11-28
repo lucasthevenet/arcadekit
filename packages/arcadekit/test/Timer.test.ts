@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
@@ -29,8 +29,8 @@ const Log = Singleton.define(
   "tm/Log",
   {
     firing: Field.u8,
-    shots: Field.json<readonly number[]>(),
-    waves: Field.json<readonly number[]>(),
+    shots: Field.json<readonly number[]>([]),
+    waves: Field.json<readonly number[]>([]),
   },
   { firing: 0, shots: [], waves: [] }
 );
@@ -45,11 +45,11 @@ const Reload = Action.define(
 );
 
 const trigger = Action.handler(Trigger, function* ({ held }) {
-  (yield* Log.writes).firing = held ? 1 : 0;
+  (yield* Singleton.Write(Log)).firing = held ? 1 : 0;
 });
 const Guns = Query.all(Gun).pipe(Query.writes(Gun));
 const reload = Action.handler(Reload, function* ({ seconds }) {
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = seconds;
   });
 });
@@ -59,9 +59,9 @@ const BULLET_LIFE = 0.5;
 
 const Fire = System.tick("tm/Fire", function* () {
   const { delta, tick } = yield* Time;
-  const log = yield* Log.writes;
+  const log = yield* Singleton.Write(Log);
   const commands = yield* Commands.spawns(Bullet, Timer.Lifetime);
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = Timer.tick(gun.cooldown, delta);
     if (log.firing === 1 && Timer.ready(gun.cooldown)) {
       gun.cooldown = COOLDOWN;
@@ -73,7 +73,7 @@ const Fire = System.tick("tm/Fire", function* () {
 
 const Wave = System.tick("tm/Wave", function* () {
   const { tick } = yield* Time;
-  const log = yield* Log.writes;
+  const log = yield* Singleton.Write(Log);
   log.waves = [...log.waves, tick];
 }).pipe(Timer.every(1));
 
@@ -118,7 +118,7 @@ describe("a cooldown", () => {
       yield* app.dispatch(Trigger, { held: true });
       yield* run(app, 12);
       // Ready on the first tick, then once a second: every fourth tick.
-      expect((yield* app.read(Log)).shots).toEqual([1, 5, 9]);
+      expect((yield* app.read(Singleton.Read(Log))).shots).toEqual([1, 5, 9]);
     })
   );
 
@@ -140,7 +140,11 @@ describe("a cooldown", () => {
   it.effect("keeps a game that ticks when needed awake until it runs out", () =>
     Effect.gen(function* () {
       const app = yield* App.make(
-        App.define({ plugins: [Armed], systems: [Fire], handlers: [reload] })
+        App.define({
+          plugins: [Timer.plugin, Armed],
+          systems: [Fire],
+          handlers: [reload],
+        })
       );
       yield* app.dispatch(Reload, { seconds: 1 });
       const settled: boolean[] = [];
@@ -155,6 +159,24 @@ describe("a cooldown", () => {
   );
 });
 
+const Spark = Component.define("tm/Spark", { x: Field.f32 });
+const Light = Action.define("tm/Light", Schema.Struct({}));
+const Sparks = System.tick("tm/Sparks", function* () {
+  (yield* Commands.spawns(Spark, Timer.Lifetime)).spawn(
+    Spark.of({ x: 0 }),
+    Timer.lifetime(1)
+  );
+});
+const light = Action.handler(Light, function* () {
+  const commands = yield* Commands.spawns(Spark, Timer.Lifetime);
+  commands.add(commands.spawn(Spark.of({ x: 0 })), Timer.lifetime(1));
+});
+const Lit = Plugin.make("tm/Lit", {
+  setup: Effect.gen(function* () {
+    (yield* Commands.spawns(Timer.Lifetime)).spawn(Timer.lifetime(1));
+  }),
+});
+
 describe("a lifetime", () => {
   it.effect("despawns its entity on the tick it runs out", () =>
     Effect.gen(function* () {
@@ -163,12 +185,53 @@ describe("a lifetime", () => {
       const counts: number[] = [];
       for (let i = 0; i < 6; i++) {
         yield* app.tick(DELTA);
-        counts.push((yield* app.read(Bullets)).count());
+        counts.push((yield* app.read(Query.View(Bullets))).count());
       }
       // Spawned on the first tick and the fifth, each there for two ticks.
       expect(counts).toEqual([1, 1, 0, 0, 1, 1]);
     })
   );
+
+  it("does not compile in a game that spawns or adds one and leaves out Timer.plugin", () => {
+    const made = {
+      system: App.make(App.define({ systems: [Sparks] })),
+      handler: App.make(App.define({ handlers: [light] })),
+      setup: App.make(App.define({ plugins: [Lit] })),
+    };
+    expectTypeOf<Effect.Services<(typeof made)["system"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+    expectTypeOf<Effect.Services<(typeof made)["handler"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+    expectTypeOf<Effect.Services<(typeof made)["setup"]>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+  });
+
+  it("compiles in a game that lists Timer.plugin, itself or through one of its plugins", () => {
+    expectTypeOf(
+      App.make(App.define({ plugins: [Timer.plugin], systems: [Sparks] }))
+    ).toExtend<Effect.Effect<unknown, never>>();
+    expectTypeOf(
+      App.make(
+        App.define({
+          plugins: [Plugin.make("tm/Fire", { plugins: [Timer.plugin, Lit] })],
+          handlers: [light],
+        })
+      )
+    ).toExtend<Effect.Effect<unknown, never>>();
+  });
+
+  it("still needs Timer.plugin beside a plugin whose name the compiler knows only as a string", () => {
+    const name: string = "arcadekit/Timer";
+    const made = App.make(
+      App.define({ plugins: [Plugin.make(name, {})], systems: [Sparks] })
+    );
+    expectTypeOf<Effect.Services<typeof made>>().toEqualTypeOf<
+      Plugin.Installed<"arcadekit/Timer">
+    >();
+  });
 });
 
 describe("a system that runs every so often", () => {
@@ -183,7 +246,7 @@ describe("a system that runs every so often", () => {
           expected.push(tick);
         }
       }
-      expect((yield* app.read(Log)).waves).toEqual(expected);
+      expect((yield* app.read(Singleton.Read(Log))).waves).toEqual(expected);
       expect(expected.slice(0, 4)).toEqual([3, 6, 8, 11]);
     })
   );
@@ -194,7 +257,7 @@ describe("a system that runs every so often", () => {
       yield* app.tick(2.5);
       yield* app.tick(0.25);
       yield* app.tick(2.5);
-      expect((yield* app.read(Log)).waves).toEqual([1, 3]);
+      expect((yield* app.read(Singleton.Read(Log))).waves).toEqual([1, 3]);
     })
   );
 
@@ -209,13 +272,15 @@ describe("a system that runs every so often", () => {
         );
         const Shut = Action.define("tm/Shut", Schema.Struct({}));
         const shut = Action.handler(Shut, function* () {
-          (yield* Gate.writes).open = 0;
+          (yield* Singleton.Write(Gate)).open = 0;
         });
         const Gated = System.tick("tm/Gated", function* () {
-          const log = yield* Log.writes;
+          const log = yield* Singleton.Write(Log);
           log.waves = [...log.waves, (yield* Time).tick];
         }).pipe(
-          System.runIf(Effect.map(Gate.asEffect(), (gate) => gate.open === 1)),
+          System.runIf(
+            Effect.map(Singleton.Read(Gate), (gate) => gate.open === 1)
+          ),
           Timer.every(1)
         );
         const app = yield* App.make(
@@ -224,7 +289,7 @@ describe("a system that runs every so often", () => {
         yield* run(app, 2);
         yield* app.dispatch(Shut, {});
         yield* run(app, 10);
-        expect((yield* app.read(Log)).waves).toEqual([]);
+        expect((yield* app.read(Singleton.Read(Log))).waves).toEqual([]);
       })
   );
 
@@ -268,7 +333,10 @@ const played = (app: ShooterApp, from: number, to: number) =>
       }
       yield* app.tick(DELTA);
     }
-    return { log: yield* app.read(Log), hash: yield* hashOf(app) };
+    return {
+      log: yield* app.read(Singleton.Read(Log)),
+      hash: yield* hashOf(app),
+    };
   });
 
 describe("timers in the world", () => {
@@ -281,7 +349,7 @@ describe("timers in the world", () => {
       const again = yield* Replay.verify(yield* Replay.record(app), Shooter, {
         hashEvery: 1,
       });
-      expect(yield* again.read(Log)).toEqual(first.log);
+      expect(yield* again.read(Singleton.Read(Log))).toEqual(first.log);
       expect(yield* hashOf(again)).toBe(first.hash);
     })
   );

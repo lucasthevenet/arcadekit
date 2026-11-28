@@ -31,7 +31,7 @@ const Healths = Query.all(Health).pipe(Query.writes(Health));
 /** Moves every position on the second tick, and on no other. */
 const Move = System.tick("Move", function* () {
   if ((yield* Time).tick === 2) {
-    (yield* Positions).each((position) => {
+    (yield* Query.View(Positions)).each((position) => {
       position.x += 1;
     });
   }
@@ -40,13 +40,13 @@ const Move = System.tick("Move", function* () {
 /** A system that notes how many positions it found moved, each tick. */
 const trail = (seen: number[]) =>
   System.tick("Trail", function* () {
-    seen.push((yield* Moved).entities().length);
+    seen.push((yield* Query.View(Moved)).entities().length);
   });
 const Trail = trail([]);
 
 /** A system that writes health, and nothing a test here watches. */
 const Bleed = System.tick("Bleed", function* () {
-  (yield* Healths).each((health) => {
+  (yield* Query.View(Healths)).each((health) => {
     health.hp -= 1;
   });
 });
@@ -75,7 +75,7 @@ describe("the order of systems", () => {
             (yield* Commands.spawns(Position)).spawn(Position.of({ x: 0 }));
           }),
         });
-        const play = (app: App.App) =>
+        const play = (app: App.Any<never>) =>
           Effect.gen(function* () {
             for (let n = 0; n < 3; n++) {
               yield* app.tick(1);
@@ -134,16 +134,16 @@ describe("the order of systems", () => {
 
   it("leaves out what runs at another moment: a hook, the frame and input stages, a handler", () => {
     const Reset = State.onEnter(Phase, "playing", "Reset", function* () {
-      (yield* Positions).each((position) => {
+      (yield* Query.View(Positions)).each((position) => {
         position.x = 0;
       });
     });
     const Drawn = System.frame("Drawn", function* () {
-      (yield* Moved).each(() => {});
+      (yield* Query.View(Moved)).each(() => {});
     });
     const Tap = Action.define("or/Tap", Schema.Struct({}));
     const tap = Action.handler(Tap, function* () {
-      (yield* Positions).each((position) => {
+      (yield* Query.View(Positions)).each((position) => {
         position.x -= 1;
       });
     });
@@ -167,7 +167,7 @@ describe("the order of systems", () => {
     // In a branch that a run may never take.
     const Sometimes = System.tick("Sometimes", function* () {
       if ((yield* Time).tick > 1000) {
-        (yield* Positions).each((position) => {
+        (yield* Query.View(Positions)).each((position) => {
           position.x = 0;
         });
       }
@@ -178,7 +178,7 @@ describe("the order of systems", () => {
     );
     // Through another Effect, which carries what it needs as any Effect does.
     const nudge = Effect.gen(function* () {
-      (yield* Positions).each((position) => {
+      (yield* Query.View(Positions)).each((position) => {
         position.x += 1;
       });
     });
@@ -191,7 +191,7 @@ describe("the order of systems", () => {
     );
     // In a condition, which is the system's too.
     const Gated = Bleed.pipe(
-      System.runIf(Effect.map(Moved, (moved) => moved.count() > 0))
+      System.runIf(Effect.map(Query.View(Moved), (moved) => moved.count() > 0))
     );
     App.define(
       // @ts-expect-error the condition watches what a later system writes
@@ -301,10 +301,10 @@ describe("what a system spawns and sets", () => {
   /** A system that notes how many new dots it found, each tick. */
   const count = (seen: number[]) =>
     System.tick("Count", function* () {
-      seen.push((yield* NewDots).entities().length);
+      seen.push((yield* Query.View(NewDots)).entities().length);
     });
   const Count = count([]);
-  const tick3 = (app: App.App) =>
+  const tick3 = (app: App.Any<never>) =>
     Effect.gen(function* () {
       for (let n = 0; n < 3; n++) {
         yield* app.tick(1);
@@ -451,7 +451,9 @@ describe("what a system spawns and sets", () => {
 
   it("puts a set in the order of the list, as a query's write is", () => {
     const Jolt = System.tick("Jolt", function* () {
-      for (const entity of (yield* Query.all(Position)).entities()) {
+      for (const entity of (yield* Query.View(
+        Query.all(Position)
+      )).entities()) {
         (yield* World.writes(Position)).set(entity, Position, { x: 9 });
       }
     });
@@ -474,7 +476,7 @@ describe("what a spawn fills in", () => {
   const NewPositions = Query.all(Position).pipe(Query.added(Position));
   const watches = (seen: number[]) =>
     System.tick("Watch", function* () {
-      seen.push((yield* NewPositions).entities().length);
+      seen.push((yield* Query.View(NewPositions)).entities().length);
     });
   const Watch = watches([]);
   const Quarry = System.tick("Quarry", function* () {
@@ -522,7 +524,7 @@ describe("what a spawn fills in", () => {
         });
         const inPlay: number[] = [];
         const WatchPlay = System.tick("WatchPlay", function* () {
-          inPlay.push((yield* NewInPlay).entities().length);
+          inPlay.push((yield* Query.View(NewInPlay)).entities().length);
         });
         const seen: number[] = [];
         yield* withApp(

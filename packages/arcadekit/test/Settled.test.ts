@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Scheduler, Schema } from "effect";
+import { Effect, Exit, Layer, Scheduler, Schema } from "effect";
 
 import {
   Action,
@@ -42,15 +42,15 @@ const Landed = Event.define("st/Landed", Schema.Struct({}));
 
 /** Counts the moves it hears of. It is listed before the system that says so. */
 const Tally = System.tick("st/Tally", function* () {
-  const heard = (yield* Landed).read();
+  const heard = (yield* Event.Reader(Landed)).read();
   if (heard.length > 0) {
-    (yield* Score.writes).moves += heard.length;
+    (yield* Singleton.Write(Score)).moves += heard.length;
   }
 });
 /** Says that a piece has landed, a tick after it was moved. */
 const Land = System.tick("st/Land", function* () {
-  if ((yield* Moved).read().length > 0) {
-    (yield* Landed.emits).emit({});
+  if ((yield* Event.Reader(Moved)).read().length > 0) {
+    (yield* Event.Emitter(Landed)).emit({});
   }
 });
 const entered: string[] = [];
@@ -66,9 +66,9 @@ const Declare = Action.define(
 );
 const declare = Action.handler(Declare, function* ({ landed }) {
   if (landed) {
-    (yield* Landed.emits).emit({});
+    (yield* Event.Emitter(Landed)).emit({});
   } else {
-    (yield* Moved.emits).emit({ by: 1 });
+    (yield* Event.Emitter(Moved)).emit({ by: 1 });
   }
 });
 
@@ -77,13 +77,13 @@ const Rules = Plugin.make("st/Rules", {
   handlers: [
     declare,
     Action.handler(Begin, function* () {
-      (yield* Phase.sets).set("playing");
+      (yield* State.Setter(Phase)).set("playing");
     }),
     Action.handler(Move, function* ({ by }) {
-      (yield* Pieces).each((piece) => {
+      (yield* Query.View(Pieces)).each((piece) => {
         piece.x += by;
       });
-      (yield* Moved.emits).emit({ by });
+      (yield* Event.Emitter(Moved)).emit({ by });
     }),
   ],
 });
@@ -202,7 +202,8 @@ describe("app.settled", () => {
         const heard: number[] = [];
         const Watch = System.frame("st/Watch", function* () {
           heard.push(
-            (yield* Moved).read().length + (yield* Landed).read().length
+            (yield* Event.Reader(Moved)).read().length +
+              (yield* Event.Reader(Landed)).read().length
           );
         });
         const app = yield* App.make(
@@ -277,18 +278,18 @@ describe("a game that ticks when its player moves", () => {
     frames++;
     lastAlpha = (yield* Frame).alpha;
     let x = 0;
-    (yield* Seen).each((piece) => {
+    (yield* Query.View(Seen)).each((piece) => {
       ({ x } = piece);
     });
     return {
       x,
-      moves: (yield* Score).moves,
-      phase: (yield* Phase).value as string,
+      moves: (yield* Singleton.Read(Score)).moves,
+      phase: (yield* State.Reader(Phase)).value as string,
     };
   });
   const Step = Input.button("st/Step", ["ArrowRight"]);
   const Keys = System.input("st/Keys", function* () {
-    if ((yield* Step).pressed) {
+    if ((yield* Input.Read(Step)).pressed) {
       (yield* Action.Actions).enqueue(Move, { by: 1 });
     }
   });
@@ -417,13 +418,13 @@ describe("a game that ticks when its player moves", () => {
 const Clock = Singleton.define("st/Clock", { left: Field.i32 }, { left: 0 });
 const Wind = Action.define("st/Wind", Schema.Struct({ ticks: Schema.Int }));
 const wind = Action.handler(Wind, function* ({ ticks }) {
-  (yield* Clock.writes).left = ticks;
+  (yield* Singleton.Write(Clock)).left = ticks;
 });
 let ran = 0;
 /** A clock that runs down a tick at a time, and says nothing of it. */
 const RunDown = System.tick("st/RunDown", function* () {
   ran++;
-  const clock = yield* Clock.writes;
+  const clock = yield* Singleton.Write(Clock);
   if (clock.left > 0) {
     clock.left -= 1;
   }
@@ -523,7 +524,7 @@ describe("a game that changes", () => {
           { error: Refused }
         );
         const ask = Action.handler(Ask, function* ({ refuse }) {
-          (yield* Clock.writes).left = 9;
+          (yield* Singleton.Write(Clock)).left = 9;
           if (refuse) {
             return yield* Refused.make({});
           }
@@ -533,9 +534,11 @@ describe("a game that changes", () => {
         yield* app.tick(1);
         yield* app.tick(1);
         expect(app.settled).toBe(true);
-        yield* Effect.exit(app.dispatch(Ask, { refuse: true }));
+        expect(yield* Effect.exit(app.dispatch(Ask, { refuse: true }))).toEqual(
+          Exit.fail(Refused.make({}))
+        );
         expect(app.settled).toBe(true);
-        yield* Effect.exit(app.dispatch(Ask, { refuse: false }));
+        yield* app.dispatch(Ask, { refuse: false });
         expect(app.settled).toBe(false);
       })
   );

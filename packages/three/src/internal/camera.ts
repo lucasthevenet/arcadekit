@@ -94,14 +94,14 @@ export const camera2d = (
   }));
   return System.frame(name, function* () {
     const shown = yield* Scene;
-    const view = yield* Kept;
+    const view = yield* System.Kept(Kept);
     shown.camera = view.camera;
     if (Followed !== undefined) {
       // Between two ticks, where a kind drawn with `smooth` draws it: the
       // same store, read the same way.
       const between = smooth === true ? yield* Transform2d.smooth : undefined;
       let found = false;
-      (yield* Followed).each((position, entity) => {
+      (yield* Query.View(Followed)).each((position, entity) => {
         if (found) {
           return;
         }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import { Effect, Exit } from "effect";
 
 import type { Spawned } from "../src/index.ts";
@@ -22,6 +22,10 @@ const { Position, Rotation, Scale } = Transform3d;
 const Rock = Component.tag("tf/Rock");
 
 describe("Transform3d", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it.effect(
     "is three components of the game, of 32-bit floats, each known by its name",
     () =>
@@ -50,7 +54,7 @@ describe("Transform3d", () => {
         });
         const app = yield* App.make(App.define({ plugins: [Bare] }));
         const world = yield* app.read(World);
-        const bare = (yield* app.read(Query.all(Position, Scale)))
+        const bare = (yield* app.read(Query.View(Query.all(Position, Scale))))
           .entities()
           .map((entity) => ({
             scale: world.get(entity, Scale),
@@ -70,14 +74,14 @@ describe("Transform3d", () => {
       Effect.gen(function* () {
         const Drift = System.tick("tf/Drift", function* () {
           const { delta } = yield* Time;
-          (yield* Query.all(Position).pipe(Query.writes(Position))).eachChunk(
-            (start, end, position) => {
-              for (let i = start; i < end; i++) {
-                position.x[i] = position.x[i]! + 2 * delta;
-                position.z[i] = position.z[i]! - delta;
-              }
+          (yield* Query.View(
+            Query.all(Position).pipe(Query.writes(Position))
+          )).eachChunk((start, end, position) => {
+            for (let i = start; i < end; i++) {
+              position.x[i] = position.x[i]! + 2 * delta;
+              position.z[i] = position.z[i]! - delta;
             }
-          );
+          });
         });
         const spawned: Spawned[] = [];
         const Rocks = Plugin.make("tf/Rocks", {
@@ -136,7 +140,7 @@ describe("Transform3d", () => {
         expect(Math.hypot(x, y, z, w)).toBeCloseTo(1, 12);
       }
       // The axis is a direction: of any length, it is the same turn.
-      for (const by of [0.001, 2, 300]) {
+      for (const by of [1e-200, 0.001, 2, 300, 1e200]) {
         const long = Transform3d.axisAngle(0.6 * by, 0, 0.8 * by, 1.3);
         const unit = Transform3d.axisAngle(0.6, 0, 0.8, 1.3);
         expect(long.x).toBeCloseTo(unit.x, 12);
@@ -159,12 +163,73 @@ describe("Transform3d", () => {
       });
       const app = yield* App.make(App.define({ plugins: [Turned] }));
       const world = yield* app.read(World);
-      const turned = (yield* app.read(Query.all(Rotation)))
+      const turned = (yield* app.read(Query.View(Query.all(Rotation))))
         .entities()
         .map((entity) => world.get(entity, Rotation)?.w);
       expect(turned).toEqual([Math.fround(quarter.w)]);
     })
   );
+
+  it("axisAngle gives the same numbers in an engine that rounds Math.sin, Math.cos and Math.hypot another way", () => {
+    const turns = [
+      [0, 1, 0, 0.3],
+      [0.6, 0, 0.8, Math.PI / 3],
+      [1, 2, 3, -2.5],
+      [0.2, -0.4, 0.9, 1000],
+      [0, 0, 5, 1e7],
+    ] as const;
+    const turned = () =>
+      turns.map(([x, y, z, angle]) => Transform3d.axisAngle(x, y, z, angle));
+    const here = turned();
+    const written = Math.sin(0.15);
+    // ECMAScript lets each engine round these its own way. This one rounds
+    // them a number up.
+    const up =
+      (f: (...values: number[]) => number) =>
+      (...values: number[]) =>
+        f(...values) * (1 + Number.EPSILON);
+    const another: Math = Object.assign(Object.create(Math), {
+      sin: up(Math.sin),
+      cos: up(Math.cos),
+      hypot: up(Math.hypot),
+    });
+    vi.stubGlobal("Math", another);
+    expect(Math.sin(0.15)).not.toBe(written);
+    expect(turned()).toEqual(here);
+  });
+
+  it("axisAngle turns by the angle to within a rounding of Math.sin and Math.cos", () => {
+    const angles: number[] = [];
+    for (let i = 0; i < 20_000; i++) {
+      angles.push(-200 + i * 0.020_000_3);
+    }
+    // Next to every quarter turn, where a sine or a cosine is near 0.
+    for (let quarters = -2000; quarters <= 2000; quarters++) {
+      const at = (quarters * Math.PI) / 2;
+      angles.push(at, at * (1 + Number.EPSILON), at * (1 - Number.EPSILON));
+    }
+    const off = angles.filter((angle) => {
+      const { w, x } = Transform3d.axisAngle(1, 0, 0, 2 * angle);
+      const sin = Math.sin(angle);
+      const cos = Math.cos(angle);
+      return (
+        Math.abs(x - sin) > Math.abs(sin) * Number.EPSILON ||
+        Math.abs(w - cos) > Math.abs(cos) * Number.EPSILON
+      );
+    });
+    expect(off).toEqual([]);
+    // Far around the circle, to within a rounding of the angle itself.
+    for (const angle of [3.3e6, -1e7, 123_456_789.123, 1e12, -5e14]) {
+      const { w, x } = Transform3d.axisAngle(1, 0, 0, 2 * angle);
+      expect(Math.abs(x - Math.sin(angle))).toBeLessThanOrEqual(
+        Math.abs(angle) * Number.EPSILON
+      );
+      expect(Math.abs(w - Math.cos(angle))).toBeLessThanOrEqual(
+        Math.abs(angle) * Number.EPSILON
+      );
+      expect(Math.hypot(x, w)).toBeCloseTo(1, 15);
+    }
+  });
 
   it.effect(
     "is saved and loaded by a game that names none of its components, with no renderer anywhere",

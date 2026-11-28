@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Context, Data, Effect, Exit, Schema } from "effect";
 
 import type { Spawned } from "../src/index.ts";
@@ -38,7 +38,7 @@ const Ping = Event.define("ru/Ping", Schema.Number);
 // Says a number: how code outside the simulation has an event emitted.
 const Say = Action.define("ru/Say", Schema.Struct({ n: Schema.Number }));
 const say = Action.handler(Say, function* ({ n }) {
-  (yield* Ping.emits).emit(n);
+  (yield* Event.Emitter(Ping)).emit(n);
 });
 
 /** Builds an app, and hands it to `use`. */
@@ -64,11 +64,11 @@ describe("events", () => {
         const seen: Record<string, Array<number>[]> = { Before: [], After: [] };
         const reader = (name: string) =>
           System.tick(name, function* () {
-            const ping = yield* Ping.emits;
+            const ping = yield* Event.Emitter(Ping);
             seen[name]!.push([...ping.read()]);
           });
         const Emitter = System.tick("Emitter", function* () {
-          const ping = yield* Ping.emits;
+          const ping = yield* Event.Emitter(Ping);
           const { tick } = yield* Time;
           if (tick <= 2) {
             ping.emit(tick * 10);
@@ -102,7 +102,7 @@ describe("events", () => {
           const { tick } = yield* Time;
           const commands = yield* Commands.spawns(Health);
           const world = yield* App_World;
-          const shots = yield* Shot.emits;
+          const shots = yield* Event.Emitter(Shot);
           shots.emit({ shot: commands.spawn(Health.of({ hp: tick })) });
           heard.push(shots.read().map(({ shot }) => world.get(shot, Health)));
         });
@@ -124,8 +124,10 @@ describe("events", () => {
     () =>
       Effect.gen(function* () {
         const Hit = System.tick("Hit", function* () {
-          const damaged = yield* Damaged.emits;
-          const wounded = yield* Query.all(Health).pipe(Query.writes(Health));
+          const damaged = yield* Event.Emitter(Damaged);
+          const wounded = yield* Query.View(
+            Query.all(Health).pipe(Query.writes(Health))
+          );
           wounded.each((health, entity) => {
             health.hp -= 3;
             damaged.emit({ target: entity, amount: 3 });
@@ -133,7 +135,7 @@ describe("events", () => {
         });
         const log: string[] = [];
         const Report = System.tick("Report", function* () {
-          const damaged = yield* Damaged.emits;
+          const damaged = yield* Event.Emitter(Damaged);
           for (const event of damaged.read()) {
             log.push(`${idOf(event.target)}:${event.amount}`);
           }
@@ -166,7 +168,7 @@ describe("events", () => {
       const Sometimes = System.tick("Sometimes", function* () {
         const { tick } = yield* Time;
         if (tick === 1 || tick === 4) {
-          seen.push([...(yield* Ping).read()]);
+          seen.push([...(yield* Event.Reader(Ping)).read()]);
         }
       });
       yield* withApp(
@@ -194,7 +196,7 @@ describe("events", () => {
         let kept: { emit(n: number): void } | undefined;
         let bus: { emit(def: typeof Ping, n: number): void } | undefined;
         const Keeper = System.tick("Keeper", function* () {
-          kept = yield* Ping.emits;
+          kept = yield* Event.Emitter(Ping);
           // A system of the tick that has the bus and no handle emits through it.
           const events = yield* Effect.service(Events);
           assert(events instanceof EventBus);
@@ -257,7 +259,7 @@ const Unhandled = Action.define("Unhandled", Schema.Struct({}));
 
 const TurnQuery = Query.all(Turn).pipe(Query.writes(Turn));
 const currentTurn = Effect.gen(function* () {
-  const turns = yield* TurnQuery;
+  const turns = yield* Query.View(TurnQuery);
   let player = 0;
   let number = 0;
   turns.each((turn) => {
@@ -269,7 +271,7 @@ const currentTurn = Effect.gen(function* () {
 
 const attack = Action.handler(Attack, function* ({ attacker, target }) {
   const world =
-    (yield* Query.all(Health)).spec &&
+    (yield* Query.View(Query.all(Health))).spec &&
     (yield* App_World.writes(Energy, Health));
   const turn = yield* currentTurn;
   const owner = world.get(attacker, Owner);
@@ -287,12 +289,12 @@ const attack = Action.handler(Attack, function* ({ attacker, target }) {
   world.set(attacker, Energy, { points: energy - 2 });
   const hp = world.get(target, Health)!.hp - 4;
   world.set(target, Health, { hp });
-  (yield* Damaged.emits).emit({ target, amount: 4 });
+  (yield* Event.Emitter(Damaged)).emit({ target, amount: 4 });
   return hp;
 });
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
-  const turns = yield* TurnQuery;
+  const turns = yield* Query.View(TurnQuery);
   const turn = yield* currentTurn;
   if (player !== turn.player) {
     return yield* NotYourTurn.make({ player: turn.player });
@@ -306,7 +308,7 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
 /** Queues a spawn and an event, then may refuse: used to test rollback. */
 const summon = Action.handler(Summon, function* ({ hp, player }) {
   const commands = yield* Commands.spawns(Health, Owner, Energy);
-  const died = yield* Died.emits;
+  const died = yield* Event.Emitter(Died);
   const entity = commands.spawn(
     Health.of({ hp }),
     Owner.of({ player }),
@@ -326,8 +328,8 @@ import { EventBus } from "../src/internal/eventBus.ts";
 import { thrown } from "./checks.ts";
 
 const Death = System.tick("Death", function* () {
-  const damaged = yield* Damaged.emits;
-  const died = yield* Died.emits;
+  const damaged = yield* Event.Emitter(Damaged);
+  const died = yield* Event.Emitter(Died);
   const commands = yield* Commands;
   const world = yield* App_World;
   for (const { target } of damaged.read()) {
@@ -340,7 +342,9 @@ const Death = System.tick("Death", function* () {
 });
 
 const Recharge = System.tick("Recharge", function* () {
-  const fighters = yield* Query.all(Energy).pipe(Query.writes(Energy));
+  const fighters = yield* Query.View(
+    Query.all(Energy).pipe(Query.writes(Energy))
+  );
   fighters.each((energy) => {
     energy.points += 1;
   });
@@ -378,7 +382,7 @@ const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     const app = yield* make;
     const fighters = new Map<number, Entity>();
-    (yield* app.read(Query.all(Owner))).each((owner, entity) => {
+    (yield* app.read(Query.View(Query.all(Owner)))).each((owner, entity) => {
       fighters.set(owner.player, entity);
     });
     const one = fighters.get(1);
@@ -405,11 +409,11 @@ const look = Effect.gen(function* () {
   const out: string[] = [
     `tick=${(yield* Time).tick} entities=${world.entityCount}`,
   ];
-  (yield* Query.all(Health)).each((health, entity) => {
+  (yield* Query.View(Query.all(Health))).each((health, entity) => {
     const energy = world.get(entity, Energy);
     out.push(`${idOf(entity)}: hp=${health.hp} energy=${energy?.points}`);
   });
-  (yield* Turns).each(
+  (yield* Query.View(Turns)).each(
     (turn) => void out.push(`turn ${turn.number} player ${turn.player}`)
   );
   return out;
@@ -506,7 +510,8 @@ describe("actions", () => {
     Effect.gen(function* () {
       const deaths: Entity[] = [];
       const Mourn = System.tick("Mourn", function* () {
-        for (const event of (yield* Died).read()) deaths.push(event.entity);
+        for (const event of (yield* Event.Reader(Died)).read())
+          deaths.push(event.entity);
       });
       const Mourning = App.define({
         plugins: [Board],
@@ -535,7 +540,7 @@ describe("actions", () => {
       Effect.gen(function* () {
         const rejected: string[] = [];
         const Watch = System.tick("Watch", function* () {
-          for (const event of (yield* Action.Rejected).read()) {
+          for (const event of (yield* Event.Reader(Action.Rejected)).read()) {
             rejected.push(`${event.action}: ${event.error._tag}`);
           }
         });
@@ -618,8 +623,19 @@ describe("actions", () => {
           expect(yield* thrown(app.dispatch(Unhandled, {}))).toThrow(
             /No handler/
           );
-          // @ts-expect-error the payload does not match the action
-          void (yield* Effect.exit(app.dispatch(Attack, { attacker: one })));
+          expect(
+            yield* Effect.exit(
+              // @ts-expect-error the payload does not match the action
+              app.dispatch(Attack, { attacker: one })
+            )
+          ).toEqual(
+            Exit.fail(
+              Action.InvalidPayload.make({
+                action: "Attack",
+                message: 'Missing key\n  at ["target"]',
+              })
+            )
+          );
           expect(
             Exit.isFailure(
               yield* Effect.exit(
@@ -678,6 +694,21 @@ describe("actions", () => {
       expect(yield* rolls()).toEqual(rolled);
     })
   );
+
+  it("are of their own payload alone, and show a game only what they hold", () => {
+    expectTypeOf(Say).toExtend<
+      Action.Action<"ru/Say", { readonly n: number }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: number | string }>
+    >();
+    expectTypeOf(Say).not.toExtend<
+      Action.Action<"ru/Say", { readonly n: 1 }>
+    >();
+    expectTypeOf<keyof typeof Say>().toEqualTypeOf<
+      "name" | "codec" | "error" | "rejected"
+    >();
+  });
 
   it.effect(
     "fail only with the error their action declares, a tagged schema",
@@ -748,14 +779,14 @@ describe("actions", () => {
       Effect.gen(function* () {
         const Crash = Action.define("ru/Crash", Schema.Struct({}));
         const crash = Action.handler(Crash, function* () {
-          (yield* Turns.pipe(Query.writes(Turn))).each((turn) => {
+          (yield* Query.View(Turns.pipe(Query.writes(Turn)))).each((turn) => {
             turn.number += 100;
           });
           return yield* Effect.die(new Error("a bug in the handler"));
         });
         const heard: string[] = [];
         const Watch = System.tick("Watch", function* () {
-          for (const event of (yield* Action.Rejected).read()) {
+          for (const event of (yield* Event.Reader(Action.Rejected)).read()) {
             heard.push(event.action);
           }
         });
@@ -809,28 +840,24 @@ describe("replay", () => {
           Effect.gen(function* () {
             // A mix of direct and queued actions, including refused ones, over
             // several ticks. Refusals are not logged and must not matter.
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: one, target: two })
-            );
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: two, target: one })
-            );
+            yield* app.dispatch(Attack, { attacker: one, target: two });
+            expect(
+              yield* Effect.exit(
+                app.dispatch(Attack, { attacker: two, target: one })
+              )
+            ).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
             yield* app.tick(1);
             yield* app.enqueue(EndTurn, { player: 1 });
             yield* app.tick(1);
-            yield* Effect.exit(app.dispatch(Summon, { player: 2, hp: 3 }));
+            yield* app.dispatch(Summon, { player: 2, hp: 3 });
             yield* app.enqueue(Attack, { attacker: two, target: one });
             yield* app.enqueue(Attack, { attacker: one, target: two });
             yield* app.tick(1);
             yield* app.tick(1);
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: two, target: one })
-            );
-            yield* Effect.exit(app.dispatch(EndTurn, { player: 2 }));
+            yield* app.dispatch(Attack, { attacker: two, target: one });
+            yield* app.dispatch(EndTurn, { player: 2 });
             yield* app.tick(1);
-            yield* Effect.exit(
-              app.dispatch(Attack, { attacker: one, target: two })
-            );
+            yield* app.dispatch(Attack, { attacker: one, target: two });
             yield* app.tick(1);
             yield* app.tick(1);
             return {

@@ -4,9 +4,9 @@
  *
  *   const Turn = Singleton.define("duel/Turn", { player: Field.u8 }, { player: 1 })
  *
- *   const turn = yield* Turn              // read, in any stage
+ *   const turn = yield* Singleton.Read(Turn)              // read, in any stage
  *   if (turn.player !== mine) return yield* NotYourTurn.make({})
- *   const writing = yield* Turn.writes    // in the code of the tick
+ *   const writing = yield* Singleton.Write(Turn)    // in the code of the tick
  *   writing.player = writing.player === 1 ? 2 : 1
  *
  * The value belongs to the world. A save holds it, the world's hash includes
@@ -14,7 +14,7 @@
  * configuration that isn't game state, use a `Resource`, a value with a
  * default that a layer can override, which no save holds.
  */
-import { Effect, Effectable } from "effect";
+import type { Effect } from "effect";
 
 import { Component } from "./ecs/component.ts";
 import type {
@@ -23,6 +23,8 @@ import type {
   SingletonSpec,
   ValueOf,
 } from "./ecs/component.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { World } from "./Services.ts";
 import type { Sim } from "./Services.ts";
 
@@ -45,7 +47,7 @@ interface Writes extends WritesObject {}
 /**
  * A singleton's value as `yield*` and `World.singleton` read it: the world's
  * own object, read-only, and the same object on every read. Its fields are
- * plain data, and so is a spread of it, `{ ...(yield* Score) }`. Whole, it is
+ * plain data, and so is a spread of it, `{ ...(yield* Singleton.Read(Score)) }`. Whole, it is
  * refused as a view's value, by `View.publish` and `View.Port.publish`, and as
  * what `when` returns, since it would never differ from one frame to the next.
  *
@@ -54,7 +56,7 @@ interface Writes extends WritesObject {}
 export type Read<S extends Schema> = Readonly<ValueOf<S>> & Live;
 
 /**
- * The value `yield* T.writes` gives for the singleton `T`: the world's own
+ * The value `yield* Singleton.Write(T)` gives for the singleton `T`: the world's own
  * object, as `Singleton.Read` is, with fields that can be assigned. A plain
  * function that writes a singleton for the system that calls it takes one.
  *
@@ -63,7 +65,7 @@ export type Read<S extends Schema> = Readonly<ValueOf<S>> & Live;
  *   const award = (score: Singleton.Write<typeof Score>, points: number) => {
  *     score.points += points
  *   }
- *   award(yield* Score.writes, 10)   // in a system of the tick
+ *   award(yield* Singleton.Write(Score), 10)   // in a system of the tick
  *
  * @category Models
  */
@@ -71,54 +73,64 @@ export type Write<T extends Singleton<Schema>> =
   T extends Singleton<infer S> ? ValueOf<S> & Live & Writes : never;
 
 /**
- * A singleton's definition, as `Singleton.define` makes it. It is an Effect,
- * and `yield*` returns its value in the world, read-only, as a
- * `Singleton.Read`.
- * `yield* SomeSingleton.writes` returns the same value with fields that can be
- * assigned. Only the code of the tick can ask for it: a system of the tick, a
- * handler or a plugin's setup.
+ * A singleton's definition, as `Singleton.define` makes it.
+ * `yield* Singleton.Read(SomeSingleton)` returns its value in the world,
+ * read-only, as a `Singleton.Read`. `yield* Singleton.Write(SomeSingleton)`
+ * returns the same value with fields that can be assigned. Only the code of
+ * the tick can ask for that one: a system of the tick, a handler or a
+ * plugin's setup.
  *
  * @category Models
  */
-export class Singleton<S extends Schema>
-  extends Effectable.Class<Read<S>, never, World>
-  implements SingletonSpec<S>
-{
-  private effect: Effect.Effect<Read<S>, never, World> | undefined;
-  private writing:
-    | Effect.Effect<ValueOf<S> & Live & Writes, never, World | Sim>
-    | undefined;
-
+export class Singleton<S extends Schema> implements SingletonSpec<S> {
   constructor(
     readonly component: ComponentDef<S>,
     readonly initial: ValueOf<S>
-  ) {
-    super();
-  }
+  ) {}
 
   /** The singleton's name, which is one of the world's component names. */
   get name(): string {
     return this.component.name;
   }
-
-  asEffect(): Effect.Effect<Read<S>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      world.singleton(this)
-    ));
-  }
-
-  /**
-   * The same value, with fields that can be assigned. Asking for it adds `Sim`
-   * to the system's requirements, and a system of the frame or input stage
-   * that requires `Sim` doesn't compile.
-   */
-  get writes(): Effect.Effect<ValueOf<S> & Live & Writes, never, World | Sim> {
-    return (this.writing ??= Effect.map(
-      Effect.service(World),
-      (world) => world.singleton(this) as ValueOf<S> & Live & Writes
-    ));
-  }
 }
+
+const valueOf = <S extends Schema>(
+  given: Given,
+  singleton: Singleton<S>
+): Read<S> => service(given, World).singleton(singleton);
+
+/**
+ * Asks for a singleton's value in the world, read-only, as a
+ * `Singleton.Read`. The code of any stage can ask.
+ *
+ *   const { points } = yield* Singleton.Read(Score)
+ *
+ * @category Capabilities
+ */
+export const Read = <S extends Schema>(
+  singleton: Singleton<S>
+): Effect.Effect<Read<S>, never, World> => lookup(valueOf, singleton);
+
+/**
+ * Asks for a singleton's value with fields that can be assigned. Asking for
+ * it adds `Sim` to the system's requirements, and a system of the frame or
+ * input stage that requires `Sim` doesn't compile.
+ *
+ *   const score = yield* Singleton.Write(Score)
+ *   score.points += 10
+ *
+ * @category Capabilities
+ */
+export const Write = <S extends Schema>(
+  singleton: Singleton<S>
+): Effect.Effect<ValueOf<S> & Live & Writes, never, World | Sim> =>
+  lookup(
+    valueOf as (
+      given: Given,
+      singleton: Singleton<S>
+    ) => ValueOf<S> & Live & Writes,
+    singleton
+  );
 
 /**
  * Defines a singleton from its name, its fields, and its value in a world that

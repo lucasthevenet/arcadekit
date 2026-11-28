@@ -26,7 +26,7 @@ const Placed = Query.all(Transform3d.Position).pipe(
 
 const Drift = System.tick("game/Drift", function* () {
   const { delta } = yield* Time;
-  (yield* Placed).eachChunk((start, end, position) => {
+  (yield* Query.View(Placed)).eachChunk((start, end, position) => {
     for (let i = start; i < end; i++) {
       position.x[i] = position.x[i]! + 2 * delta;
     }

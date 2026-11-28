@@ -18,7 +18,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score.writes).points += points;
+  (yield* Singleton.Write(Score)).points += points;
 });
 const Rules = Plugin.make("game/Rules", {
   handlers: [add],
@@ -62,7 +62,7 @@ Each action holds its payload in JSON form and the tick it arrived at. Actions t
 - A third argument gives the replay's app the rest of what `App.make` takes, such as `{ hashEvery: 1 }`.
 - The app it returns belongs to the caller, as one that `App.make` makes does. Close it when you are done with it.
 - It runs no frame or input stage, so it reads no device and draws nothing. What the devices said is in the log.
-- In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`, which refuses the write. The replay runs neither stage, so it diverges. See [testing](testing.md#run-the-frame-stage-by-hand).
+- In the recorded game, a frame or input stage that wrote through a raw column changed the game with no error, unless the app was made with `verifyFrames`, which refuses the write. The replay runs neither stage, so it diverges. See [testing](testing-by-hand.md#run-the-frame-stage-by-hand).
 
 `Replay.encode` turns a recording into bytes, and `Replay.decode` turns the bytes back. `Replay.decode` refuses a recording that doesn't say how its game began, one whose save doesn't read or is of another tick than the recording begins at, and one whose log or runs of deltas are out of order or outside it. It refuses a recording that an earlier version of arcadekit wrote as text. A recording made since a save holds the save, as the bytes `Save.encode` writes, which are most of it.
 
@@ -160,14 +160,14 @@ const Ball = Component.define("game/Ball", { x: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const Roll = System.tick("game/Roll", function* () {
-  (yield* Balls).each((ball) => {
+  (yield* Query.View(Balls)).each((ball) => {
     ball.x += 1;
   });
 }).pipe(System.runIf(State.is(Phase, "playing")));
 
 const Pause = Action.define("game/Pause");
 const pause = Action.handler(Pause, function* () {
-  (yield* Phase.sets).set("paused");
+  (yield* State.Setter(Phase)).set("paused");
 });
 
 const Rules = Plugin.make("game/Rules", {

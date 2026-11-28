@@ -25,8 +25,8 @@ const Score = Singleton.define(
 const Scored = Event.define("ts/Scored");
 const Add = Action.define("ts/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score.writes).points += points;
-  (yield* Scored.emits).emit(undefined);
+  (yield* Singleton.Write(Score)).points += points;
+  (yield* Event.Emitter(Scored)).emit(undefined);
 });
 const Hud = View.define("ts/Hud", { points: 0 });
 const Sfx = Sound.sheet("ts/Sfx", { coin: "/coin.wav" });
@@ -42,13 +42,13 @@ const Game = App.define({
       plugins: [Input.controls("ts/Controls", [Coin])],
       systems: [
         System.input("ts/Keys", function* () {
-          if ((yield* Coin).pressed) {
+          if ((yield* Input.Read(Coin)).pressed) {
             (yield* Action.Actions).enqueue(Add, { points: 1 });
           }
         }),
         Sound.cues("ts/Cues", Sfx, ({ coin }) => [Sound.on(Scored, coin)]),
         View.publish(Hud, function* () {
-          return { points: (yield* Score).points };
+          return { points: (yield* Singleton.Read(Score)).points };
         }),
       ],
     }),
@@ -65,7 +65,7 @@ describe("a game under test", () => {
         game.ui.subscribe(Hud, (hud) => seen.push(hud));
         game.input.press("KeyW");
         yield* game.step();
-        expect((yield* game.app.read(Score)).points).toBe(1);
+        expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(1);
         expect(game.sound.played).toEqual([
           { cue: "coin", volume: 1, rate: 1 },
         ]);
@@ -88,8 +88,8 @@ describe("a game under test", () => {
       one.input.press("KeyW");
       yield* one.step();
       yield* two.step();
-      expect((yield* one.app.read(Score)).points).toBe(1);
-      expect((yield* two.app.read(Score)).points).toBe(0);
+      expect((yield* one.app.read(Singleton.Read(Score))).points).toBe(1);
+      expect((yield* two.app.read(Singleton.Read(Score))).points).toBe(0);
       expect(two.sound.played).toEqual([]);
     })
   );
@@ -104,7 +104,7 @@ describe("a game under test", () => {
         expect(yield* game.rest()).toBe(0);
         yield* game.app.enqueue(Add, { points: 5 });
         expect(yield* game.rest()).toBeGreaterThan(0);
-        expect((yield* game.app.read(Score)).points).toBe(5);
+        expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(5);
         expect(game.app.settled).toBe(true);
       })
   );
@@ -117,7 +117,7 @@ describe("a game under test", () => {
         { ticks: 0 }
       );
       const Count = System.tick("ts/Count", function* () {
-        (yield* Clock.writes).ticks += 1;
+        (yield* Singleton.Write(Clock)).ticks += 1;
       });
       const game = yield* Test.make(App.define({ systems: [Count] }));
       expect(yield* thrown(game.rest(5))).toThrow(

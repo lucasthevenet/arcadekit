@@ -62,7 +62,7 @@ const take = Action.handler(Take, function* ({ coin }) {
 
 const Drift = System.tick("Drift", function* () {
   const random = yield* Random;
-  (yield* Coins).each((coin) => {
+  (yield* Query.View(Coins)).each((coin) => {
     coin.x += random.next() - 0.5;
   });
 });
@@ -78,7 +78,7 @@ const fault = (onTick: number, kind: "nudge" | "lose") =>
     }
     const commands = yield* Commands;
     let first = true;
-    (yield* Coins).each((coin, entity) => {
+    (yield* Query.View(Coins)).each((coin, entity) => {
       if (!first) {
         return;
       }
@@ -201,7 +201,7 @@ const record = Effect.fnUntraced(function* (
 /** A recording's fields as its bytes hold them, each checked on its own. */
 const Written = SchemaBinary.toCodec(Layout);
 const fieldsOf = (recording: Replay.Recording) =>
-  Replay.encode(recording).pipe(unwrap, Schema.decodeExit(Written), unwrap);
+  Effect.flatMap(Replay.encode(recording), Schema.decodeExit(Written));
 /** Fields written as a recording's bytes, as a file edited by hand. */
 const written = (fields: typeof Layout.Type) =>
   unwrap(Schema.encodeExit(Written)(fields));
@@ -210,14 +210,14 @@ const written = (fields: typeof Layout.Type) =>
  * `recording` with `fields` changed in its bytes, as a file edited by hand,
  * and read back.
  */
-const altered = (
+const altered = Effect.fnUntraced(function* (
   recording: Replay.Recording,
   fields: Partial<typeof Layout.Type>
-): Replay.Recording => {
-  const read = Replay.decode(written({ ...fieldsOf(recording), ...fields }));
-  assert(Exit.isSuccess(read));
-  return read.value;
-};
+) {
+  return yield* Replay.decode(
+    written({ ...(yield* fieldsOf(recording)), ...fields })
+  );
+});
 
 /**
  * Replays a recording into the coin game `options` make, and returns what
@@ -363,7 +363,7 @@ describe("hash checks", () => {
           yield* withApp(game({ coins: [5] }), (app, world) =>
             Effect.gen(function* () {
               expect(app.actionLog).toEqual([]);
-              const [coin] = (yield* app.read(Lying)).entities();
+              const [coin] = (yield* app.read(Query.View(Lying))).entities();
               assert(coin !== undefined);
               const starting = world.hash();
               yield* first(app, coin);
@@ -424,11 +424,11 @@ describe("hash checks", () => {
   it.effect("survive being written down, and a malformed one is refused", () =>
     Effect.gen(function* () {
       const recorded = yield* record({ ticks: 12, hashEvery: 4 });
-      const loaded = Replay.decode(unwrap(Replay.encode(recorded.recording)));
+      const loaded = Replay.decode(yield* Replay.encode(recorded.recording));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(
         recorded.recording
       );
-      expect(fieldsOf(recorded.recording).log[0]).toEqual({
+      expect((yield* fieldsOf(recorded.recording)).log[0]).toEqual({
         tick: 0,
         hash: recorded.starting,
       });
@@ -446,7 +446,7 @@ describe("hash checks", () => {
       );
       const holding = (fields: typeof Holding.Type) =>
         unwrap(Schema.encodeExit(Holding)(fields));
-      const fields = fieldsOf(recorded.recording);
+      const fields = yield* fieldsOf(recorded.recording);
       const largest = Replay.decode(
         holding({ ...fields, log: [[0, 2 ** 32 - 1]] })
       );
@@ -568,7 +568,7 @@ describe("a replay that checks itself", () => {
                 stoppedAt: diverged.tick,
                 tick: app.time.tick,
                 hash: (yield* app.read(World)).hash(),
-                coins: (yield* app.read(Lying)).count(),
+                coins: (yield* app.read(Query.View(Lying))).count(),
                 reason,
               };
               // The replay closed it, and it is an app of the game all the
@@ -583,7 +583,7 @@ describe("a replay that checks itself", () => {
               return {
                 ...seen,
                 dropped: Exit.isSuccess(dropped),
-                after: (yield* app.read(Lying)).count(),
+                after: (yield* app.read(Query.View(Lying))).count(),
               };
             })
           )
@@ -656,7 +656,7 @@ describe("a replay that checks itself", () => {
         ];
         const blind = yield* replayInto(
           { faulty: fault(40, "lose") },
-          altered(recorded.recording, { log: moves(log), end: 110 })
+          yield* altered(recorded.recording, { log: moves(log), end: 110 })
         );
         // Somewhere after the fault: at the first move that named a coin the
         // faulty game no longer had, by tick 100 at the latest.
@@ -669,7 +669,7 @@ describe("a replay that checks itself", () => {
         // With them, sixty ticks earlier, where it went wrong.
         const checked = yield* replayInto(
           { faulty: fault(40, "lose") },
-          altered(recorded.recording, { log, end: 110 })
+          yield* altered(recorded.recording, { log, end: 110 })
         );
         expect(checked.stopped!.tick).toBe(40);
         expect(checked.stopped!.reason).toBeInstanceOf(Replay.HashMismatch);
@@ -738,7 +738,7 @@ describe("a replay that checks itself", () => {
         const recorded = yield* record({ ticks: 30, seed: 5 });
         const otherSeed = yield* replayInto(
           {},
-          altered(recorded.recording, { seed: 6 })
+          yield* altered(recorded.recording, { seed: 6 })
         );
         expect(otherSeed.stopped!.tick).toBe(0);
         expect(otherSeed.tick).toBe(0);
@@ -772,8 +772,10 @@ describe("a replay that checks itself", () => {
         ) {
           const log = [...recorded.log];
           change(log);
-          return (yield* replayInto({}, altered(recorded.recording, { log })))
-            .stopped;
+          return (yield* replayInto(
+            {},
+            yield* altered(recorded.recording, { log })
+          )).stopped;
         });
         const drops = recorded.log.flatMap((entry, index) =>
           !Action.isHashCheck(entry) &&
@@ -885,7 +887,7 @@ describe("a replay that checks itself", () => {
         refusedNow[1] = { ...take, payload: { coin: 4000 } };
         const first = (yield* replayInto(
           {},
-          altered(recorded, { log: refusedNow })
+          yield* altered(recorded, { log: refusedNow })
         )).stopped!;
         expect(first.index).toBe(1);
         expect(first.reason).toBe("NoSuchCoin");
@@ -899,7 +901,7 @@ describe("a replay that checks itself", () => {
         acceptedNow.splice(1, 1);
         const second = (yield* replayInto(
           {},
-          altered(recorded, { log: acceptedNow })
+          yield* altered(recorded, { log: acceptedNow })
         )).stopped!;
         expect(second.index).toBe(1);
         expect(second.message).toBe(
@@ -932,7 +934,7 @@ const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
   const tallies = yield* app.read(
     Effect.gen(function* () {
       const world = yield* World;
-      return (yield* Counted).entities().flatMap((entity) => {
+      return (yield* Query.View(Counted)).entities().flatMap((entity) => {
         const tally = world.get(entity, Tally);
         return tally === undefined
           ? []
@@ -956,7 +958,7 @@ const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
 // the order actions were applied in.
 const double = Action.handler(Double, function* () {
   let refuse = false;
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value *= 2;
     refuse = tally.value > 1e12;
   });
@@ -965,7 +967,7 @@ const double = Action.handler(Double, function* () {
   }
 });
 const add = Action.handler(Add, function* ({ by }) {
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value += by;
   });
 });
@@ -987,8 +989,8 @@ const Bot = System.tick("Bot", function* () {
 });
 /** Counts refusals in the world, so that a refusal a replay misses shows. */
 const Referee = System.tick("Referee", function* () {
-  const refused = (yield* Action.Rejected).read().length;
-  (yield* Tallies).each((tally) => {
+  const refused = (yield* Event.Reader(Action.Rejected)).read().length;
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.rejections += refused;
   });
 });
@@ -1001,7 +1003,7 @@ const Patience = Singleton.define(
 /** A system that makes a move of its own now and then. */
 const Heckler = System.tick("Heckler", function* () {
   const random = yield* Random;
-  const patience = yield* Patience.writes;
+  const patience = yield* Singleton.Write(Patience);
   if (patience.left > 1) {
     patience.left -= 1;
     return;
@@ -1089,11 +1091,14 @@ describe("the action log", () => {
         { tick: 0, name: "b", payload: null, queued: true },
         { tick: 1, name: "c", payload: [1], queued: true, refused: "Because" },
       ];
-      const recording = altered((yield* record({ ticks: 2 })).recording, {
-        log,
-      });
+      const recording = yield* altered(
+        (yield* record({ ticks: 2 })).recording,
+        {
+          log,
+        }
+      );
       expect(recording.log).toEqual(log);
-      const loaded = Replay.decode(unwrap(Replay.encode(recording)));
+      const loaded = Replay.decode(yield* Replay.encode(recording));
       expect(Exit.isSuccess(loaded) && loaded.value).toEqual(recording);
       // A mark of another kind is bytes in another layout.
       const marked = SchemaBinary.toCodec(
@@ -1112,7 +1117,7 @@ describe("the action log", () => {
       const refused = Replay.decode(
         unwrap(
           Schema.encodeExit(marked)({
-            ...fieldsOf(recording),
+            ...(yield* fieldsOf(recording)),
             log: [{ tick: 0, name: "a", payload: 1, queued: "yes" }],
           })
         )
@@ -1369,7 +1374,7 @@ describe("a game whose simulation issues actions itself", () => {
           payload: { by: 7 },
         });
         const stopped = yield* stoppedBy(
-          replayBusy(altered(recorded, { log: withBotMoves }))
+          replayBusy(yield* altered(recorded, { log: withBotMoves }))
         );
         expect(stopped.reason).toBeInstanceOf(Replay.HashMismatch);
         expect(stopped.tick).toBe(4);
@@ -1453,9 +1458,11 @@ describe("a recording", () => {
   const Walker = Component.define("rp/Walker", { x: Field.f64 });
   const Walk = System.tick("rp/Walk", function* () {
     const { delta } = yield* Time;
-    (yield* Query.all(Walker).pipe(Query.writes(Walker))).each((walker) => {
-      walker.x += delta;
-    });
+    (yield* Query.View(Query.all(Walker).pipe(Query.writes(Walker)))).each(
+      (walker) => {
+        walker.x += delta;
+      }
+    );
   });
   const Start = Plugin.make("rp/Walking", {
     setup: Effect.map(Commands.spawns(Walker), (commands) => {
@@ -1494,9 +1501,7 @@ describe("a recording", () => {
             { tick: 5, delta: 1 / 60 },
           ],
         });
-        const decoded = Replay.decode(
-          unwrap(Replay.encode(recorded.recording))
-        );
+        const decoded = Replay.decode(yield* Replay.encode(recorded.recording));
         expect(decoded).toEqual(Exit.succeed(recorded.recording));
         yield* withApp(replayWalking(recorded.recording), (app, world) =>
           Effect.gen(function* () {
@@ -1660,9 +1665,9 @@ describe("how a recorded game began", () => {
           })
         );
         // Through bytes and back.
-        expect(
-          Replay.decode(unwrap(Replay.encode(recorded.recording)))
-        ).toEqual(Exit.succeed(recorded.recording));
+        expect(Replay.decode(yield* Replay.encode(recorded.recording))).toEqual(
+          Exit.succeed(recorded.recording)
+        );
       })
   );
 
@@ -1695,7 +1700,7 @@ describe("how a recorded game began", () => {
         expect(played.whole.save).toBeUndefined();
 
         // In bytes, the recording holds the save, and reads back as it was.
-        const read = Replay.decode(unwrap(Replay.encode(tail)));
+        const read = Replay.decode(yield* Replay.encode(tail));
         assert(Exit.isSuccess(read));
         expect(read.value).toEqual(tail);
         const present = yield* withApp(
@@ -1740,8 +1745,8 @@ describe("how a recorded game began", () => {
             };
           })
         );
-        const fromSeed = unwrap(Replay.encode(whole));
-        const fromSave = unwrap(Replay.encode(tail));
+        const fromSeed = yield* Replay.encode(whole);
+        const fromSave = yield* Replay.encode(tail);
         for (const bytes of [fromSeed, fromSave]) {
           expect(bytes).toBeInstanceOf(Uint8Array);
           expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
@@ -1760,7 +1765,7 @@ describe("how a recorded game began", () => {
         yield* app.enqueueByName("rp/Nothing", { n: 1n });
         yield* app.tick(1 / 60);
         const recording = yield* Replay.record(app);
-        const written = Replay.encode(recording);
+        const written = yield* Effect.exit(Replay.encode(recording));
         assert(Exit.isFailure(written));
         expect(Cause.squash(written.cause)).toMatchObject({
           _tag: "ReplayInvalid",
@@ -1786,8 +1791,8 @@ describe("how a recorded game began", () => {
           };
         })
       );
-      const fromSeed = fieldsOf(whole);
-      const fromSave = fieldsOf(tail);
+      const fromSeed = yield* fieldsOf(whole);
+      const fromSave = yield* fieldsOf(tail);
 
       // Only `Replay.record(app)` and `Replay.decode` make a recording.
       const byHand: Replay.Played & Replay.Origin = {
@@ -1875,27 +1880,27 @@ const Race = App.define({
   systems: [
     System.tick("rp/Run", function* () {
       const { delta } = yield* Time;
-      (yield* Running).each((runner) => {
+      (yield* Query.View(Running)).each((runner) => {
         runner.x += runner.speed * delta;
       });
     }),
     System.frame("rp/Draw", function* () {
       let lead = 0;
-      (yield* Runners).each((runner) => {
+      (yield* Query.View(Runners)).each((runner) => {
         lead = Math.max(lead, runner.x);
       });
       shown.drawn.push(lead);
-      for (const { by } of (yield* Sprinted).read()) {
+      for (const { by } of (yield* Event.Reader(Sprinted)).read()) {
         shown.heard.push(by);
       }
     }),
   ],
   handlers: [
     Action.handler(Sprint, function* ({ by }) {
-      (yield* Running).each((runner) => {
+      (yield* Query.View(Running)).each((runner) => {
         runner.speed += by;
       });
-      (yield* Sprinted.emits).emit({ by });
+      (yield* Event.Emitter(Sprinted)).emit({ by });
     }),
   ],
 });

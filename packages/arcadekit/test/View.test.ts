@@ -42,18 +42,21 @@ const Ping = Action.define("vw/Ping");
 const worked = { hud: 0, menu: 0 };
 const ShowHud = View.publish(Hud, function* () {
   worked.hud++;
-  return { gold: (yield* Purse).gold, coins: (yield* Coins).count() };
+  return {
+    gold: (yield* Singleton.Read(Purse)).gold,
+    coins: (yield* Query.View(Coins)).count(),
+  };
 });
 const ShowMenu = View.publish(Menu, function* () {
   worked.menu++;
-  return { phase: (yield* Phase).value };
+  return { phase: (yield* State.Reader(Phase)).value };
 });
 
 /** A coin is worth one more gold each tick it is kept, while the game is played. */
 const Earn = System.tick("vw/Earn", function* () {
-  const purse = yield* Purse.writes;
+  const purse = yield* Singleton.Write(Purse);
   let earned = 0;
-  (yield* Coins).each((coin) => {
+  (yield* Query.View(Coins)).each((coin) => {
     earned += coin.value;
   });
   if (earned > 0) {
@@ -67,10 +70,10 @@ const Game = Plugin.make("vw/Game", {
   systems: [Earn, ShowHud, ShowMenu],
   handlers: [
     Action.handler(Start, function* () {
-      (yield* Phase.sets).set("playing");
+      (yield* State.Setter(Phase)).set("playing");
     }),
     Action.handler(Buy, function* ({ price }) {
-      const purse = yield* Purse.writes;
+      const purse = yield* Singleton.Write(Purse);
       if (purse.gold < price) {
         return yield* TooPoor.make({});
       }
@@ -98,7 +101,7 @@ const begun = ({ coins = [], gold }: Begun) =>
         commands.spawn(Coin.of({ value }));
       }
       if (gold !== undefined) {
-        (yield* Purse.writes).gold = gold;
+        (yield* Singleton.Write(Purse)).gold = gold;
       }
     }),
   });
@@ -147,10 +150,10 @@ const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
   !Action.isHashCheck(entry);
 
 const coinsOf = Effect.fnUntraced(function* (app: App.Any) {
-  return (yield* app.read(Coins)).count();
+  return (yield* app.read(Query.View(Coins))).count();
 });
 const goldOf = Effect.fnUntraced(function* (app: App.Any) {
-  return (yield* app.read(Purse)).gold;
+  return (yield* app.read(Singleton.Read(Purse))).gold;
 });
 const hashOf = Effect.fnUntraced(function* (app: App.Any) {
   return (yield* app.read(World)).hash();
@@ -295,7 +298,7 @@ describe("a view", () => {
             }),
             Action.handler(Lose, function* () {
               const commands = yield* Commands;
-              for (const coin of (yield* Coins).entities()) {
+              for (const coin of (yield* Query.View(Coins)).entities()) {
                 commands.despawn(coin);
               }
             }),
@@ -458,12 +461,12 @@ describe("a view", () => {
           Menu,
           {
             when: function* () {
-              return (yield* Phase).value;
+              return (yield* State.Reader(Phase)).value;
             },
           },
           function* () {
             bodies++;
-            return { phase: (yield* Phase).value };
+            return { phase: (yield* State.Reader(Phase)).value };
           }
         );
         const Rules = Plugin.make("vw/When", {
@@ -471,10 +474,10 @@ describe("a view", () => {
           systems: [Shown],
           handlers: [
             Action.handler(Start, function* () {
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Phase)).set("playing");
             }),
             Action.handler(Quit, function* () {
-              (yield* Phase.sets).set("title");
+              (yield* State.Setter(Phase)).set("title");
             }),
           ],
         });
@@ -506,7 +509,7 @@ describe("a view", () => {
           {
             // @ts-expect-error `when` reads the game, and cannot change it
             when: function* () {
-              return (yield* Purse.writes).gold;
+              return (yield* Singleton.Write(Purse)).gold;
             },
           },
           function* () {
@@ -525,18 +528,18 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, from `when`
         when: function* () {
-          return yield* Purse;
+          return yield* Singleton.Read(Purse);
         },
       },
       function* () {
-        return { gold: (yield* Purse).gold };
+        return { gold: (yield* Singleton.Read(Purse)).gold };
       }
     );
     View.publish(
       Gold,
       // @ts-expect-error a singleton read whole, as the view's value
       function* () {
-        return yield* Purse;
+        return yield* Singleton.Read(Purse);
       }
     );
     View.publish(
@@ -544,7 +547,7 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, in a union
         when: function* () {
-          const purse = yield* Purse;
+          const purse = yield* Singleton.Read(Purse);
           return purse.gold > 3 ? purse : undefined;
         },
       },
@@ -557,7 +560,10 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, in a tuple
         when: function* () {
-          return [yield* Purse, (yield* Phase).value] as const;
+          return [
+            yield* Singleton.Read(Purse),
+            (yield* State.Reader(Phase)).value,
+          ] as const;
         },
       },
       function* () {
@@ -569,7 +575,7 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, in an object
         when: function* () {
-          return { purse: yield* Purse };
+          return { purse: yield* Singleton.Read(Purse) };
         },
       },
       function* () {
@@ -582,7 +588,7 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, four levels down
         when: function* () {
-          return { a: { b: { c: { purse: yield* Purse } } } };
+          return { a: { b: { c: { purse: yield* Singleton.Read(Purse) } } } };
         },
       },
       function* () {
@@ -594,7 +600,9 @@ describe("a view", () => {
       {
         // @ts-expect-error a singleton read whole, seven levels down
         when: function* () {
-          return [[[{ a: { b: { c: yield* Purse } } }]]] as const;
+          return [
+            [[{ a: { b: { c: yield* Singleton.Read(Purse) } } }]],
+          ] as const;
         },
       },
       function* () {
@@ -623,7 +631,7 @@ describe("a view", () => {
     System.frame("vw/PublishWhole", function* () {
       const port = yield* View.Port;
       // @ts-expect-error a singleton read whole, published through the port
-      port.publish(Gold, yield* Purse);
+      port.publish(Gold, yield* Singleton.Read(Purse));
       port.publish(Gold, { gold: (yield* World).singleton(Purse).gold });
     });
 
@@ -641,11 +649,11 @@ describe("a view", () => {
         Gold,
         {
           when: function* () {
-            return (yield* Purse).gold;
+            return (yield* Singleton.Read(Purse)).gold;
           },
         },
         function* () {
-          return { ...(yield* Purse) };
+          return { ...(yield* Singleton.Read(Purse)) };
         }
       ),
       View.publish(
@@ -653,23 +661,23 @@ describe("a view", () => {
         {
           when: function* () {
             return {
-              purse: { ...(yield* Purse) },
+              purse: { ...(yield* Singleton.Read(Purse)) },
               tags: ["gold"],
-              seen: new Map([["gold", (yield* Purse).gold]]),
+              seen: new Map([["gold", (yield* Singleton.Read(Purse)).gold]]),
             };
           },
         },
         function* () {
-          const { gold } = yield* Purse;
+          const { gold } = yield* Singleton.Read(Purse);
           return { gold };
         }
       ),
       View.publish(Rows, function* () {
-        const { gold } = yield* Purse;
+        const { gold } = yield* Singleton.Read(Purse);
         return { rows: [gold, gold * 2].map((one) => ({ gold: one })) };
       }),
       View.publish(Tree, function* () {
-        const { gold } = yield* Purse;
+        const { gold } = yield* Singleton.Read(Purse);
         return { label: `${gold}`, children: [{ label: "", children: [] }] };
       }),
     ];
@@ -691,12 +699,12 @@ describe("a view", () => {
           Hud,
           {
             when: function* () {
-              return (yield* Purse).gold;
+              return (yield* Singleton.Read(Purse)).gold;
             },
           },
           function* () {
             bodies++;
-            return { gold: (yield* Purse).gold, coins: 0 };
+            return { gold: (yield* Singleton.Read(Purse)).gold, coins: 0 };
           }
         ).pipe(
           System.runIf(State.is(Phase, "playing")),
@@ -707,10 +715,10 @@ describe("a view", () => {
           systems: [Shown],
           handlers: [
             Action.handler(Start, function* () {
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Phase)).set("playing");
             }),
             Action.handler(Quit, function* () {
-              (yield* Phase.sets).set("title");
+              (yield* State.Setter(Phase)).set("title");
             }),
           ],
         });
@@ -735,14 +743,14 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         const Shown = View.publish(Hud, function* () {
-          return { gold: (yield* Purse).gold, coins: 0 };
+          return { gold: (yield* Singleton.Read(Purse)).gold, coins: 0 };
         }).pipe(System.runIf(State.is(Phase, "playing")));
         const Rules = Plugin.make("vw/Gated", {
           plugins: [View.plugin],
           systems: [Shown],
           handlers: [
             Action.handler(Start, function* () {
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Phase)).set("playing");
             }),
           ],
         });
@@ -771,7 +779,7 @@ describe("a view", () => {
       Effect.gen(function* () {
         const Quit = Action.define("vw/Quit", Schema.Struct({}));
         const Shown = View.publish(Hud, function* () {
-          return { gold: (yield* Purse).gold, coins: 0 };
+          return { gold: (yield* Singleton.Read(Purse)).gold, coins: 0 };
         }).pipe(
           System.runIf(State.is(Phase, "playing")),
           System.otherwise(View.reset(Hud))
@@ -781,10 +789,10 @@ describe("a view", () => {
           systems: [Shown],
           handlers: [
             Action.handler(Start, function* () {
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Phase)).set("playing");
             }),
             Action.handler(Quit, function* () {
-              (yield* Phase.sets).set("title");
+              (yield* State.Setter(Phase)).set("title");
             }),
           ],
         });

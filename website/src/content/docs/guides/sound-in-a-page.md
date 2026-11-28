@@ -9,7 +9,7 @@ In a page, cues and music play through **Web Audio**. A sound comes from one of 
 
 `Browser.runMain` and `Browser.layer` provide the Web Audio output. Their `sounds` option takes the cue sheets, made with `Sound.sheet`, whose files the page keeps for its lifetime: `sounds: [Sfx, Tracks]`. Their `volume` option sets the master volume, which scales every bus. `Audio.layerSound(sheets)` provides the same sound layer on its own.
 
-Give the page every sheet the game plays from. A game whose systems yield a sheet that `sounds` doesn't list doesn't compile, and the error names the sheet that is missing: `Plays<"game/Tracks">`.
+Give the page every sheet the game plays from. A game whose systems ask for the clips of a sheet that `sounds` doesn't list doesn't compile, and the error names the sheet that is missing: `Plays<"game/Tracks">`.
 
 - The page's sound opens with the first app that has `Sound.plugin`, wherever the layer is provided, and is heard until that app is closed. The apps made under one `Browser.layer` share one audio context, because a browser allows a page only a few. They fetch each file once.
 - `Assets.Loader` fetches the files when the page's sound opens, and each file is decoded on arrival.
@@ -52,7 +52,7 @@ const ForestCues = Sound.cues("forest/Cues", Forest, ({ creak }) => [
 const Air = Sound.music(
   "forest/Air",
   function* () {
-    const forest = yield* Forest;
+    const forest = yield* Assets.Status(Forest);
     return forest._tag === "Ready"
       ? { track: forest.assets.wind, volume: 0.3 }
       : undefined;

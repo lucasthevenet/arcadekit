@@ -39,7 +39,7 @@ const Spray = Singleton.define(
 );
 const WAVES = 5;
 const Fountain = System.tick("Fountain", function* () {
-  const spray = yield* Spray.writes;
+  const spray = yield* Singleton.Write(Spray);
   if (spray.wave >= WAVES) {
     return;
   }
@@ -67,8 +67,8 @@ const Fountain = System.tick("Fountain", function* () {
 const Thaw = Action.define("demo/Thaw");
 const thaw = Action.handler(Thaw, function* () {
   const commands = yield* Commands;
-  for (const entity of (yield* Query.all().pipe(
-    Query.with(Frozen)
+  for (const entity of (yield* Query.View(
+    Query.all().pipe(Query.with(Frozen))
   )).entities()) {
     commands.remove(entity, Frozen);
   }
@@ -86,7 +86,7 @@ const launch = Action.handler(Launch, function* ({ speed }) {
 
 // The demo itself is a plugin too: the ones it is made of, and what no
 // plugin of its has.
-const Name = Component.define("demo/Name", { value: Field.json<string>() });
+const Name = Component.define("demo/Name", { value: Field.json<string>("") });
 const Named = Query.all(Name, Position);
 const Demo = Plugin.make("Demo", {
   plugins: [Physics.plugin, Timer.plugin, Sketch.plugin],
@@ -110,6 +110,7 @@ const Demo = Plugin.make("Demo", {
 // where this demo steps the same app by hand.
 const program = Effect.gen(function* () {
   const noted = { ticks: 0, frames: 0, app: undefined as App.Any | undefined };
+  const note = { frames: 0, highest: 0 };
   yield* Driver.run(App.define({ plugins: [Demo] }), {
     seed: 7,
     hz: 60,
@@ -121,7 +122,7 @@ const program = Effect.gen(function* () {
 
         // Outside the game, it is read with app.read.
         const world = yield* app.read(World);
-        const named = yield* app.read(Named);
+        const named = yield* app.read(Query.View(Named));
         const rockY = (): string => {
           let y = Number.NaN;
           named.each((name, position) => {
@@ -145,7 +146,7 @@ const program = Effect.gen(function* () {
             yield* app.enqueue(Thaw);
           } // the rock starts falling
         }
-        const { wave } = yield* app.read(Spray);
+        const { wave } = yield* app.read(Singleton.Read(Spray));
         yield* Console.log(
           `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
         );
@@ -161,9 +162,10 @@ const program = Effect.gen(function* () {
         yield* app.enqueue(Launch, { speed: 30 });
         noted.app = app;
         noted.ticks = app.time.tick;
-        noted.frames = Sketch.sketch.frames;
+        noted.frames = note.frames;
       }),
   }).pipe(
+    Effect.provideService(Sketch.Note, note),
     Effect.provide(Resource.layer(Gravity, -20)),
     // A game runs until its page or its process goes away. This one is
     // interrupted after a quarter of a second, which stops the frame loop
@@ -171,7 +173,7 @@ const program = Effect.gen(function* () {
     Effect.timeoutOption("250 millis")
   );
   yield* Console.log(
-    `real time: ${noted.app!.time.tick - noted.ticks} ticks and ${Sketch.sketch.frames - noted.frames} frames in 250 ms`
+    `real time: ${noted.app!.time.tick - noted.ticks} ticks and ${note.frames - noted.frames} frames in 250 ms`
   );
 });
 

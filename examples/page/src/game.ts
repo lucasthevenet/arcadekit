@@ -86,11 +86,11 @@ const Controls = Input.controls("page/Controls", [
 ]);
 
 const Steer = System.tick("Steer", function* () {
-  const basket = yield* Basket.writes;
+  const basket = yield* Singleton.Write(Basket);
   const { delta } = yield* Time;
-  let x = basket.x + (yield* Move) * BASKET.speed * delta;
+  let x = basket.x + (yield* Input.Read(Move)) * BASKET.speed * delta;
   // Dragged, it is where the pointer is.
-  if ((yield* Drag).held) {
+  if ((yield* Input.Read(Drag)).held) {
     ({ x } = yield* Input.Pointer);
   }
   x = Math.min(WIDTH - BASKET.width / 2, Math.max(BASKET.width / 2, x));
@@ -102,9 +102,9 @@ const Steer = System.tick("Steer", function* () {
 const Fall = System.tick("Fall", function* () {
   const { delta } = yield* Time;
   const random = yield* Random;
-  const basket = yield* Basket.writes;
+  const basket = yield* Singleton.Write(Basket);
   let caught = 0;
-  (yield* Falling).each((star) => {
+  (yield* Query.View(Falling)).each((star) => {
     const before = star.y;
     star.y += star.speed * delta;
     // Caught if it crossed the basket's line this tick, over the basket.
@@ -122,7 +122,7 @@ const Fall = System.tick("Fall", function* () {
   });
   if (caught > 0) {
     basket.caught += caught;
-    (yield* Caught.emits).emit({ stars: caught });
+    (yield* Event.Emitter(Caught)).emit({ stars: caught });
   }
 }).pipe(playing);
 
@@ -144,30 +144,30 @@ const Scatter = Action.define("page/Scatter", Layout);
 
 const handlers = [
   Action.handler(Start, function* () {
-    const phase = yield* Phase.sets;
+    const phase = yield* State.Setter(Phase);
     if (phase.is("title")) {
       phase.set("playing");
-      (yield* Started.emits).emit();
+      (yield* Event.Emitter(Started)).emit();
       // A new game is handed the level's file again.
       yield* Assets.forget(Level);
     }
   }),
   Action.handler(Quit, function* () {
-    const phase = yield* Phase.sets;
+    const phase = yield* State.Setter(Phase);
     if (phase.is("title")) {
       return;
     }
     const commands = yield* Commands;
-    for (const star of (yield* Stars).entities()) {
+    for (const star of (yield* Query.View(Stars)).entities()) {
       commands.despawn(star);
     }
-    const basket = yield* Basket.writes;
+    const basket = yield* Singleton.Write(Basket);
     basket.x = WIDTH / 2;
     basket.caught = 0;
     phase.set("title");
   }),
   Action.handler(TogglePause, function* () {
-    const phase = yield* Phase.sets;
+    const phase = yield* State.Setter(Phase);
     if (!phase.is("title")) {
       phase.set(phase.is("playing") ? "paused" : "playing");
     }
@@ -196,13 +196,13 @@ const scatter = Action.handler(
 // same action.
 const Keys = System.input("page/Keys", function* () {
   const actions = yield* Action.Actions;
-  if ((yield* Go).pressed) {
+  if ((yield* Input.Read(Go)).pressed) {
     actions.enqueue(Start);
   }
-  if ((yield* Leave).pressed) {
+  if ((yield* Input.Read(Leave)).pressed) {
     actions.enqueue(Quit);
   }
-  if ((yield* Pause).pressed) {
+  if ((yield* Input.Read(Pause)).pressed) {
     actions.enqueue(TogglePause);
   }
 });
@@ -241,9 +241,9 @@ export class Screen extends Context.Service<
 const Draw = System.frame("Draw", function* () {
   const { canvas } = yield* Screen;
   const { delta } = yield* Time;
-  const basket = yield* Basket;
-  const phase = yield* Phase;
-  const level = yield* Level;
+  const basket = yield* Singleton.Read(Basket);
+  const phase = yield* State.Reader(Phase);
+  const level = yield* Assets.Status(Level);
   canvas.clearRect(0, 0, WIDTH, HEIGHT);
   canvas.fillStyle = "#c8d0e0";
   canvas.font = "16px system-ui, sans-serif";
@@ -260,7 +260,7 @@ const Draw = System.frame("Draw", function* () {
     const picture = level.assets.star;
     // Each star is drawn where it is by now: `alpha` of a tick further on.
     const ahead = phase.is("paused") ? 0 : (yield* Frame).alpha * delta;
-    (yield* Stars).eachChunk((start, end, star) => {
+    (yield* Query.View(Stars)).eachChunk((start, end, star) => {
       for (let i = start; i < end; i++) {
         const y = star.y[i]! + star.speed[i]! * ahead;
         canvas.drawImage(picture, star.x[i]! - 4, y - 4);
@@ -298,11 +298,11 @@ const LevelCues = Sound.cues("page/LevelCues", Level, ({ caught }) => [
 const Score = Sound.music(
   "page/Score",
   function* () {
-    const phase = (yield* Phase).value;
+    const phase = (yield* State.Reader(Phase)).value;
     if (phase === "title") {
       return undefined;
     }
-    const { theme } = yield* Sounds;
+    const { theme } = yield* Sound.Clips(Sounds);
     return { track: theme, volume: phase === "paused" ? 0.1 : 0.4 };
   },
   { fade: 0.6 }
@@ -313,12 +313,12 @@ const Score = Sound.music(
 // the UI already has: while the stars fall and none is caught, the UI is
 // told nothing and does nothing.
 const ShowMenu = View.publish(Menu, function* () {
-  return { phase: (yield* Phase).value };
+  return { phase: (yield* State.Reader(Phase)).value };
 });
 const ShowHud = View.publish(Hud, function* () {
   return {
-    caught: (yield* Basket).caught,
-    level: (yield* Level)._tag,
+    caught: (yield* Singleton.Read(Basket)).caught,
+    level: (yield* Assets.Status(Level))._tag,
   };
 });
 

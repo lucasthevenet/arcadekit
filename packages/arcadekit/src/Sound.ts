@@ -30,8 +30,8 @@
  * starts, fades and stops tracks to match:
  *
  *   const Score = Sound.music("game/Score", function*() {
- *     const level = yield* Level
- *     const { forest, menu } = yield* Tracks
+ *     const level = yield* State.Reader(Level)
+ *     const { forest, menu } = yield* Sound.Clips(Tracks)
  *     return level.value === "menu" ? menu : { track: forest, volume: 0.6 }
  *   })
  *
@@ -56,11 +56,13 @@
  * `Sound.Player`, so the simulation never plays sound. A replay and a server
  * run no frame stage. They play nothing, and the game they run is the same.
  */
-import { Context, Effect, Effectable, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
 import * as Assets from "./Assets.ts";
-import type * as Event from "./Event.ts";
+import * as Event from "./Event.ts";
+import { lookup } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { Entry, playing, soundsOf } from "./internal/sheet.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
@@ -111,7 +113,7 @@ export type Playable = Clip;
 
 /**
  * In a system's requirements, says that the system plays a sound of the cue
- * sheet named `N`, because it yields the sheet. What a game's sound goes to
+ * sheet named `N`, because it asks for the sheet's clips. What a game's sound goes to
  * provides it for each sheet it has: a page for each sheet of its `sounds`,
  * and `Sound.layer(speaker)`, `Sound.layerNowhere` and `Test.make` for every
  * sheet. So a game that plays from a sheet its page wasn't given doesn't
@@ -123,57 +125,54 @@ export interface Plays<out N extends string> {
   readonly "~arcadekit/Sound/Plays": N;
 }
 
+// Keeps the names of a sheet's sounds in its type, which nothing else of it says.
+declare const SoundsBrand: unique symbol;
+
 /**
  * A cue sheet: a game's sounds for its whole lifetime, each a clip under its
- * name, made by `Sound.sheet`. It is an Effect, so in a frame-stage system
- * `yield*` returns its sounds, and the system's type says, with
- * `Sound.Plays`, that it plays from the sheet:
- *
- *   const Click = System.frame("game/Click", function*() {
- *     const { click } = yield* Sfx
- *     const player = yield* Sound.Player
- *     player.play(click, { volume: 0.5 })
- *   })
+ * name, made by `Sound.sheet`. A frame-stage system asks for its sounds with
+ * `yield* Sound.Clips(sheet)`.
  *
  * @category Models
  */
-export class Sheet<
-  N extends string = string,
-  K extends string = string,
-> extends Effectable.Class<{ readonly [P in K]: Clip }, never, Plays<N>> {
-  private readonly effect: Effect.Effect<
-    { readonly [P in K]: Clip },
-    never,
-    Plays<N>
-  >;
-  private readonly iterator: Effect.EffectIterator<
-    Effect.Effect<{ readonly [P in K]: Clip }, never, Plays<N>>
-  >;
+export class Sheet<N extends string = string, K extends string = string> {
+  declare readonly [SoundsBrand]: K;
 
   constructor(
     /** What a log and a type error call it. */
     readonly name: N,
     sounds: { readonly [P in K]: Clip }
   ) {
-    super();
-    this.effect = Effect.succeed(sounds);
-    const done = { done: true, value: sounds } as const;
-    this.iterator = { next: () => done };
     soundsOf.set(this, sounds);
   }
-
-  asEffect(): Effect.Effect<{ readonly [P in K]: Clip }, never, Plays<N>> {
-    return this.effect;
-  }
-
-  // Ends at once, since the sounds need no service: a frame of music that
-  // yielded the sheet itself to the fiber measured 5% slower.
-  override [Symbol.iterator](): Effect.EffectIterator<
-    Effect.Effect<{ readonly [P in K]: Clip }, never, Plays<N>>
-  > {
-    return this.iterator;
-  }
 }
+
+const clipsOf = <K extends string>(
+  _given: Given,
+  sheet: Sheet<string, K>
+): { readonly [P in K]: Clip } =>
+  soundsOf.get(sheet) as { readonly [P in K]: Clip };
+
+/**
+ * Asks for a cue sheet's sounds, each a clip under its name. The system's
+ * type then says, with `Sound.Plays`, that it plays from the sheet, so a game
+ * whose page wasn't given the sheet doesn't compile.
+ *
+ *   const Click = System.frame("game/Click", function*() {
+ *     const { click } = yield* Sound.Clips(Sfx)
+ *     const player = yield* Sound.Player
+ *     player.play(click, { volume: 0.5 })
+ *   })
+ *
+ * A system of the tick that asks for them doesn't compile, since sound is
+ * the frame's.
+ *
+ * @category Capabilities
+ */
+export const Clips = <N extends string, K extends string>(
+  sheet: Sheet<N, K>
+): Effect.Effect<{ readonly [P in K]: Clip }, never, Plays<N>> =>
+  lookup(clipsOf, sheet);
 
 /**
  * The `Sound.Plays` of each sheet of a union, and `never` for none: what a
@@ -191,9 +190,9 @@ export type PlaysOf<S> =
 
 /**
  * Makes a cue sheet: a clip for each sound a game plays by name, from the URL
- * of its file, or from a clip such as `Audio.stream(url)`. A system yields
- * the sheet for its sounds, so a name that isn't in it doesn't compile, and
- * a page given the sheet fetches its files.
+ * of its file, or from a clip such as `Audio.stream(url)`. A system asks for
+ * its sounds with `Sound.Clips`, so a name that isn't in it doesn't compile,
+ * and a page given the sheet fetches its files.
  *
  *   const Sfx = Sound.sheet("game/Sfx", { coin: "/coin.wav", thud: "/thud.wav" })
  *
@@ -212,14 +211,14 @@ export type PlaysOf<S> =
  *
  * - Each clip's name is its key, as a recorder records it: `coin` plays as
  *   `"coin"`.
- * - Its sounds are reached only by yielding it, so a system that plays one
+ * - Its sounds are reached only through `Sound.Clips`, so a system that plays one
  *   has the sheet's `Sound.Plays` in its type, and so has the game. What
  *   runs the game provides it: a page whose `sounds`, in `Browser.runMain`
  *   or `Audio.layerSound`, lists the sheet, and which fetches its files when
  *   its audio starts, or `Sound.layer(speaker)`, which has every sheet, as a
  *   recorder records any.
- * - A system of the tick that yields it doesn't compile, since sound is the
- *   frame's.
+ * - A system of the tick that asks for its clips doesn't compile, since
+ *   sound is the frame's.
  *
  * @category Constructors
  */
@@ -609,7 +608,7 @@ export interface PlayerShape {
    * `Sound.MusicBus` unless they name another, declared with `Sound.bus`.
    *
    *   const Volumes = System.frame("game/Volumes", function*() {
-   *     const settings = yield* Settings
+   *     const settings = yield* Setting.get(Settings)
    *     const player = yield* Sound.Player
    *     player.volume(Sound.MusicBus, settings.music)
    *     player.volume(Sound.EffectsBus, settings.effects ? 1 : 0)
@@ -632,7 +631,7 @@ export interface PlayerShape {
  *
  * Use in a frame-stage system to play a sound that no event stands for:
  *
- *   const { click } = yield* Sfx
+ *   const { click } = yield* Sound.Clips(Sfx)
  *   const player = yield* Sound.Player
  *   player.play(click, { volume: 0.5 })
  *
@@ -1045,7 +1044,7 @@ export function cues(
     }
     let lines = fixed;
     if (from !== undefined) {
-      const status = yield* from;
+      const status = yield* Assets.Status(from);
       if (status._tag !== "Ready") {
         // The lines hold the bundle's clips: let go, so that they can be.
         made.delete(player);
@@ -1061,7 +1060,7 @@ export function cues(
     for (const [event, picks] of lines!) {
       // Read once: a system is handed an event once, however many of its
       // lines are of it.
-      const heard = (yield* event).read();
+      const heard = (yield* Event.Reader(event)).read();
       for (const pick of picks) {
         for (const payload of heard) {
           // Of the line's event, which is the one it was read from.
@@ -1109,9 +1108,9 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * the player starts, cross-fades or stops tracks when the result changes.
  *
  *   const Score = Sound.music("game/Score", function*() {
- *     const level = yield* Level
- *     const { theme } = yield* Tracks
- *     if ((yield* Paused).on) return { track: theme, volume: 0.2 }
+ *     const level = yield* State.Reader(Level)
+ *     const { theme } = yield* Sound.Clips(Tracks)
+ *     if ((yield* Singleton.Read(Paused)).on) return { track: theme, volume: 0.2 }
  *     return level.value === "menu" ? undefined : theme
  *   }, { fade: 1 })
  *
@@ -1128,7 +1127,7 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *   from the first frame.
  * - The body can read whatever a frame-stage system can: singletons, states,
  *   queries, events and assets. A level's own music is a clip from its bundle,
- *   such as `forest.assets.theme` once `yield* Forest` is `Ready`.
+ *   such as `forest.assets.theme` once `yield* Assets.Status(Forest)` is `Ready`.
  * - Music systems share one score, on the `"music"` channel. Between a menu's
  *   system and a level's, the one with something to play is heard, and a track
  *   both play continues without a break from one to the other.

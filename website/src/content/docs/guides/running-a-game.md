@@ -8,28 +8,15 @@ description: "Start a game with Driver.run and your platform's runMain. Learn ho
 ## Run a game in a page
 
 ```ts
-import { Action, App, Driver, Plugin } from "arcadekit";
+import { App, Driver, Plugin } from "arcadekit";
 import { Browser } from "arcadekit/browser";
-import { Effect } from "effect";
 
-const NewGame = Action.define("game/NewGame");
-const newGame = Action.handler(NewGame, function* () {});
-const Game = Plugin.make("game/Game", { handlers: [newGame] });
+const Game = Plugin.make("game/Game", {});
 
 const canvas = document.querySelector("canvas")!;
-const button = document.querySelector("button")!;
 
 Browser.runMain(
-  Driver.run(App.define({ plugins: [Game] }), {
-    seed: Date.now(),
-    hz: 60,
-    ready: (app) =>
-      Effect.gen(function* () {
-        // A click comes from outside any Effect: it runs what it asks for.
-        const runFork = Effect.runForkWith(yield* Effect.context());
-        button.onclick = () => runFork(app.enqueue(NewGame));
-      }),
-  }),
+  Driver.run(App.define({ plugins: [Game] }), { seed: Date.now(), hz: 60 }),
   { target: canvas, preventDefault: ["Space", "ArrowUp", "ArrowDown"] }
 );
 ```
@@ -48,7 +35,7 @@ On each repaint, it runs the ticks that are due at `hz`, then the frame stage. I
 | `hz` | Required | The ticks per second, whatever the frame rate |
 | `ticks` | `"always"` | `"whenNeeded"` ticks only while the game changes. See [tick only when needed](#tick-only-when-needed) |
 | `maxStepsPerCall` | `5` | The most ticks that one frame runs after a freeze. The loop drops the ticks still owed |
-| `ready` | None | A step that has the app once it is made, before its first frame |
+| `ready` | None | A step that has the app once it is made, before its first frame. See [call the app from outside an Effect](#call-the-app-from-outside-an-effect) |
 
 `Browser.runMain` is the page's `runMain`. It reports failures, and it provides the page's display and devices to the whole program. The loop follows `requestAnimationFrame`, and the input stage reads the keyboard, the pointer, and the gamepads. Its options:
 
@@ -69,13 +56,43 @@ The loop keeps to these rules:
 - After a freeze while the tab stays visible, the loop runs at most `maxStepsPerCall` ticks and drops the rest.
 - If a tick or a frame fails, the loop stops and the program fails with what it failed with: what the game's systems fail with, which a program catches by its tag. A defect, such as a call made where it may not be, kills it.
 
-To connect something outside the game to the app before its first frame, give it as `ready`, as above. What `ready` acquires is released when the run ends. When `ready` fails, `Driver.run` closes the app and fails with what `ready` failed with. A UI doesn't need the app, because the app hands it [the view bridge](ui.md).
-
 Given a `save`, the app resumes from it instead of starting fresh. Making it can fail with `Save.LoadRefused`, and `Driver.run` fails with whatever making the app fails with. See [saving and loading](saving-and-loading.md).
 
 Provide the services your game needs to `Driver.run`, as in `Driver.run(...).pipe(Effect.provide(Screen.layer))`. A missing service is a compile error. Provide them to `Driver.run` as a whole, not to a part of it. A layer releases what it acquires when the effect it was provided to ends, so a layer provided to the whole program lasts as long as the game. `Browser.layer` acquires nothing itself. The app opens the page's devices in a scope of its own, and `Sound.plugin` opens the page's sound there too. The app lets go of both when it is closed.
 
-Inside a program, and in a test, yield an Effect instead of running it. Each method of an app returns an Effect. Only a callback that runs outside any Effect, such as a button's, runs one, with what `Effect.runForkWith` makes of where it was wired, as `ready` does above.
+## Call the app from outside an Effect
+
+```ts
+import { Action, App, Driver, Plugin } from "arcadekit";
+import { Browser } from "arcadekit/browser";
+import { Effect } from "effect";
+
+const NewGame = Action.define("game/NewGame");
+const newGame = Action.handler(NewGame, function* () {});
+const Game = Plugin.make("game/Game", { handlers: [newGame] });
+
+const button = document.querySelector("button")!;
+
+Browser.runMain(
+  Driver.run(App.define({ plugins: [Game] }), {
+    hz: 60,
+    ready: (app) =>
+      Effect.gen(function* () {
+        const runSync = Effect.runSyncWith(yield* Effect.context());
+        button.onclick = () => runSync(app.enqueue(NewGame));
+      }),
+  }),
+  { target: document.querySelector("canvas")! }
+);
+```
+
+`ready` connects something outside the game to the app before its first frame. What it acquires is released when the run ends. When it fails, `Driver.run` closes the app and fails with what `ready` failed with.
+
+Each method of an app returns an Effect, which a program and a test yield. A button's `onclick`, or a function typed in the browser's console, runs outside any Effect. Such a function runs the app's method with `runSync`, which `ready` makes from the program's context, as above.
+
+- `runSync` returns what `app.enqueue` or `app.inspect` gives. It throws what the method fails with to the function that called it, such as the `Action.InvalidPayload` of a payload that the action's schema doesn't take. `Effect.runForkWith` would lose the failure in a fiber that nobody reads.
+- A UI doesn't need the app, because the app hands it [the view bridge](ui.md). Its buttons call `ui.send(NewGame)`, which runs no Effect.
+- The page hands the browser's console its functions the same way. See [inspect an app](debugging.md#inspect-an-app).
 
 ## Run a game under a Content Security Policy
 
@@ -108,7 +125,7 @@ const Clock = Singleton.define("chess/Clock", { left: Field.f32 }, { left: 0 });
 
 // The game ticks while the clock runs, since each tick changes it.
 const Countdown = System.tick("chess/Countdown", function* () {
-  const clock = yield* Clock.writes;
+  const clock = yield* Singleton.Write(Clock);
   if (clock.left > 0) {
     clock.left = Math.max(0, clock.left - (yield* Time).delta);
   }

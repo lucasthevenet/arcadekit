@@ -27,6 +27,7 @@ import type { World as EcsWorld } from "./ecs/world.ts";
 import type { ReadingEvents } from "./Event.ts";
 import type { Devices } from "./Input.ts";
 import { spawning, writing } from "./internal/handed.ts";
+import type { Installed, KeptBy } from "./Plugin.ts";
 import type { Access, AddsOf, NameOf, WritesOf } from "./Query.ts";
 import type * as Singleton from "./Singleton.ts";
 import type { Locals } from "./System.ts";
@@ -116,7 +117,7 @@ export interface ReadingWorld extends Pick<
   /**
    * Returns a singleton, read-only, as a `Singleton.Read`: the world's own
    * object, the same on every call. A system writes one with
-   * `yield* Score.writes`.
+   * `yield* Singleton.Write(Score)`.
    */
   singleton<S extends Schema>(spec: SingletonSpec<S>): Singleton.Read<S>;
 }
@@ -279,6 +280,13 @@ type Filled<D> = D extends unknown
     : RequiredOf<D>
   : never;
 
+type InstalledKeepers<D> =
+  D extends KeptBy<infer Id>
+    ? string extends Id
+      ? never
+      : Installed<Id>
+    : never;
+
 /**
  * The commands of a system or a handler, which change the set of entities.
  * They are queued, and applied when the system or handler finishes. They
@@ -308,6 +316,12 @@ export interface Spawning<in N extends string> {
   ): void;
   /** Queues an entity to despawn. */
   despawn(entity: Entity | Spawned): void;
+  /**
+   * Returns whether an entity is queued to despawn. It stays alive until the
+   * system or handler finishes. An entity that a relation despawns along with
+   * a queued one is not queued itself.
+   */
+  despawning(entity: Entity | Spawned): boolean;
   /** Queues a component to remove from an entity. */
   remove(entity: Entity | Spawned, def: ComponentDef): void;
 }
@@ -328,7 +342,9 @@ export interface Spawning<in N extends string> {
  * Naming the components puts them in the system's requirements, so that the
  * order of a list of systems can be checked. A system that watches a component
  * with `Query.added` or `Query.changed` is listed after the systems that spawn
- * it. See `System.Misordered`.
+ * it. See `System.Misordered`. A component that only a plugin acts on, as
+ * `Timer.Lifetime`, puts that plugin there too, so a game that spawns it and
+ * leaves the plugin out doesn't compile. See `Plugin.KeptBy`.
  *
  * @category Services
  */
@@ -345,7 +361,9 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
   ): Effect.Effect<
     Spawning<NameOf<D[number]>>,
     never,
-    Commands | AddsOf<NameOf<D[number]> | Filled<D[number]>>
+    | Commands
+    | AddsOf<NameOf<D[number]> | Filled<D[number]>>
+    | InstalledKeepers<D[number]>
   > =>
     Effect.map(Effect.service(Commands), (commands) =>
       spawning<NameOf<D[number]>>(commands)
@@ -354,8 +372,8 @@ export class Commands extends Context.Service<Commands, Spawning<never>>()(
 
 /**
  * The app's event channels, to read. A system usually reaches them through an
- * event's definition, with `yield* SomeEvent` to read and
- * `yield* SomeEvent.emits` to emit, which only the tick may.
+ * event's definition, with `yield* Event.Reader(SomeEvent)` to read and
+ * `yield* Event.Emitter(SomeEvent)` to emit, which only the tick may.
  *
  * @category Services
  */

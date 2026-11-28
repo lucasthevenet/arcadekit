@@ -18,7 +18,7 @@ import {
   World,
 } from "../src/index.ts";
 import type { Entity } from "../src/index.ts";
-import { thrown, unwrap } from "./checks.ts";
+import { thrown } from "./checks.ts";
 
 const withApp = <T, A, E = never, E2 = never>(
   make: Effect.Effect<T, E>,
@@ -325,7 +325,7 @@ const Roll = Action.define("rnd/Roll", Schema.Struct({ sides: Schema.Int }), {
 /** A handler that draws: the die's new face is random. */
 const roll = Action.handler(Roll, function* ({ sides }) {
   const random = yield* Random;
-  const dice = yield* Query.all(Die).pipe(Query.writes(Die));
+  const dice = yield* Query.View(Query.all(Die).pipe(Query.writes(Die)));
   if (dice.count() === 0) {
     return yield* NoSuchDie.make({});
   }
@@ -342,7 +342,7 @@ const roll = Action.handler(Roll, function* ({ sides }) {
 const Sparks = System.tick("Sparks", function* () {
   const random = yield* Random;
   const commands = yield* Commands.spawns(Spark);
-  const sparks = yield* Query.all(Spark).pipe(Query.writes(Spark));
+  const sparks = yield* Query.View(Query.all(Spark).pipe(Query.writes(Spark)));
   sparks.each((spark, entity) => {
     spark.x += random.next() - 0.5;
     spark.y += random.next() - 0.5;
@@ -362,7 +362,7 @@ const Wait = Singleton.define("rnd/Wait", { left: Field.u8 }, { left: 0 });
 /** A system that draws between waits, and keeps its wait in the world. */
 const Gambler = System.tick("Gambler", function* () {
   const random = yield* Random;
-  const wait = yield* Wait.writes;
+  const wait = yield* Singleton.Write(Wait);
   if (wait.left > 1) {
     wait.left -= 1;
     return;
@@ -411,10 +411,10 @@ const snapshot = Effect.fnUntraced(function* (app: App.Any) {
   const dice: [number, number][] = [];
   const hash = yield* app.read(
     Effect.gen(function* () {
-      (yield* Query.all(Spark)).each((spark, entity) => {
+      (yield* Query.View(Query.all(Spark))).each((spark, entity) => {
         sparks.push([entity, spark.x, spark.y]);
       });
-      (yield* Query.all(Die)).each((die) => {
+      (yield* Query.View(Query.all(Die))).each((die) => {
         dice.push([die.face, die.rolls]);
       });
       // It covers the generator's state, which is part of the world.
@@ -508,14 +508,16 @@ describe("the Random service", () => {
           })
         );
       });
-      const replayOf = (recording: Replay.Recording) => {
+      const replayOf = Effect.fnUntraced(function* (
+        recording: Replay.Recording
+      ) {
         // Through bytes and back, as a save file would be.
-        const loaded = Replay.decode(unwrap(Replay.encode(recording)));
+        const loaded = Replay.decode(yield* Replay.encode(recording));
         if (Exit.isFailure(loaded)) {
           throw new Error("the log did not survive being written down");
         }
-        return Replay.verify(loaded.value, Game);
-      };
+        return yield* Replay.verify(loaded.value, Game);
+      });
 
       const recorded = yield* record(31);
       const { recording } = recorded;

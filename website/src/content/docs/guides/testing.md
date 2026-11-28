@@ -1,6 +1,6 @@
 ---
 title: "Testing"
-description: "An arcadekit game runs under Node with nothing but its plugins, so its tests need no browser. Learn how to make a game under test with Test.make, and how to provide a stand-in for devices, sound, files, rendering and the network by hand."
+description: "An arcadekit game runs under Node with nothing but its plugins, so its tests need no browser. Learn how to make a game under test with Test.make, and drive its devices, record its sound, serve its files and act as its UI."
 ---
 
 An arcadekit game runs under Node with nothing but its plugins, so its **tests** need no browser. A test steps an app by hand, and gives it stand-ins for what a page provides: devices, sound, files, a UI, a display, a renderer and a network. The test drives each stand-in itself, so it controls when things happen and can inspect what the game asked for.
@@ -21,7 +21,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score.writes).points += points;
+  (yield* Singleton.Write(Score)).points += points;
 });
 export const Rules = Plugin.make("game/Rules", {
   handlers: [add],
@@ -32,7 +32,7 @@ it.effect("adds points", () =>
     const game = yield* Test.make(App.define({ plugins: [Rules] }));
     yield* game.app.enqueue(Add, { points: 3 });
     yield* game.step();
-    expect((yield* game.app.read(Score)).points).toBe(3);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(3);
   })
 );
 ```
@@ -59,11 +59,11 @@ it.effect("hears a key and a stick", () =>
     const Coin = Input.button("game/Coin", ["Space", Input.padButton(0, 0)]);
     const Lean = Input.axis("game/Lean", { pad: Input.padAxis(0, 0) });
     const Count = System.tick("game/Count", function* () {
-      const score = yield* Score.writes;
-      if ((yield* Coin).pressed) {
+      const score = yield* Singleton.Write(Score);
+      if ((yield* Input.Read(Coin)).pressed) {
         score.points += 1;
       }
-      if ((yield* Lean) > 0.5) {
+      if ((yield* Input.Read(Lean)) > 0.5) {
         score.points += 10;
       }
     });
@@ -76,7 +76,7 @@ it.effect("hears a key and a stick", () =>
     game.input.press("Space");
     game.input.move(Input.padAxis(0, 0), 0.8);
     yield* game.step(); // reads the devices, then ticks
-    expect((yield* game.app.read(Score)).points).toBe(11);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(11);
   })
 );
 ```
@@ -117,7 +117,7 @@ it.effect("starts with the points the level's file says", () =>
     });
     const Begin = Action.define("game/Begin", Schema.Int);
     const begin = Action.handler(Begin, function* (points) {
-      (yield* Score.writes).points = points;
+      (yield* Singleton.Write(Score)).points = points;
     });
     const game = yield* Test.make(
       App.define({
@@ -128,7 +128,7 @@ it.effect("starts with the points the level's file says", () =>
     );
     yield* game.step(); // loads the file in its frame
     yield* game.step(); // hands it to the rules
-    expect((yield* game.app.read(Score)).points).toBe(5);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(5);
   })
 );
 ```
@@ -143,80 +143,12 @@ To check that a level's assets are released when the level ends, give the level 
 
 To test a UI, mount it with `View.mount` in a document, with `// @vitest-environment happy-dom` at the top of the file. Count what the UI was told, and count what changed in the document with a `MutationObserver`. See [a UI](ui.md).
 
-## Run the frame stage by hand
-
-`app.frame()` runs the frame stage, and draws the game where its last tick left it. `app.frame(alpha)` draws it `alpha` of the way between its last two ticks, which a kind drawn with `smooth` shows. With `App.make(game, { verifyFrames: true })`, the app hashes the world before the stage and after each of its systems, and `frame` dies with `App.FrameChangedWorld`, which names the system, if a system changed the game. In every stage, `eachChunk` throws when a loop wrote a column it was handed read-only, and puts the column back. Each check costs a hash per system, or a copy of each column handed out read-only, so use it in tests.
-
-To test a program that runs its own frame loop, provide `Driver.layer(Driver.makeManualDisplay())`, a display you drive by hand instead of real timers. `display.frame(ms)` signals that a frame is due, and `display.hide()` and `display.show()` act as the tab being hidden and shown again. `display.pending` and `display.watching` count the requested frames and the listeners on the tab, so a test can check that a stopped loop left nothing behind.
-
-## Provide a stand-in by hand
-
-```ts title="rules.test.ts"
-it.effect("plays nothing before the first frame", () =>
-  Effect.gen(function* () {
-    const sound = Sound.makeRecorder();
-    const app = yield* App.make(
-      App.define({ plugins: [Rules, Sound.plugin] })
-    ).pipe(Effect.provide(Sound.layer(sound)));
-    yield* app.tick(1 / 60);
-    expect(sound.played).toEqual([]);
-  })
-);
-```
-
-Each service a program provides from outside an app has a layer, `X.layer(implementation)`, and a stand-in its module makes for a test. `Test.make` provides the first four:
-
-| Service | Layer | Stand-in |
-| --- | --- | --- |
-| `Input.Source` | `Input.layer` | `Input.makeManualSource()` |
-| `Sound.Output` | `Sound.layer` | `Sound.makeRecorder()` |
-| `Assets.Loader` | `Assets.layer` | `Assets.makeMemory(files)` |
-| `View`'s UI | `View.mount(game, mount)` | the bridge it hands `mount` |
-| `Driver.Display` | `Driver.layer` | `Driver.makeManualDisplay()` |
-| `Transport.Transport` | `Transport.layer` | `Transport.makeHub().port(peer)` |
-| `Three.Renderer` | `Three.layer` | `Three.makeRecorder()` |
-
-Provide one by hand to give an app one stand-in alone, or one of your own. To test slow loading, such as a loading screen, or a level left before its files arrived, provide a loader whose files arrive when the test decides:
-
-```ts
-import { Assets } from "arcadekit";
-import { Effect } from "effect";
-
-const arrive = new Map<string, (bytes: Uint8Array) => void>();
-export const slowLoader: Assets.LoaderShape = {
-  bytes: (url) =>
-    Effect.callback<Uint8Array, Assets.Failed>((resume) => {
-      arrive.set(url, (bytes) => resume(Effect.succeed(bytes)));
-    }),
-};
-
-/** A turn of the event loop, for what arrived to be decoded. */
-export const settle = Effect.promise(
-  () => new Promise((resolve) => setTimeout(resolve, 0))
-);
-```
-
-Provide it with `Effect.provide(Assets.layer(slowLoader))`. The test steps the app while the files are in flight, calls `arrive.get("/forest.png")?.(bytes)`, and yields `settle` before it inspects the game. Such a test waits in real time, so run it with `it.live`.
-
-## Record what is drawn
-
-Give a game drawn with [`@arcadekit/three`](drawing-with-three.md) a renderer that draws nothing and records the scenes it is asked to render:
-
-```ts sketch
-const renderer = Three.makeRecorder();
-const game =
-  yield * Test.make(Arcade).pipe(Effect.provide(Three.layer(renderer)));
-yield * game.step();
-renderer.rendered[0]?.scene.getObjectByName("game/Rocks");
-```
-
-Three.js builds scenes and meshes under Node as it does in a page. After a frame, a test inspects what was added to the scene. An instanced mesh is named after its system, so `scene.getObjectByName("game/Rocks")` finds it.
-
 ## Check a game against its replay
 
 Play a game in a test, replay its recording with `Replay.verify(recording, game)`, and assert that both end on the same hash. The replay catches a system that reads the clock or `Math.random`, at the first hash check after it does so. See [replays](replays.md).
 
 ## Read more
 
+- [Testing by hand](testing-by-hand.md): the frame stage run by hand, a stand-in of your own, and what a game drew.
 - [Testing several peers](testing-peers.md): a network in memory, and a check that a rewind runs a tick the same.
 - arcadekit's own tests, in [`packages/arcadekit/test`](../../../../../packages/arcadekit/test), play games through every part of the package. [`examples/page/src/page.test.ts`](../../../../../examples/page/src/page.test.ts) mounts the example page's two UIs in a document and plays the game through them.

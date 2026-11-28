@@ -27,19 +27,19 @@ const Moving = Query.all(Position, Velocity).pipe(
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity, entity) => {
+  (yield* Query.View(Moving)).each((position, velocity, entity) => {
     position.x += velocity.x * delta;
   });
 });
 ```
 
-A query is a value, defined once at module level. In a system, `yield*` gives you a view of it for the current tick. `Query.with(Player)` narrows a query to entities that also have a component, without passing its data to the loop. `Query.without(Frozen)` excludes entities that have a component.
+A query is a value, defined once at module level. In a system, `yield* Query.View(query)` gives you a view of it for the current tick. `Query.with(Player)` narrows a query to entities that also have a component, without passing its data to the loop. `Query.without(Frozen)` excludes entities that have a component.
 
 Both loops below work with every query, and visit entities in the same order: tables in the order they were created, and rows in ascending order.
 
 ## Choose how to loop
 
-`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default.
+`each` calls a function once per entity, with an accessor for each component whose fields read and write the columns. Use it by default. An accessor belongs to the loop and reads and writes the entity the loop is at, so use it inside the function and keep the entity's id instead. One kept past a spawn, a despawn, an add or a remove, which commands make when they are applied, throws when it is read or written.
 
 `eachChunk` passes the raw columns and a range of rows. It is three to four times faster than `each`. Use it for the few systems where speed matters.
 
@@ -58,7 +58,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).eachChunk((start, end, position, velocity) => {
+  (yield* Query.View(Moving)).eachChunk((start, end, position, velocity) => {
     for (let i = start; i < end; i++) {
       position.x[i] = position.x[i]! + velocity.x[i]! * delta;
     }
@@ -88,11 +88,13 @@ const OnFire = Query.all(Position, Burning).pipe(Query.writes(Burning));
 
 const Burn = System.tick("game/Burn", function* () {
   const { delta } = yield* Time;
-  (yield* OnFire).eachChunk((start, end, position, burning, entities) => {
-    for (let i = start; i < end; i++) {
-      burning.columns.seconds[burning.indexOf(entities[i]!)]! -= delta;
+  (yield* Query.View(OnFire)).eachChunk(
+    (start, end, position, burning, entities) => {
+      for (let i = start; i < end; i++) {
+        burning.columns.seconds[burning.indexOf(entities[i]!)]! -= delta;
+      }
     }
-  });
+  );
 });
 ```
 
@@ -114,7 +116,7 @@ const Scale = Component.define("game/Scale", { factor: Field.f32 });
 const Drawn = Query.all(Position, Query.maybe(Scale));
 
 const Draw = System.frame("game/Draw", function* () {
-  (yield* Drawn).eachChunk((start, end, position, scale) => {
+  (yield* Query.View(Drawn)).eachChunk((start, end, position, scale) => {
     if (scale === undefined) {
       for (let i = start; i < end; i++) {
         // drawn at its own size, from position.x[i]! and position.y[i]!
@@ -146,11 +148,11 @@ A query only reads its terms. `Query.writes(Position)` names the ones it writes,
 - Each loop counts a component it writes as changed in every table it visits, whether or not it assigns a value. `world.hash()`, `Timeline.capture` and `Timeline.rewind` work again only on what changed, so a query that names in `Query.writes` a component it doesn't write makes each of them cost more. One that only reads costs them nothing.
 - The compiler tells two components with the same fields apart by their names, which are part of their types. Above, `position.x` is writable and `velocity.x` is not, although both are `{ x, y }`.
 
-A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing.md#run-the-frame-stage-by-hand).
+A write forced past the compiler into the raw column of a term the query only reads, or into a relation's `target`, is seen by no change query, and no refusal undoes it. An app made with `App.make(game, { verifyFrames: true })` refuses it: `eachChunk` copies each column it hands out read-only, compares it when the loop returns, puts it back if it changed, and throws with the component and field it names. Use it in [tests](testing-by-hand.md#run-the-frame-stage-by-hand).
 
 ## Visit only what changed
 
-A **change query** visits only the entities that something happened to since the system last ran it. `Query.changed` visits the entities whose component was written, and `Query.added` those that gained it. `Query.removed` returns the ids of the entities that lost it.
+A **change query** visits only the entities that something happened to since the system last ran it. `Query.changed` visits the entities whose component was written, and `Query.added` those that gained it. `Query.Removed` returns the ids of the entities that lost it.
 
 ```ts
 import { Component, Field, Query, System } from "arcadekit";
@@ -163,11 +165,11 @@ const Sprite = Component.define("game/Sprite", { frame: Field.u16 });
 
 const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position));
-const Gone = Query.removed(Sprite);
+const Gone = Query.Removed(Sprite);
 
 const Track = System.tick("game/Track", function* () {
-  (yield* Born).each((sprite, entity) => {}); // added a Sprite since last run
-  (yield* Moved).each((position, sprite) => {}); // had its Position written since
+  (yield* Query.View(Born)).each((sprite, entity) => {}); // added a Sprite since last run
+  (yield* Query.View(Moved)).each((position, sprite) => {}); // had its Position written since
   for (const entity of (yield* Gone).read()) {
   } // lost its Sprite, or was despawned
 });
@@ -179,7 +181,7 @@ const Track = System.tick("game/Track", function* () {
 - The first run visits every matching entity, because to a query that never ran, everything is new. A system that builds something for each entity `Query.added(Sprite)` visits therefore also covers the entities that existed before it, or that came from a save.
 - An entity is visited once, however many times it was written, in the usual query order. An entity that has since lost the component, or been despawned, isn't visited.
 - With several components, or `changed` and `added` together, an entity is visited when any of them applies.
-- `Query.removed` reports each removal once, oldest first, starting from the first time a reader asks. The id of a despawned entity is no longer alive.
+- `Query.Removed` reports each removal once, oldest first, starting from the first time a reader asks. The id of a despawned entity is no longer alive.
 - When nothing changed, a visit costs under 100 ns, whatever the size of the world.
 
 Use a change query for data that changes occasionally. For a system that visits every entity every tick, use an ordinary query.
@@ -215,7 +217,7 @@ const Players = Query.all(Position).pipe(
 );
 
 const Wrap = System.tick("game/Wrap", function* () {
-  const [position, player] = (yield* Players).single();
+  const [position, player] = (yield* Query.View(Players)).single();
   if (position.x > 100) {
     position.x = 0;
   }
@@ -223,13 +225,13 @@ const Wrap = System.tick("game/Wrap", function* () {
 ```
 
 - It throws when the query matches no entity, or more than one, and the error names the query and how many it matched. A game that may have none checks `count()` first.
-- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own: read them in the system that asked, and ask again in the next.
+- Its accessors write as those of `each` do, and only what `Query.writes` names. They are the view's own, and read and write the entity until the world's entities change, when the system's commands are applied: read them in the system that asked, and ask again in the next. After the change, reading or writing one throws.
 - A change query throws, since it has no one entity.
 - A tag is not a term, since it has no data: `Query.all(Position, Player)` doesn't compile. Require it with `Query.with`, as above, or take it as `Query.maybe(Player)` to be told whether an entity has it.
 
 ## What a view has
 
-`yield*` on a query gives a view of it, and so does `yield* app.read(query)` outside the game, in a test or a tool:
+`yield* Query.View(query)` gives a view of a query, and so does `yield* app.read(Query.View(query))` outside the game, in a test or a tool:
 
 | Member | What it does |
 | --- | --- |
@@ -240,7 +242,7 @@ const Wrap = System.tick("game/Wrap", function* () {
 | `entities()` | Returns the ids, in the order a loop visits them. For a change query, it counts as a visit |
 | `pointingAt(relation, target)` | Narrows `each` and `eachChunk` to the entities that point at `target`. See [relations](relations.md#visit-the-entities-that-point-at-a-target) |
 
-`app.read` takes a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.removed`, because what they write and visit belongs to the game.
+`app.read` takes a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.Removed`, because what they write and visit belongs to the game.
 
 ## Read more
 

@@ -41,7 +41,6 @@ import {
   Seen,
   variants as appVariants,
   drawer,
-  drawn,
   measureEffect,
 } from "./app.ts";
 import {
@@ -99,7 +98,7 @@ const Sweep = Action.define(
   { error: Refused }
 );
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
-  (yield* Moving).each((pos, vel) => {
+  (yield* Query.View(Moving)).each((pos, vel) => {
     pos.x += vel.x * DT;
     pos.y += vel.y * DT;
   });
@@ -110,13 +109,13 @@ const sweep = Action.handler(Sweep, function* ({ refuse }) {
 
 // A handler that looks at every entity and writes none. Through a query
 // that says it writes them, its transaction copies the columns it is handed.
-const Scan = Action.define("bench/Scan", Schema.Struct({}));
+const Scan = Action.define("bench/Scan");
 const Written = Query.all(Position, Velocity).pipe(
   Query.writes(Position, Velocity)
 );
 const scanPlain = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* Written).each((pos, vel) => {
+  (yield* Query.View(Written)).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
@@ -124,7 +123,7 @@ const scanPlain = Action.handler(Scan, function* () {
 const Looked = Query.all(Position, Velocity);
 const scanReads = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* Looked).each((pos, vel) => {
+  (yield* Query.View(Looked)).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
@@ -153,7 +152,7 @@ const dispatching = (
   Effect.runSync(
     Effect.gen(function* () {
       const app = yield* dispatchable();
-      const target = (yield* app.read(Seen)).entities()[N >> 1]!;
+      const target = (yield* app.read(Query.View(Seen))).entities()[N >> 1]!;
       const dispatch = send(app, target);
       return yield* measureEffect(() => Effect.exit(dispatch()), runs, warmup);
     })
@@ -167,7 +166,7 @@ const rewinding = (back: boolean): number =>
   Effect.runSync(
     Effect.gen(function* () {
       const Movement = System.tick("Movement", function* () {
-        (yield* Moving).eachChunk((start, end, pos, vel) => {
+        (yield* Query.View(Moving)).eachChunk((start, end, pos, vel) => {
           for (let n = start; n < end; n++) {
             pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
           }
@@ -221,14 +220,14 @@ const rollingBack = (): number =>
       // What it drew, outside the app as a canvas is, so the loop is kept.
       const drawn = { rows: 0 };
       const Draw = System.frame("Draw", function* () {
-        (yield* Moved).eachChunk((start, end) => {
+        (yield* Query.View(Moved)).eachChunk((start, end) => {
           drawn.rows += end - start;
         });
       });
       const app = yield* App.make(
         App.define({ plugins: [Populated], systems: [Write, Draw] })
       );
-      ten = (yield* app.read(Seen)).entities().slice(0, 10);
+      ten = (yield* app.read(Query.View(Seen))).entities().slice(0, 10);
       yield* app.tick(DT);
       yield* app.frame(0);
       const moment = yield* Timeline.capture(app);
@@ -254,9 +253,7 @@ const drawingRaw = (verify: boolean): number =>
         App.define({ plugins: [Populated], systems: [drawer(0, true)] }),
         { verifyFrames: verify }
       );
-      const ms = yield* measureEffect(() => app.frame(0.5));
-      void drawn.sum;
-      return ms;
+      return yield* measureEffect(() => app.frame(0.5));
     })
   );
 
@@ -269,7 +266,7 @@ const scanned = (handler: typeof scanPlain): number =>
         { hashEvery: 0 }
       );
       return yield* measureEffect(
-        () => Effect.exit(app.dispatch(Scan, {})),
+        () => Effect.exit(app.dispatch(Scan)),
         300,
         80
       );
@@ -277,7 +274,7 @@ const scanned = (handler: typeof scanPlain): number =>
   );
 
 const Movement = System.tick("Movement", function* () {
-  const moving = yield* Moving;
+  const moving = yield* Query.View(Moving);
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
     pos.x += vel.x * delta;
@@ -286,7 +283,7 @@ const Movement = System.tick("Movement", function* () {
 });
 
 const MovementRaw = System.tick("MovementRaw", function* () {
-  const moving = yield* Moving;
+  const moving = yield* Query.View(Moving);
   const { delta } = yield* Time;
   moving.eachChunk((start, end, pos, vel) => {
     const px = pos.x;
@@ -332,7 +329,7 @@ const pairing = (): number => {
   }
   const reds = world.view(Reds);
   const blues = world.view(Blues);
-  const commands = { despawn: () => {} };
+  const commands = { despawn: () => {}, despawning: () => false };
   const keep = (): Overlap.Despawn => "neither";
   return measure(() => {
     Overlap.pairs(commands, reds, blues, keep);
