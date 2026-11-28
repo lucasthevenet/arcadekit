@@ -36,6 +36,7 @@ import {
   Exit,
   Layer,
   Option,
+  Result,
   Schema,
 } from "effect";
 import type { Scope } from "effect";
@@ -269,6 +270,10 @@ export const decode = (bytes: Uint8Array): Exit.Exit<Save, LoadRefused> => {
  * slot. A page keeps them in its local storage, with `Browser.saves(name)`,
  * and a test in memory, with `Save.makeMemory()`.
  *
+ * A store of the game's own fails with `Save.StoreFailed` when it can't do
+ * what it is asked, as `Browser.saves` does for a page whose storage is full.
+ * What it throws is a defect.
+ *
  * @category Services
  */
 export interface StoreShape {
@@ -424,6 +429,9 @@ export const Asked = Event.define(
  *   an error with what went wrong, and the game goes on. The slot's status,
  *   which `yield*` of `Save.slot(name)` returns, says so to the game's UI
  *   until a later ask keeps it.
+ * - A store that throws, or dies, in place of failing with `Save.StoreFailed`
+ *   has a bug, and its defect isn't caught: the tick or the dispatch that
+ *   asked dies with it, and so does `Driver.run`.
  *
  * @category Running
  */
@@ -445,12 +453,9 @@ export const autosave = (
       if (slots.length === 0) {
         return;
       }
-      const taken = yield* Effect.exit(make(app));
-      if (Exit.isFailure(taken)) {
-        const error = errorOf(
-          taken.cause,
-          (message) => new Refused({ message })
-        );
+      const taken = yield* Effect.result(make(app));
+      if (Result.isFailure(taken)) {
+        const error = taken.failure;
         for (const slot of slots) {
           autosaves.slots.set(slot, SlotStatus.Failed({ error }));
         }
@@ -458,17 +463,14 @@ export const autosave = (
           `Save.autosave could not take the save the game asked for in ${slots.map((slot) => `"${slot}"`).join(", ")}: ${said(error)}`
         );
       }
-      const bytes = encode(taken.value);
+      const bytes = encode(taken.success);
       for (const slot of slots) {
-        const kept = yield* Effect.exit(store.set(slot, bytes));
-        if (Exit.isSuccess(kept)) {
+        const kept = yield* Effect.result(store.set(slot, bytes));
+        if (Result.isSuccess(kept)) {
           autosaves.slots.set(slot, SAVED);
           continue;
         }
-        const error = errorOf(
-          kept.cause,
-          (message) => new StoreFailed({ slot, message })
-        );
+        const error = kept.failure;
         autosaves.slots.set(slot, SlotStatus.Failed({ error }));
         yield* Effect.logError(
           `Save.autosave could not keep the save the game asked for in "${slot}": ${said(error)}`
@@ -486,13 +488,6 @@ export const autosave = (
       })
     );
   });
-
-// A store of the game's own may throw where it should fail, and its slot
-// isn't kept either way.
-const errorOf = <E>(cause: Cause.Cause<E>, died: (message: string) => E): E =>
-  Option.getOrElse(Cause.findErrorOption(cause), () =>
-    died(said(Cause.squash(cause)))
-  );
 
 /**
  * What `Save.autosave` did with a slot of an app, which `yield*` of

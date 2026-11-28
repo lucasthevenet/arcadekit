@@ -140,6 +140,7 @@ The rules ask for a save with the event `Save.Asked`, which names a slot. `Save.
 - The save is of the game as the tick that asked left it, and is written before the next tick runs. A handler that `app.dispatch` runs can ask too, and its save is taken once the dispatch has run.
 - `Timer.every` keeps the interval in the world, so a replay asks at the same ticks, and a game loaded from the save goes on counting from where it was.
 - A save that can't be taken, or a slot the store can't keep, is logged as an error, and the game goes on. The next ask tries again, and [the slot's status](#tell-the-player-whether-the-game-is-saved) says so meanwhile.
+- A store of the game's own fails with `Save.StoreFailed` when it can't keep a slot. One that throws in its place has a bug, which isn't caught: the tick that asked dies with it, and so does `Driver.run`.
 - A game that nothing autosaves, as a replay or a server, asks and nothing happens.
 - It keeps saves for as long as the scope it runs in lasts: with `ready`, for as long as the game runs.
 
