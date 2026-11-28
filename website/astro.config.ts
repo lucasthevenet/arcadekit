@@ -78,6 +78,8 @@ export default defineConfig({
       // The landing page's file. The other pages' files are elsewhere in the repository, and
       // each names its own (loader.ts).
       editLink: { baseUrl: `${REPO_URL}/edit/${BRANCH}/${WEBSITE_DIR}/` },
+      // The site's own 404 page, src/pages/404.astro.
+      disable404Route: true,
       // Learn, Guides and Reference, each with a sidebar of its own (sidebar.ts).
       plugins: [starlightSidebarTopics(sidebarTopics(pages))],
       // The faces, self-hosted, then the site's look over Starlight's (styles/custom.css).
