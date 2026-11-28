@@ -411,12 +411,9 @@ const expectDrawn = (
     entities.map((entity) => placeOf(world, entity, transform))
   );
   for (let i = 0; i < wanted.length; i++) {
-    for (let k = 0; k < 16; k++) {
-      expect(drawnRows[i]![k], `instance ${i}, element ${k}`).toBeCloseTo(
-        wanted[i]![k]!,
-        5
-      );
-    }
+    expect(drawnRows[i], `instance ${i}`).toEqual(
+      wanted[i]!.map((element) => expect.closeTo(element, 5))
+    );
   }
 };
 
