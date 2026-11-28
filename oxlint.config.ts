@@ -305,6 +305,12 @@ export default defineConfig({
       rules: { "arcadekit/no-run-in-tests": "error" },
     },
     {
+      // A test asserts the exit that Effect.exit gives it. Dropped, a
+      // refusal of the wrong kind or a defect would pass.
+      files: ["packages/*/test/**", "examples/**/*.test.ts"],
+      rules: { "arcadekit/no-dropped-exit": "error" },
+    },
+    {
       // The code of the tick keeps what it changes in the world, except in
       // the tests, which record what systems did in arrays outside them.
       files: ["packages/**", "examples/**"],
