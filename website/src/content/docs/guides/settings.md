@@ -62,18 +62,22 @@ import { Action, Field, Setting, Singleton, System } from "arcadekit";
 import { Schema } from "effect";
 
 const Hard = Setting.define("game/Hard", Schema.Boolean, false);
-const Mode = Singleton.define("game/Mode", { hard: Field.u8 }, { hard: 0 });
+const Mode = Singleton.define(
+  "game/Mode",
+  { hard: Field.bool },
+  { hard: false }
+);
 const SetHard = Action.define("game/SetHard", {
   payload: Schema.Struct({ hard: Schema.Boolean }),
 });
 
 const setHard = Action.handler(SetHard, function* ({ hard }) {
-  (yield* Singleton.Write(Mode)).hard = hard ? 1 : 0;
+  (yield* Singleton.Write(Mode)).hard = hard;
 });
 // Before each tick: when the setting and the game differ, the game is told.
 const FollowHard = System.input("game/FollowHard", function* () {
   const hard = yield* Setting.get(Hard);
-  if (((yield* Singleton.Read(Mode)).hard === 1) !== hard) {
+  if ((yield* Singleton.Read(Mode)).hard !== hard) {
     (yield* Action.Actions).enqueue(SetHard, { hard });
   }
 });

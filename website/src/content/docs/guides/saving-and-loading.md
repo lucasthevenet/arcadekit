@@ -114,11 +114,15 @@ import {
 import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
-const Level = Singleton.define("game/Level", { won: Field.u8 }, { won: 0 });
+const Level = Singleton.define(
+  "game/Level",
+  { won: Field.bool },
+  { won: false }
+);
 
 // The rules say when: once the level is won, and every minute of play.
 const LevelEnd = System.tick("game/LevelEnd", function* () {
-  if ((yield* Singleton.Read(Level)).won === 1) {
+  if ((yield* Singleton.Read(Level)).won) {
     (yield* Event.Emitter(Save.Asked)).emit({ slot: "level" });
   }
 });

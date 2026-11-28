@@ -28,8 +28,8 @@ const Gun = Component.define("game/Gun", { cooldown: Timer.field });
 const Bullet = Component.define("game/Bullet", { dx: Field.f32 });
 const Trigger = Singleton.define(
   "game/Trigger",
-  { held: Field.u8 },
-  { held: 0 }
+  { held: Field.bool },
+  { held: false }
 );
 
 const Guns = Query.all(Gun).pipe(Query.writes(Gun));
@@ -40,7 +40,7 @@ const Fire = System.tick("game/Fire", function* () {
   const commands = yield* Commands.spawns(Bullet);
   (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = Timer.tick(gun.cooldown, delta);
-    if (trigger.held === 1 && Timer.ready(gun.cooldown)) {
+    if (trigger.held && Timer.ready(gun.cooldown)) {
       gun.cooldown = 0.2;
       commands.spawn(Bullet.of({ dx: 8 }));
     }
@@ -51,7 +51,7 @@ const Hold = Action.define("game/Hold", {
   payload: Schema.Struct({ held: Schema.Boolean }),
 });
 const hold = Action.handler(Hold, function* ({ held }) {
-  (yield* Singleton.Write(Trigger)).held = held ? 1 : 0;
+  (yield* Singleton.Write(Trigger)).held = held;
 });
 
 export const Rules = Plugin.make("game/Rules", {
