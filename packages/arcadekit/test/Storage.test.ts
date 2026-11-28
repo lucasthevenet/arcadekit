@@ -8,7 +8,16 @@ import {
   entityOf,
   idOf,
 } from "../src/ecs/component.ts";
-import type { ComponentDef, Entity, RequiredOf } from "../src/ecs/component.ts";
+import type {
+  ColumnsOf,
+  ComponentDef,
+  Entity,
+  FieldDef,
+  ReadonlyColumn,
+  RequiredOf,
+  ValueOf,
+  WritableColumn,
+} from "../src/ecs/component.ts";
 import type { QuerySpec, Terms } from "../src/ecs/query.ts";
 import { World } from "../src/ecs/world.ts";
 import {
@@ -426,8 +435,46 @@ describe("required components", () => {
     // Without exactOptionalPropertyTypes, an optional property is also
     // undefined: a component that requires nothing still names none.
     expectTypeOf<
-      RequiredOf<{ readonly _requires?: readonly [never] | undefined }>
+      RequiredOf<{
+        readonly [K in keyof typeof Health]?: (typeof Health)[K] | undefined;
+      }>
     >().toEqualTypeOf<never>();
+  });
+
+  it("show a game only the members that hold a value, and keep the types of the others", () => {
+    expectTypeOf<Exclude<keyof typeof Rock, symbol>>().toEqualTypeOf<
+      | "id"
+      | "name"
+      | "schema"
+      | "fields"
+      | "kinds"
+      | "codecs"
+      | "bools"
+      | "storage"
+      | "isTag"
+      | "single"
+      | "relation"
+      | "initial"
+      | "requires"
+      | "of"
+    >();
+    expectTypeOf<Exclude<keyof typeof Field.f32, symbol>>().toEqualTypeOf<
+      "kind" | "codec" | "initial" | "bool"
+    >();
+    expectTypeOf<ValueOf<typeof Rock.schema>>().toEqualTypeOf<{
+      hp: number;
+    }>();
+    expectTypeOf<ColumnsOf<typeof Target.schema>>().toEqualTypeOf<{
+      readonly entity: WritableColumn<Entity.Ref>;
+    }>();
+    const Leash = Component.relation("st/Leash", { onTargetDespawn: "remove" });
+    expectTypeOf<ColumnsOf<typeof Leash.schema>["target"]>().toEqualTypeOf<
+      ReadonlyColumn<Entity>
+    >();
+    expectTypeOf(Field.u8).not.toExtend<FieldDef<number, Float32Array>>();
+    expectTypeOf(Rock).not.toExtend<
+      ComponentDef<typeof Rock.schema, "table", "st/Rock", "st/Body">
+    >();
   });
 
   it("fill what a spawn leaves out: zeros, the initial value, and the value required", () => {

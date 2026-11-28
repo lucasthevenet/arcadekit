@@ -160,6 +160,8 @@ export interface RefCodec<T> {
   decode(data: unknown): T;
 }
 
+declare const ColumnType: unique symbol;
+
 /**
  * A field type, as `Field` gives them: how one field of a component is
  * stored, saved and hashed.
@@ -186,10 +188,8 @@ export interface FieldDef<T, C> {
    * any other number, and written as 0 or 1. Undefined on any other.
    */
   readonly bool?: true;
-  /** Never set: it carries `T` in the type. */
-  readonly _T?: T;
-  /** Never set: it carries `C` in the type. */
-  readonly _C?: C;
+  /** Holds no value. It carries `C` in the type. */
+  readonly [ColumnType]?: C;
 }
 
 const field = <T, C>(kind: FieldKind): FieldDef<T, C> => ({ kind });
@@ -471,6 +471,8 @@ export interface Accessor {
  */
 export type AccessorMode = "writes" | "notes" | "reads" | "frozen";
 
+declare const Requires: unique symbol;
+
 /**
  * A component's definition, as `Component.define`, `Component.tag` and
  * `Component.relation` return it. A query names it as a term, and
@@ -544,7 +546,7 @@ export interface ComponentDef<
    * Holds no value. It carries the names of `requires`, in a tuple so that a
    * component that requires nothing has none, whatever the compiler's options.
    */
-  readonly _requires?: readonly [R];
+  readonly [Requires]?: readonly [R];
   /**
    * Pairs this component with a value, for `spawn` and `add`. It is a method,
    * so that a component of any fields is a `ComponentDef`.
@@ -589,7 +591,7 @@ export const isComponentDef = (u: ComponentInput): u is ComponentDef =>
  */
 export type RequiredOf<I> = I extends { readonly def: infer D }
   ? RequiredOf<D>
-  : I extends { readonly _requires?: readonly [infer R extends string] }
+  : I extends { readonly [Requires]?: readonly [infer R extends string] }
     ? R
     : never;
 

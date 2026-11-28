@@ -512,6 +512,31 @@ const noOutsideState: Rule = {
   }),
 };
 
+const noMemberOnlyForAType: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "A type carries a parameter that no member holds under a key its module declares and doesn't export, not under an optional member named with an underscore.",
+    },
+  },
+  create: (context) => ({
+    TSPropertySignature: (node) => {
+      if (
+        node.optional &&
+        !node.computed &&
+        node.key.type === "Identifier" &&
+        node.key.name.startsWith("_")
+      ) {
+        context.report({
+          node: node.key,
+          message: `${node.key.name} holds no value and only carries a type, and an editor offers it to a game and the reference page shows it. Key it by a symbol the module declares and doesn't export, declare const Types: unique symbol, as Plugin.Plugin keeps its types under [Types].`,
+        });
+      }
+    },
+  }),
+};
+
 /** The types of an id: what only src/ecs/component.ts converts a number to, or an id from. */
 const idTypes = new Set(["Entity", "Spawned", "EntityColumn"]);
 
@@ -1493,6 +1518,7 @@ export default {
     "no-run-in-tests": noRunInTests,
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,
+    "no-member-only-for-a-type": noMemberOnlyForAType,
     "id-casts": idCasts,
     "no-unused-internal": noUnusedInternal,
     names,

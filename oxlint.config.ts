@@ -292,6 +292,7 @@ export default defineConfig({
         "arcadekit/no-page": "error",
         "arcadekit/no-code-from-text": "error",
         "arcadekit/top-level-classes": "error",
+        "arcadekit/no-member-only-for-a-type": "error",
         "arcadekit/no-unused-internal": "error",
         "arcadekit/names": "error",
       },

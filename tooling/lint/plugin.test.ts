@@ -217,6 +217,37 @@ new RuleTester().run("id-casts", plugin.rules["id-casts"], {
     }),
 });
 
+new RuleTester().run(
+  "no-member-only-for-a-type",
+  plugin.rules["no-member-only-for-a-type"],
+  {
+    valid: [
+      {
+        name: "a carrier under a symbol, a brand, and an optional member that holds a value",
+        code: `declare const Types: unique symbol;
+interface Field<T, C> { readonly kind: string; readonly initial?: T; readonly [Types]?: C }
+interface Term { readonly _reads: true }
+class World { _watched = 0 }`,
+        filename: "field.ts",
+      },
+    ],
+    invalid: [
+      "interface Field<T, C> { readonly _C?: C }",
+      "type Component<R> = { readonly _requires?: readonly [R] }",
+    ].map((code) => ({
+      name: code,
+      code,
+      filename: "field.ts",
+      errors: [
+        {
+          message:
+            /^_\w+ holds no value and only carries a type.* as Plugin\.Plugin keeps its types under \[Types\]\.$/u,
+        },
+      ],
+    })),
+  }
+);
+
 new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
   valid: [
     {
