@@ -19,6 +19,7 @@ import type { Effect } from "effect";
 import { Component } from "./ecs/component.ts";
 import type {
   ComponentDef,
+  FieldDef,
   Schema,
   SingletonSpec,
   ValueOf,
@@ -133,8 +134,20 @@ export const Write = <S extends Schema>(
   );
 
 /**
- * Defines a singleton from its name, its fields, and its value in a world that
- * hasn't written it.
+ * Defines a singleton from its name, its fields, and `initial`, its value in a
+ * world that hasn't written it.
+ *
+ *   const Score = Singleton.define("game/Score", { points: Field.u32 }, { points: 0 })
+ *
+ * A singleton whose every field holds an initial of its own, as a
+ * `Field.json`, `Field.schema` or `Field.ref` field does, may leave `initial`
+ * out, and starts at its fields' initials:
+ *
+ *   const Seen = Singleton.define("game/Seen", { names: Field.json<readonly string[]>([]) })
+ *
+ * A number field, a `Field.bool`, a `Field.entity` and a `Field.transient`
+ * hold none, and neither does a `Field.json` whose type takes `undefined`.
+ * Leaving `initial` out of a singleton that has one of them doesn't compile.
  *
  * **Details**
  *
@@ -156,8 +169,40 @@ export const Write = <S extends Schema>(
 export const define = <S extends Schema>(
   name: string,
   schema: S,
-  initial: ValueOf<S>
+  ...initial: InitialArgs<S>
 ): Singleton<S> => {
-  const spec = Component.singleton(name, schema, initial);
+  const spec = Component.singleton(
+    name,
+    schema,
+    initial[0] ??
+      (Object.fromEntries(
+        Object.entries(schema).map(([key, field]) => [key, field.initial])
+      ) as ValueOf<S>)
+  );
   return new Singleton(spec.component, spec.initial);
 };
+
+/**
+ * Whether a field holds an initial of its own, as a `json`, `ref` or `schema`
+ * field does: its column is an array, and its value is never undefined. A
+ * `transient` field's value can be undefined, and so can a `json` field's whose
+ * type takes it. The type can't tell those two apart, so neither counts.
+ */
+type Carries<F> =
+  F extends FieldDef<infer T, infer C>
+    ? C extends readonly unknown[]
+      ? undefined extends T
+        ? false
+        : true
+      : false
+    : false;
+
+/**
+ * The `initial` that `define` takes: one that may be left out when every field
+ * holds an initial of its own.
+ */
+type InitialArgs<S extends Schema> = [
+  { [K in keyof S]: Carries<S[K]> extends true ? never : K }[keyof S],
+] extends [never]
+  ? [initial?: ValueOf<S>]
+  : [initial: ValueOf<S>];

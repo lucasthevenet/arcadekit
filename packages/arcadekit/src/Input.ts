@@ -1102,20 +1102,16 @@ export const settingsOf = <P extends Plugin.Any>(
 // alike. It is written only when something changes, so a game nobody
 // touches hashes as it did, and always with a new object: a refused action
 // puts the old one back.
-const Held = Singleton.define(
-  "arcadekit/Input",
-  {
-    /**
-     * Every button that has been down, a device's or a control's, and the
-     * ticks it last went down and up in: a frame after several ticks reads
-     * them.
-     */
-    buttons: Field.json<Buttons>({}),
-    /** Every axis not at 0, a device's or a control's. */
-    axes: Field.json<Axes>({}),
-  },
-  { buttons: {}, axes: {} }
-);
+const Held = Singleton.define("arcadekit/Input", {
+  /**
+   * Every button that has been down, a device's or a control's, and the
+   * ticks it last went down and up in: a frame after several ticks reads
+   * them.
+   */
+  buttons: Field.json<Buttons>({}),
+  /** Every axis not at 0, a device's or a control's. */
+  axes: Field.json<Axes>({}),
+});
 
 const ReportSchema = Schema.Struct({
   /** Buttons that went up. */

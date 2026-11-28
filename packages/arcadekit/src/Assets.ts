@@ -761,11 +761,9 @@ export function during<E, R>(
  * It is the world's, so a save, a rewind and the hash hold it, and a handover
  * is applied once however many peers issue it.
  */
-const Handed = Singleton.define(
-  "arcadekit/Assets.Handed",
-  { by: Field.json<Readonly<Record<string, Key | null>>>({}) },
-  { by: {} }
-);
+const Handed = Singleton.define("arcadekit/Assets.Handed", {
+  by: Field.json<Readonly<Record<string, Key | null>>>({}),
+});
 
 /**
  * The payload of a handover: which key's bundle, and what the rules are
