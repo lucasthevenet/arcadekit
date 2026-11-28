@@ -355,10 +355,14 @@ export interface Any<E = unknown> {
     from?: string
   ) => Effect.Effect<unknown, unknown>;
   /**
-   * Like `enqueue`, for actions that arrive as data. Where it is run
-   * decides whether the action is logged, as for `enqueue`. An unknown name
-   * or an invalid payload becomes an `Action.Rejected` event when the action
-   * is applied.
+   * Like `enqueue`, for actions that arrive as data, with the payload in its
+   * JSON form. Where it is run decides whether the action is logged, as for
+   * `enqueue`. An unknown name or a payload the action's schema doesn't take
+   * becomes an `Action.Rejected` event when the action is applied.
+   *
+   * From outside the simulation, it fails with `Action.InvalidPayload`, and
+   * queues nothing, for a payload that is no JSON value, such as none at
+   * all. The JSON form of no payload is `null`: `app.enqueueByName(name, null)`.
    *
    * `from` names the issuer, for code that brings actions in on someone
    * else's behalf, such as a server for its clients. The handler receives it,
@@ -370,7 +374,7 @@ export interface Any<E = unknown> {
     name: string,
     payload: unknown,
     from?: string
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, Action.InvalidPayload>;
   /**
    * Every action that entered the game from outside, in arrival order, with
    * hash checks of the world's hash among them. It holds every dispatched
@@ -548,7 +552,7 @@ export type Steered<E = never, HU = never> = Omit<
   readonly enqueueByName: (
     name: string,
     payload: unknown
-  ) => Effect.Effect<void>;
+  ) => Effect.Effect<void, Action.InvalidPayload>;
 };
 
 /**

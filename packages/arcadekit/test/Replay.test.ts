@@ -357,7 +357,7 @@ describe("hash checks", () => {
             (app) => Effect.exit(app.dispatchByName("rp/Drop", { value: 1 })),
             (app) =>
               Effect.andThen(
-                app.enqueueByName("rp/Drop", { value: 1 }),
+                Effect.orDie(app.enqueueByName("rp/Drop", { value: 1 })),
                 app.tick(1)
               ),
             (app) => Effect.exit(app.dispatchByName("rp/Take", { coin: 4000 })),
@@ -1974,21 +1974,46 @@ describe("how a recorded game began", () => {
       })
   );
 
-  it.effect("can't be written with a payload that has no JSON form", () =>
-    withApp(game({ seed: 3 }), (app) =>
-      Effect.gen(function* () {
-        yield* app.enqueueByName("rp/Nothing", { n: 1n });
-        yield* app.tick(1 / 60);
-        const recording = yield* Replay.record(app);
-        const written = yield* Effect.exit(Replay.encode(recording));
-        assert(Exit.isFailure(written));
-        expect(Cause.squash(written.cause)).toMatchObject({
-          _tag: "ReplayInvalid",
-          problem: "no JSON form",
-        });
-        expect(Cause.squash(written.cause)).toBeInstanceOf(Replay.Invalid);
-      })
-    )
+  it.effect(
+    "can't be written or played with a payload that has no JSON form",
+    () =>
+      withApp(game({ seed: 3 }), (app) =>
+        Effect.gen(function* () {
+          // The app refuses such a payload where it is enqueued, so only a log
+          // written by hand holds one.
+          const invalid = Action.InvalidPayload.make({
+            action: "rp/Nothing",
+            message: "Expected JSON value",
+          });
+          expect(
+            yield* Effect.exit(app.enqueueByName("rp/Nothing", { n: 1n }))
+          ).toEqual(Exit.fail(invalid));
+          yield* app.tick(1 / 60);
+          const recording = yield* Replay.record(app);
+          const handMade: Replay.Recording = {
+            ...recording,
+            log: [
+              { tick: 0, name: "rp/Nothing", payload: { n: 1n }, queued: true },
+              ...recording.log,
+            ],
+          };
+          const written = yield* Effect.exit(Replay.encode(handMade));
+          assert(Exit.isFailure(written));
+          expect(Cause.squash(written.cause)).toMatchObject({
+            _tag: "ReplayInvalid",
+            problem: "no JSON form",
+          });
+          expect(Cause.squash(written.cause)).toBeInstanceOf(Replay.Invalid);
+          // The payload of the entry put in by hand, and no other part.
+          expect(Cause.squash(written.cause)).toMatchObject({
+            message: expect.stringContaining('at ["log"][0]["payload"]'),
+          });
+          // Played, it stops at that entry, which the app refuses again.
+          const stopped = yield* stoppedBy(Replay.verify(handMade, coinGame()));
+          expect(stopped.index).toBe(0);
+          expect(stopped.reason).toEqual(invalid);
+        })
+      )
   );
 
   it.effect("is checked when a recording is read from bytes", () =>

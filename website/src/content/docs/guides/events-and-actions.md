@@ -173,6 +173,8 @@ Input that arrives as JSON goes through `app.dispatchByName(name, json)` or `app
 
 Both accept the issuer as a third argument, for a program that relays actions on someone else's behalf, such as a server for its clients: `app.enqueueByName(name, json, client)`. Don't pass it on an app in a session, where each peer's actions carry that peer's own name.
 
+The JSON form of no payload is `null`: `app.enqueueByName("duel/Pass", null)`. A payload that is no JSON value, such as none at all, is refused where `enqueueByName` is called. It fails with `Action.InvalidPayload`, as `enqueue` does, and nothing is queued, logged or sent to the other peers.
+
 `app.actionLog` holds every action from outside the simulation, in JSON form, with hash checks of the world's hash among them. `Replay.record(app)` gives the log with how long each tick was. `Replay.encode` and `Replay.decode` convert that recording to bytes and back. See [replays](replays.md).
 
 ## Read more

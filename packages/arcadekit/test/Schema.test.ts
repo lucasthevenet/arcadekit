@@ -407,6 +407,45 @@ describe("actions with a schema", () => {
       })
   );
 
+  it.effect(
+    "enqueued by name with no payload, are refused at once, since the JSON form of none is null",
+    () =>
+      withApp(game, ({ app }) =>
+        Effect.gen(function* () {
+          resets.length = 0;
+          // As typed in the browser's console: no payload at all.
+          const none = yield* Effect.exit(
+            app.enqueueByName("Reset", undefined)
+          );
+          yield* app.enqueueByName("Reset", null);
+          yield* app.tick(1);
+          // Neither queued nor logged: only the one with a JSON form.
+          expect(
+            moves(app.actionLog).map((entry) => [
+              entry.name,
+              entry.payload,
+              entry.refused,
+            ])
+          ).toEqual([["Reset", null, undefined]]);
+          expect(resets).toEqual([undefined]);
+          expect(none).toEqual(
+            Exit.fail(
+              Action.InvalidPayload.make({
+                action: "Reset",
+                message: "Expected JSON value",
+              })
+            )
+          );
+          // So the game can still be written down.
+          expect(
+            Exit.isSuccess(
+              yield* Effect.exit(Replay.encode(yield* Replay.record(app)))
+            )
+          ).toBe(true);
+        })
+      )
+  );
+
   it("check entity ids for shape", () => {
     const ok = Schema.decodeUnknownExit(EntityId);
     expect(Exit.isSuccess(ok(0))).toBe(true);

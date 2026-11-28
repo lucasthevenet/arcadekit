@@ -505,9 +505,7 @@ const assemble = <
           )
         ),
       enqueueByName: (name, payload, from) =>
-        Effect.sync(() => {
-          inbox.enqueueByName(name, payload, from);
-        }),
+        Effect.suspend(() => inbox.enqueueByName(name, payload, from)),
     };
     hold(app, parts);
     const take: Built<TickError<S, P>>["take"] = (issued) => {
