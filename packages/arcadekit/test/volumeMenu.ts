@@ -30,7 +30,7 @@ export const Settings = Singleton.define(
 export const Choose = Action.define("vm/Choose", {
   payload: Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean }),
 });
-export const Catch = Action.define("vm/Catch", { payload: Schema.Struct({}) });
+export const Catch = Action.define("vm/Catch");
 const Caught = Event.define("vm/Caught");
 
 const Rules = Plugin.make("vm/Rules", {

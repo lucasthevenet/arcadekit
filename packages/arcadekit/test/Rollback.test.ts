@@ -390,6 +390,7 @@ describe("a rollback session", () => {
           "rb/Rang",
           Schema.Struct({ by: Schema.String })
         );
+        // oxlint-disable-next-line arcadekit/no-empty-payload -- the peer's message, written by hand, holds its payload as {}.
         const Ring = Action.define("rb/Ring", { payload: Schema.Struct({}) });
         const ring = Action.handler(Ring, function* (_, { from }) {
           (yield* Event.Emitter(Rang)).emit({ by: from ?? "" });
@@ -724,6 +725,7 @@ describe("a rollback session", () => {
           { on: Field.i32 },
           { on: 0 }
         );
+        // oxlint-disable-next-line arcadekit/no-empty-payload -- the peer's messages, written by hand, hold its payload as {}.
         const Halt = Action.define("rb/Halt", { payload: Schema.Struct({}) });
         const halt = Action.handler(Halt, function* () {
           (yield* Singleton.Write(Halted)).on = 1;

@@ -423,7 +423,12 @@ export default defineConfig({
     {
       // An action or an event with no payload is defined with no schema, as
       // a game defines one.
-      files: ["packages/*/src/**", "packages/*/bench/**", "examples/**"],
+      files: [
+        "packages/*/src/**",
+        "packages/*/test/**",
+        "packages/*/bench/**",
+        "examples/**",
+      ],
       rules: { "arcadekit/no-empty-payload": "error" },
     },
   ],

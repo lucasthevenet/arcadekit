@@ -32,6 +32,7 @@ const Hud = View.define("vw/Hud", { gold: 0, coins: 0 });
 const Menu = View.define("vw/Menu", { phase: "title" as "title" | "playing" });
 class TooPoor extends Schema.TaggedError<TooPoor>()("TooPoor", {}) {}
 // What it may ask for.
+// oxlint-disable-next-line arcadekit/no-empty-payload -- the log the test expects holds its payload as {}.
 const Start = Action.define("vw/Start", { payload: Schema.Struct({}) });
 const Buy = Action.define("vw/Buy", {
   payload: Schema.Struct({ price: Schema.Int }),
@@ -145,7 +146,7 @@ const playWithUi = Effect.fnUntraced(function* (
 });
 
 // What the game above has no handler for.
-const Unknown = Action.define("vw/Unknown", { payload: Schema.Struct({}) });
+const Unknown = Action.define("vw/Unknown");
 
 const isAction = (entry: Action.LogEntry): entry is Action.Logged =>
   !Action.isHashCheck(entry);
@@ -290,7 +291,7 @@ describe("a view", () => {
         const Find = Action.define("vw/Find", {
           payload: Schema.Struct({ value: Schema.Int }),
         });
-        const Lose = Action.define("vw/Lose", { payload: Schema.Struct({}) });
+        const Lose = Action.define("vw/Lose");
         const Chance = Plugin.make("vw/Chance", {
           handlers: [
             Action.handler(Find, function* ({ value }) {
@@ -319,7 +320,7 @@ describe("a view", () => {
         a.stop();
         // Stopping twice is stopping once.
         a.stop();
-        yield* app.dispatch(Lose, {});
+        yield* app.dispatch(Lose);
         yield* app.frame();
         expect(a.heard.length).toBe(1);
         expect(b.heard).toEqual([
@@ -456,9 +457,7 @@ describe("a view", () => {
     () =>
       Effect.gen(function* () {
         let bodies = 0;
-        const Quit = Action.define("vw/QuitWhen", {
-          payload: Schema.Struct({}),
-        });
+        const Quit = Action.define("vw/QuitWhen");
         const Shown = View.publish(
           Menu,
           {
@@ -499,7 +498,7 @@ describe("a view", () => {
         yield* app.frame();
         yield* app.frame();
         expect(bodies).toBe(2);
-        yield* app.dispatch(Quit, {});
+        yield* app.dispatch(Quit);
         yield* app.tick(1);
         yield* app.frame();
         expect(bodies).toBe(3);
@@ -697,6 +696,7 @@ describe("a view", () => {
       Effect.gen(function* () {
         let bodies = 0;
         const Quit = Action.define("vw/QuitWhenReset", {
+          // oxlint-disable-next-line arcadekit/no-empty-payload -- it is dispatched with {} in one loop with vw/Start, which keeps {}.
           payload: Schema.Struct({}),
         });
         const Shown = View.publish(
@@ -781,6 +781,7 @@ describe("a view", () => {
     "is put back to its first value while its system does not run, when the system says so",
     () =>
       Effect.gen(function* () {
+        // oxlint-disable-next-line arcadekit/no-empty-payload -- it is dispatched with {} in one step with vw/Start, which keeps {}.
         const Quit = Action.define("vw/Quit", { payload: Schema.Struct({}) });
         const Shown = View.publish(Hud, function* () {
           return { gold: (yield* Singleton.Read(Purse)).gold, coins: 0 };
@@ -1099,7 +1100,7 @@ describe("what the UI sends", () => {
         yield* app.frame();
         expect(ui.get(Menu)).toEqual({ phase: "playing" });
         // @ts-expect-error the game has no handler for vw/Unknown
-        ui.send(Unknown, {});
+        ui.send(Unknown);
         // Said of the action, and not of a payload it does not take.
         const Shop = App.define({
           plugins: [View.plugin],
@@ -1127,7 +1128,7 @@ describe("what the UI sends", () => {
         const app = yield* App.make(Played).pipe(
           Effect.provide(
             View.mount(Larger, (ui) => {
-              ui.send(Unknown, {});
+              ui.send(Unknown);
             })
           )
         );

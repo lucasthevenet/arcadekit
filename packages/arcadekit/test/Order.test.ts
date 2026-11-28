@@ -1,5 +1,5 @@
 import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import type { ComponentDef } from "../src/ecs/index.ts";
 import type { Spawned } from "../src/index.ts";
@@ -141,7 +141,7 @@ describe("the order of systems", () => {
     const Drawn = System.frame("Drawn", function* () {
       (yield* Query.View(Moved)).each(() => {});
     });
-    const Tap = Action.define("or/Tap", { payload: Schema.Struct({}) });
+    const Tap = Action.define("or/Tap");
     const tap = Action.handler(Tap, function* () {
       (yield* Query.View(Positions)).each((position) => {
         position.x -= 1;
@@ -252,7 +252,7 @@ describe("the order of systems", () => {
       // @ts-expect-error in a plugin too
       { systems: harmless }
     );
-    const Tap = Action.define("or/Tapped", { payload: Schema.Struct({}) });
+    const Tap = Action.define("or/Tapped");
     const handlers = [Action.handler(Tap, function* () {})];
     App.define(
       // @ts-expect-error a list of handlers that is not a tuple

@@ -254,7 +254,7 @@ const Summon = Action.define("Summon", {
   payload: Schema.Struct({ player: Schema.Number, hp: Schema.Number }),
   error: NoSuchTarget,
 });
-const Unhandled = Action.define("Unhandled", { payload: Schema.Struct({}) });
+const Unhandled = Action.define("Unhandled");
 
 const TurnQuery = Query.all(Turn).pipe(Query.writes(Turn));
 const currentTurn = Effect.gen(function* () {
@@ -619,9 +619,7 @@ describe("actions", () => {
       yield* withApp(duel(), ({ app, one, two }) =>
         Effect.gen(function* () {
           // @ts-expect-error no handler was registered for this action
-          expect(yield* thrown(app.dispatch(Unhandled, {}))).toThrow(
-            /No handler/
-          );
+          expect(yield* thrown(app.dispatch(Unhandled))).toThrow(/No handler/);
           expect(
             yield* Effect.exit(
               // @ts-expect-error the payload does not match the action
@@ -683,7 +681,7 @@ describe("actions", () => {
           App.make(App.define({ systems: [], handlers: [roll] })),
           (app) =>
             Effect.forEach([1, 2, 3], () =>
-              Effect.exit(app.dispatch(Unhandled, {}))
+              Effect.exit(app.dispatch(Unhandled))
             )
         );
       });
@@ -773,7 +771,7 @@ describe("actions", () => {
     "fail the tick when a queued action's handler dies, and leave the game as it was",
     () =>
       Effect.gen(function* () {
-        const Crash = Action.define("ru/Crash", { payload: Schema.Struct({}) });
+        const Crash = Action.define("ru/Crash");
         const crash = Action.handler(Crash, function* () {
           (yield* Query.View(Turns.pipe(Query.writes(Turn)))).each((turn) => {
             turn.number += 100;
@@ -798,7 +796,7 @@ describe("actions", () => {
         yield* withApp(make, ({ app }) =>
           Effect.gen(function* () {
             const before = yield* snapshot(app);
-            yield* app.enqueue(Crash, {});
+            yield* app.enqueue(Crash);
             yield* app.enqueue(EndTurn, { player: 2 });
             expect(yield* thrown(app.tick(1))).toThrow(/a bug in the handler/);
             expect(heard).toEqual(["EndTurn"]);

@@ -140,7 +140,7 @@ const mend2 = Action.handler(Mend2, function* ({ by }) {
     }
   );
 });
-const Recruit2 = Action.define("mg/Recruit", { payload: Schema.Struct({}) });
+const Recruit2 = Action.define("mg/Recruit");
 const recruit2 = Action.handler(Recruit2, function* () {
   return (yield* Commands.spawns(Health2)).spawn(
     Health2.of({ armor: 0, points: 1 })
@@ -227,7 +227,7 @@ const Step1 = Action.define("mv/Step", {
   payload: Schema.Struct({ dx: Schema.Int, run: Schema.Boolean }),
 });
 const Phase1 = State.define("mv/Phase", ["menu", "playing", "over"]);
-const End1 = Action.define("mv/End", { payload: Schema.Struct({}) });
+const End1 = Action.define("mv/End");
 
 describe("a snapshot read without the program's components", () => {
   it.effect(
@@ -440,7 +440,7 @@ describe("a save from another version of the game", () => {
             );
 
             // The next entity gets the id the old game would have given.
-            const next = yield* Effect.exit(app.dispatch(Recruit2, {}));
+            const next = yield* Effect.exit(app.dispatch(Recruit2));
             assert(Exit.isSuccess(next));
             expect(entityIndex(next.value)).toBe(4);
             expect(entityGeneration(next.value)).toBe(1);
@@ -972,7 +972,7 @@ describe("a save's events, actions and states", () => {
             expect(heard).toEqual([2]);
             expect(stepped).toEqual([{ dx: 3, run: false }]);
             // The sparks are still the state's: leaving it takes them.
-            yield* app.dispatch(End1, {});
+            yield* app.dispatch(End1);
             yield* app.tick(1);
             expect((yield* app.read(State.Reader(Phase1))).value).toBe("over");
             expect(world.entityCount).toBe(0);

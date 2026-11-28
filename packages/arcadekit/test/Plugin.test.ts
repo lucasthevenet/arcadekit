@@ -221,7 +221,7 @@ describe("plugins", () => {
     "can be combined with systems and handlers the app defines itself",
     () =>
       Effect.gen(function* () {
-        const Ping = Action.define("Ping", { payload: Schema.Struct({}) });
+        const Ping = Action.define("Ping");
         const ping = Action.handler(Ping, function* () {
           return "pong";
         });
@@ -241,7 +241,7 @@ describe("plugins", () => {
             Effect.gen(function* () {
               yield* app.tick(1);
               expect(seen).toEqual([1]);
-              expect(yield* Effect.exit(app.dispatch(Ping, {}))).toEqual(
+              expect(yield* Effect.exit(app.dispatch(Ping))).toEqual(
                 Exit.succeed("pong")
               );
               // @ts-expect-error Heal belongs to Combat, which this app did not install
@@ -550,7 +550,7 @@ describe("plugins", () => {
             (yield* Audio).play("boing");
           }
         );
-        const Ping = Action.define("pl/Ping", { payload: Schema.Struct({}) });
+        const Ping = Action.define("pl/Ping");
         Action.handler(
           Ping,
           // @ts-expect-error a handler runs as the tick does

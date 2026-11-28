@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest";
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Exit } from "effect";
 
 import type { ReadonlyColumnsOf } from "../src/ecs/component.ts";
 import { entityIndex } from "../src/ecs/index.ts";
@@ -194,7 +194,7 @@ describe("a term an entity may lack", () => {
     "is put back by a rewind where a table has it, and hashed as a full hash is",
     () =>
       Effect.gen(function* () {
-        const Turn = Action.define("mb/Turn", { payload: Schema.Struct({}) });
+        const Turn = Action.define("mb/Turn");
         const turn = Action.handler(Turn, function* () {
           (yield* Query.View(Spinning)).each((_position, rotation) => {
             if (rotation !== undefined) {
@@ -222,7 +222,7 @@ describe("a term an entity may lack", () => {
             if (Exit.isFailure(moment)) {
               throw new Error("the game could not be captured");
             }
-            yield* app.dispatch(Turn, {});
+            yield* app.dispatch(Turn);
             expect(world.get(turned, Rotation)).toEqual({ a: 12 });
             expect(world.hash()).not.toBe(before);
             expect(world.hash()).toBe(world._fullHash());

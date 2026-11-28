@@ -65,6 +65,7 @@ export const Take = Action.define("ls/Take", {
   payload: Schema.Struct({ by: Player, coin: EntityId }),
   error: NoSuchCoin,
 });
+// oxlint-disable-next-line arcadekit/no-empty-payload -- the logs that Lockstep.test.ts and Origin.test.ts expect hold its payload as {}.
 export const Fire = Action.define("ls/Fire", { payload: Schema.Struct({}) });
 export class Stranger extends Schema.TaggedError<Stranger>()("Stranger", {
   from: Schema.UndefinedOr(Schema.String),

@@ -839,7 +839,7 @@ describe("a level's assets", () => {
         const Forest = Assets.bundle("as/ForestLayout", {
           layout: Assets.json("/forest.json", Layout),
         });
-        const Enter = Action.define("as/Enter", { payload: Schema.Struct({}) });
+        const Enter = Action.define("as/Enter");
         const Build = Action.define("as/Build", { payload: Layout });
         const handlers = [
           Action.handler(Enter, function* () {
@@ -880,7 +880,7 @@ describe("a level's assets", () => {
           });
           const step = Driver.fixedStep(app, { hz: 10 });
           yield* step(0.1);
-          yield* app.dispatch(Enter, {});
+          yield* app.dispatch(Enter);
           yield* step(0.1);
           yield* step(0.1);
           expect((yield* app.read(Query.View(Query.all(Wall)))).count()).toBe(
@@ -1074,9 +1074,7 @@ describe("a level's assets", () => {
           `${(yield* Assets.Status(Forest))._tag} ${(yield* Assets.Status(Raw))._tag}`
         );
       });
-      const Enter = Action.define("as/EnterShared", {
-        payload: Schema.Struct({}),
-      });
+      const Enter = Action.define("as/EnterShared");
       const counting: Assets.LoaderShape = {
         bytes: (url) =>
           Effect.suspend(() => {
@@ -1102,7 +1100,7 @@ describe("a level's assets", () => {
             ],
           })
         );
-        yield* app.dispatch(Enter, {});
+        yield* app.dispatch(Enter);
         yield* app.tick(1);
         yield* app.frame();
         expect(seen.at(-1)).toBe("Ready Ready");

@@ -2595,10 +2595,10 @@ describe("a page's sound", () => {
     "is part of Browser.layer unless the page is told it has none, and a game's events are heard through it",
     () =>
       Effect.gen(function* () {
-        const Scored = Event.define("br/Scored", Schema.Struct({}));
+        const Scored = Event.define("br/Scored");
         const Score = System.tick("br/Score", function* () {
           if ((yield* Time).tick === 2) {
-            (yield* Event.Emitter(Scored)).emit({});
+            (yield* Event.Emitter(Scored)).emit();
           }
         });
         const Cues = Sound.cues("br/Cues", Coins, ({ coin }) => [
@@ -2698,7 +2698,7 @@ describe("a page's sound", () => {
   );
 
   it("is given every sheet the game plays from, or the game doesn't compile", () => {
-    const Scored = Event.define("br/Scored", Schema.Struct({}));
+    const Scored = Event.define("br/Scored");
     const Tunes = Sound.sheet("br/Tunes", { theme: "/theme.ogg" });
     const game = Driver.run(
       App.define({
@@ -2973,7 +2973,7 @@ describe("a page's sound", () => {
         yield* Effect.promise(() => settle());
         page.send("pointerdown");
         const caught = Effect.fnUntraced(function* () {
-          yield* app.dispatch(Menu.Catch, {});
+          yield* app.dispatch(Menu.Catch);
           yield* app.tick(1 / 60);
           yield* app.frame();
         });

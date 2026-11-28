@@ -1,6 +1,7 @@
 // The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import,
-// contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state and
-// no-empty-payload for the benchmarks and examples/ too, and no-run-in-tests for the tests of both.
+// contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state for the
+// benchmarks and examples/ too, no-empty-payload for those and the packages' tests, and
+// no-run-in-tests for the tests of both.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 

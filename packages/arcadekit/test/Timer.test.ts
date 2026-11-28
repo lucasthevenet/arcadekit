@@ -158,7 +158,7 @@ describe("a cooldown", () => {
 });
 
 const Spark = Component.define("tm/Spark", { x: Field.f32 });
-const Light = Action.define("tm/Light", { payload: Schema.Struct({}) });
+const Light = Action.define("tm/Light");
 const Sparks = System.tick("tm/Sparks", function* () {
   (yield* Commands.spawns(Spark, Timer.Lifetime)).spawn(
     Spark.of({ x: 0 }),
@@ -268,7 +268,7 @@ describe("a system that runs every so often", () => {
           { open: Field.u8 },
           { open: 1 }
         );
-        const Shut = Action.define("tm/Shut", { payload: Schema.Struct({}) });
+        const Shut = Action.define("tm/Shut");
         const shut = Action.handler(Shut, function* () {
           (yield* Singleton.Write(Gate)).open = 0;
         });
@@ -285,7 +285,7 @@ describe("a system that runs every so often", () => {
           App.define({ systems: [Gated], handlers: [shut] })
         );
         yield* run(app, 2);
-        yield* app.dispatch(Shut, {});
+        yield* app.dispatch(Shut);
         yield* run(app, 10);
         expect((yield* app.read(Singleton.Read(Log))).waves).toEqual([]);
       })

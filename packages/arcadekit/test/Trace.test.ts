@@ -49,10 +49,9 @@ const Add = Action.define("tr/Add", {
 });
 class NotNow extends Schema.TaggedError<NotNow>()("tr/NotNow", {}) {}
 const Refused = Action.define("tr/Refused", {
-  payload: Schema.Struct({}),
   error: NotNow,
 });
-const Begin = Action.define("tr/Begin", { payload: Schema.Struct({}) });
+const Begin = Action.define("tr/Begin");
 
 const Grow = System.tick("tr/Grow", function* () {
   (yield* Query.View(Counted)).each((count) => {
@@ -109,9 +108,9 @@ describe("tracing an app", () => {
       Effect.gen(function* () {
         const { spans, tracer } = recorder();
         const app = yield* traced(tracer, game());
-        yield* app.enqueue(Begin, {});
+        yield* app.enqueue(Begin);
         yield* app.enqueue(Add, { by: 2 });
-        yield* app.enqueue(Refused, {});
+        yield* app.enqueue(Refused);
         yield* app.tick(1 / 60);
 
         const ticks = spans.filter((span) => span.name === "arcadekit/tick");

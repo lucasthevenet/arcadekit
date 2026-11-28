@@ -434,7 +434,7 @@ describe("a game that is put back to a moment", () => {
           on: Field.u8,
           handle: Field.transient<string>(),
         });
-        const Move = Action.define("rw/Move", { payload: Schema.Struct({}) });
+        const Move = Action.define("rw/Move");
         const Sprites = Query.all(Sprite).pipe(Query.writes(Sprite));
         const move = Action.handler(Move, function* () {
           (yield* Query.View(Sprites)).each((sprite) => {
@@ -447,7 +447,7 @@ describe("a game that is put back to a moment", () => {
             const sprite = world.spawn(Sprite.of({ x: 0, handle: "sprite" }));
             const lamp = world.spawn(Lamp.of({ on: 1, handle: "lamp" }));
             const moment = yield* captured(app);
-            yield* app.dispatch(Move, {});
+            yield* app.dispatch(Move);
             yield* Timeline.rewind(app, moment);
             expect(world.get(sprite, Sprite)).toEqual({
               x: 0,
@@ -464,7 +464,7 @@ describe("a game that is put back to a moment", () => {
       const Holder = Component.define("rw/Holder", {
         thing: Field.json<JsonValue>(null),
       });
-      const Hold = Action.define("rw/Hold", { payload: Schema.Struct({}) });
+      const Hold = Action.define("rw/Hold");
       const hold = Action.handler(Hold, function* () {
         (yield* Commands.spawns(Holder)).spawn(
           // @ts-expect-error A function is not JSON.
@@ -476,7 +476,7 @@ describe("a game that is put back to a moment", () => {
           expect(
             Exit.isSuccess(yield* Effect.exit(Timeline.capture(app)))
           ).toBe(true);
-          yield* app.dispatch(Hold, {});
+          yield* app.dispatch(Hold);
           const refused = yield* Effect.exit(Timeline.capture(app));
           expect(Exit.isFailure(refused)).toBe(true);
           expect(String(Exit.isFailure(refused) ? refused.cause : "")).toMatch(
@@ -490,7 +490,7 @@ describe("a game that is put back to a moment", () => {
   it.effect("is not for an action's handler to call", () =>
     Effect.gen(function* () {
       let inside: App.Any | undefined;
-      const Back = Action.define("rw/Back", { payload: Schema.Struct({}) });
+      const Back = Action.define("rw/Back");
       const taken: Timeline.Moment[] = [];
       const back = Action.handler(Back, function* () {
         yield* Timeline.rewind(inside!, taken[0]!);
@@ -499,7 +499,7 @@ describe("a game that is put back to a moment", () => {
         Effect.gen(function* () {
           inside = app;
           taken.push(yield* captured(app));
-          const exit = yield* Effect.exit(app.dispatch(Back, {}));
+          const exit = yield* Effect.exit(app.dispatch(Back));
           expect(Exit.isFailure(exit)).toBe(true);
           expect(String(Exit.isFailure(exit) ? exit.cause : "")).toMatch(
             /Timeline\.rewind\(\) was called during an action's handler/u
@@ -512,14 +512,14 @@ describe("a game that is put back to a moment", () => {
 
 describe("what the input stage issues, across a rewind and a save", () => {
   // The stage issues one shot each time it runs, and the tick applies it.
-  const Fire = Action.define("rw/Fire", { payload: Schema.Struct({}) });
+  const Fire = Action.define("rw/Fire");
   const pressing = () => {
     const fired: number[] = [];
     const fire = Action.handler(Fire, function* () {
       yield* Effect.sync(() => fired.push(1));
     });
     const Press = System.input("rw/Press", function* () {
-      (yield* Action.Actions).enqueue(Fire, {});
+      (yield* Action.Actions).enqueue(Fire);
     });
     return {
       fired,
@@ -1146,7 +1146,7 @@ describe("Session.syncTest", () => {
   it.effect("finds it before the first system, in a handler", () =>
     Effect.gen(function* () {
       let outside = 0;
-      const Bump = Action.define("vr/Bump", { payload: Schema.Struct({}) });
+      const Bump = Action.define("vr/Bump");
       const bump = Action.handler(Bump, function* () {
         outside++;
         (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
@@ -1156,7 +1156,7 @@ describe("Session.syncTest", () => {
         (test) =>
           Effect.gen(function* () {
             yield* test.tick(DELTA);
-            yield* test.app.enqueue(Bump, {});
+            yield* test.app.enqueue(Bump);
             const error = yield* Effect.flip(test.tick(DELTA));
             expect(error).toMatchObject({ tick: 2, system: undefined });
           })

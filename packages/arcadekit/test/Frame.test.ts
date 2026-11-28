@@ -296,7 +296,7 @@ describe("the frame stage", () => {
           }
           return System.tick(name, body);
         };
-        const Pause = Action.define("fr/Pause", { payload: Schema.Struct({}) });
+        const Pause = Action.define("fr/Pause");
         const pause = Action.handler(Pause, function* () {
           (yield* State.Setter(Phase)).set("paused");
         });
@@ -321,7 +321,7 @@ describe("the frame stage", () => {
         yield* app.tick(1);
         expect(ran).toEqual(["Clear", "Draw", "Tick", "Tick"]);
         ran.length = 0;
-        yield* app.dispatch(Pause, {});
+        yield* app.dispatch(Pause);
         yield* app.frame(0.5);
         // A state is entered by a tick, not by a frame.
         expect(ran).toEqual(["Clear", "Draw"]);
@@ -476,7 +476,7 @@ describe("the frame stage", () => {
   );
 
   it("cannot change the game: the ways that would are refused where they are written", () => {
-    const Pinged = Event.define("fr/Pinged", Schema.Struct({}));
+    const Pinged = Event.define("fr/Pinged");
     System.frame(
       "Assign",
       // @ts-expect-error a frame system cannot write a query
@@ -526,12 +526,12 @@ describe("the frame stage", () => {
       "Ping",
       // @ts-expect-error a frame system cannot emit
       function* () {
-        (yield* Event.Emitter(Pinged)).emit({});
+        (yield* Event.Emitter(Pinged)).emit();
       }
     );
     const Bus = System.frame("Bus", function* () {
       // @ts-expect-error the frame's events read, and have no emit
-      (yield* Events).emit(Pinged, {});
+      (yield* Events).emit(Pinged);
     });
     expect(Bus.stage).toBe("frame");
   });
@@ -1275,7 +1275,7 @@ describe("what a frame or input system keeps", () => {
         void (yield* System.Kept(Orbit)).angle;
       }
     );
-    const Turn = Action.define("fr/Turn", { payload: Schema.Struct({}) });
+    const Turn = Action.define("fr/Turn");
     Action.handler(
       Turn,
       // @ts-expect-error a handler keeps what it keeps in the world

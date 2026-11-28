@@ -103,7 +103,7 @@ describe("Transform2d", () => {
             position.y = to.y;
           });
         });
-        const Lift = Action.define("t2/Lift", { payload: Schema.Struct({}) });
+        const Lift = Action.define("t2/Lift");
         const lift = Action.handler(Lift, function* () {
           const commands = yield* Commands;
           (yield* Query.View(Query.all(Position))).each((_, entity) => {
@@ -129,7 +129,7 @@ describe("Transform2d", () => {
           ],
         ]);
         expect(flat.count()).toBe(1);
-        yield* app.dispatch(Lift, {});
+        yield* app.dispatch(Lift);
         expect(flat.count()).toBe(0);
         expect(
           placed.map((both) => world.get(both, Transform3d.Position))
@@ -523,6 +523,7 @@ describe("Transform2d.smooth", () => {
             { on: Field.i32 },
             { on: 0 }
           );
+          // oxlint-disable-next-line arcadekit/no-empty-payload -- grace's message, written by hand, holds its payload as {}.
           const Hold = Action.define("t2/Hold", { payload: Schema.Struct({}) });
           const hold = Action.handler(Hold, function* () {
             (yield* Singleton.Write(Held)).on = 1;
