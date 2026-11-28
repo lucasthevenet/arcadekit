@@ -319,13 +319,17 @@ export type ReadonlyColumnsOf<S extends Schema> = {
     : never;
 };
 
+declare const ReadBrand: unique symbol;
+declare const MaybeBrand: unique symbol;
+declare const WatchedBrand: unique symbol;
+
 /**
  * What the type of a query term carries when the query only reads it. It exists
  * only in the type, and tells `each` and `eachChunk` to hand out something that
  * can't be assigned.
  */
 export interface ReadOnlyTerm {
-  readonly _reads: true;
+  readonly [ReadBrand]: true;
 }
 
 /**
@@ -334,7 +338,7 @@ export interface ReadOnlyTerm {
  * for a table that doesn't have it.
  */
 export interface MaybeTerm {
-  readonly _maybe: true;
+  readonly [MaybeBrand]: true;
 }
 
 /** `undefined` for a term an entity may lack, and nothing for any other. */
@@ -353,7 +357,7 @@ export type AccessorsOf<D extends readonly ComponentDef[]> = {
  * that writes a term it watches.
  */
 export interface WatchedTerm {
-  readonly _watched: true;
+  readonly [WatchedBrand]: true;
 }
 
 /** The names of the terms a query both watches for writes and writes. */

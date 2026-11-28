@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Schema } from "effect";
 
 import { idOf } from "../src/ecs/component.ts";
@@ -60,6 +60,15 @@ const populated = (count = 6): { world: EcsWorld; entities: Entity[] } => {
 };
 
 describe("a query, which writes only what it names", () => {
+  it("marks its terms in their types, under keys a game is not offered", () => {
+    const Marked = Query.all(Position, Query.maybe(Velocity)).pipe(
+      Query.changed(Position)
+    );
+    type Unoffered<T> = Exclude<keyof T, symbol | keyof ComponentDef>;
+    expectTypeOf<Unoffered<(typeof Marked.terms)[0]>>().toBeNever();
+    expectTypeOf<Unoffered<(typeof Marked.terms)[1]>>().toBeNever();
+  });
+
   it("reads every term, and refuses to write one it does not name through each", () => {
     const { entities, world } = populated();
     world.view(Moving).each((pos, vel) => {

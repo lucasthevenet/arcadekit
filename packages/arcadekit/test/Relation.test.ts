@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Exit, Schema } from "effect";
 
 import { entityIndex } from "../src/ecs/component.ts";
@@ -9,7 +9,13 @@ import {
   readSnapshot,
   writeSnapshot,
 } from "../src/ecs/index.ts";
-import type { RelationDef } from "../src/ecs/index.ts";
+import type {
+  FieldDef,
+  PatchOf,
+  ReadonlyColumn,
+  RelationDef,
+  TargetField,
+} from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -278,6 +284,17 @@ describe("a relation", () => {
     world.despawn(b);
     expect(world.isAlive(child)).toBe(false);
     expect(world.has(debtor, Owes)).toBe(false);
+  });
+
+  it("offers a game no member of its target that a field doesn't have", () => {
+    expectTypeOf<
+      Exclude<
+        keyof TargetField,
+        symbol | keyof FieldDef<Entity, ReadonlyColumn<Entity>>
+      >
+    >().toBeNever();
+    type Retarget = Exclude<PatchOf<typeof Owes.schema>["target"], undefined>;
+    expectTypeOf<Exclude<keyof Retarget, symbol | keyof string>>().toBeNever();
   });
 
   it("needs a target, and one that is alive", () => {

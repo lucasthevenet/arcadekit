@@ -122,6 +122,8 @@ export interface Installed<out Id extends string> {
   readonly "~arcadekit/Plugin.Installed": Id;
 }
 
+declare const Keeper: unique symbol;
+
 /**
  * The mark of a component that only the plugin named `Id` acts on, as
  * `Timer.Lifetime` is one that only `Timer.plugin` counts down. Naming the
@@ -140,7 +142,7 @@ export interface Installed<out Id extends string> {
  */
 export interface KeptBy<out Id extends string> {
   /** Holds no value. It carries the plugin's name. */
-  readonly "~arcadekit/Plugin.KeptBy"?: readonly [Id];
+  readonly [Keeper]?: readonly [Id];
 }
 
 // Distributive, so they work on a union of plugins and give `never` for none.
