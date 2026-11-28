@@ -199,6 +199,37 @@ describe("Driver.run", () => {
       })
   );
 
+  it("fails with and needs what its ready does, and not what the place it is put in allows", () => {
+    const { Game } = makeGame();
+    class Menu extends Context.Service<Menu, {}>()("run/Placed") {}
+    class Lost extends Data.TaggedError("Lost")<{}> {}
+    // Put where an effect that may fail and need more is expected, a game
+    // with no ready still fails with nothing and needs nothing.
+    const game = Driver.run(App.define({ plugins: [Game] }), {
+      hz: 60,
+    }) satisfies Effect.Effect<never, Lost, Menu>;
+    expectTypeOf(game).toEqualTypeOf<Effect.Effect<never>>();
+    // Nor does a session.
+    const session: Driver.Paced & Driver.Closes = {
+      hz: 60,
+      tick: () => Effect.void,
+      frame: () => Effect.void,
+      close: Effect.void,
+    };
+    const online = Driver.run(Effect.succeed(session)) satisfies Effect.Effect<
+      never,
+      Lost,
+      Menu
+    >;
+    expectTypeOf(online).toEqualTypeOf<Effect.Effect<never>>();
+    // Given a ready, it has the ready's, and only those.
+    const asking = Driver.run(App.define({ plugins: [Game] }), {
+      hz: 60,
+      ready: () => Effect.asVoid(Effect.service(Menu)),
+    }) satisfies Effect.Effect<never, Lost, Menu>;
+    expectTypeOf(asking).toEqualTypeOf<Effect.Effect<never, never, Menu>>();
+  });
+
   it.effect(
     "fails with what making the app fails with, a step before the first frame included, holding on to nothing",
     () =>
