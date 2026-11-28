@@ -24,6 +24,18 @@ const Rules = Plugin.make("game/Rules", {
 });
 ```
 
+A singleton whose every field holds an initial of its own, as a `Field.json`, `Field.schema` or `Field.ref` field does, can leave out the third argument. It then starts at its fields' initials:
+
+```ts
+import { Field, Singleton } from "arcadekit";
+
+const Visited = Singleton.define("game/Visited", {
+  rooms: Field.json<readonly string[]>(["hall"]),
+});
+```
+
+A number field, a `bool`, an `entity` and a `transient` field hold no initial of their own, and neither does a `json` field whose type takes `undefined`. A singleton with any of them gives its initial value, or it doesn't compile.
+
 A singleton lives in the world, so it is saved, hashed, and restored when an action is refused.
 
 - Until it is first written, it holds its initial value and is neither saved nor hashed. Reading it changes nothing, so a plugin that only reads a singleton doesn't change the hash of the game it observes.

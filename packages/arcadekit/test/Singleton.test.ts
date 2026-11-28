@@ -139,6 +139,55 @@ describe("a singleton", () => {
     expect(all.single).toBe(Math.fround(0.1));
   });
 
+  it("starts at its fields' initials when each field holds one of its own, and only then", () => {
+    const Seen = Singleton.define("sg/Seen", {
+      names: Field.json<readonly string[]>(["ada"]),
+      when: Field.schema(Schema.Date, new Date(0)),
+      best: Field.json<string | null>(null),
+    });
+    const world = new EcsWorld();
+    expect({ ...world.singleton(Seen) }).toEqual({
+      names: ["ada"],
+      when: new Date(0),
+      best: null,
+    });
+    expect(Seen.initial).toEqual({
+      names: ["ada"],
+      when: new Date(0),
+      best: null,
+    });
+    // An initial given is the one it starts at, as before.
+    const Named = Singleton.define(
+      "sg/Named",
+      { names: Field.json<readonly string[]>(["ada"]) },
+      { names: ["grace"] }
+    );
+    expect(world.singleton(Named).names).toEqual(["grace"]);
+    // A field that holds none needs the singleton's initial.
+    void (() =>
+      // @ts-expect-error A number field holds no initial of its own.
+      Singleton.define("sg/Counted", {
+        names: Field.json<readonly string[]>([]),
+        count: Field.u8,
+      }));
+    void (() =>
+      // @ts-expect-error Nor does a bool.
+      Singleton.define("sg/Flagged", { open: Field.bool }));
+    void (() =>
+      // @ts-expect-error Nor an entity field.
+      Singleton.define("sg/Pointed", { at: Field.entity }));
+    void (() =>
+      // @ts-expect-error Nor a transient field, whose value starts undefined.
+      Singleton.define("sg/Held", {
+        handle: Field.transient<{ open: boolean }>(),
+      }));
+    void (() =>
+      // @ts-expect-error Nor a json field whose type takes undefined, which the compiler can't tell from a transient one.
+      Singleton.define("sg/Noted", {
+        note: Field.json<string | undefined>(undefined),
+      }));
+  });
+
   it("is not a component: no entity has it, and its name is taken", () => {
     const world = new EcsWorld();
     expect(() => world.spawn(Turn.component)).toThrow(
