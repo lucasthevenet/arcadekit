@@ -15,6 +15,7 @@ The docs are laid out as [Effect's](https://effect.website/docs) and [Alchemy's]
 | `/reference` | the index of the packages, under their category, each with how many modules it has and its description ([`src/lib/reference.ts`](src/lib/reference.ts)) |
 | `/reference/<package>`, such as `/reference/arcadekit` and `/reference/three` | `packages/<package>/package.json`: its description, npm, its source, and its modules |
 | `/reference/<package>/<Module>`, such as `/reference/arcadekit/Sound` | the module's doc comments, from `packages/<package>/dist/<Module>.d.ts` ([The reference of a module](#the-reference-of-a-module)) |
+| Any other address | [`src/pages/404.astro`](src/pages/404.astro), which says no page has it, in the words of [`src/content/i18n/en.json`](src/content/i18n/en.json). It replaces Starlight's, which looks for a `404` entry among the pages |
 
 ```bash
 pnpm dev:docs     # from the repo root: Astro's dev server, which reloads a page as its file changes
