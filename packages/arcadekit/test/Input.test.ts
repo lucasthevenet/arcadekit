@@ -1837,9 +1837,9 @@ describe("the picture of the devices in the world", () => {
               systems: [Draw],
             })
           );
-          expect(
-            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
-          ).toBe(true);
+          expect(yield* Effect.exit(app.dispatch(Shoot, {}))).toEqual(
+            Exit.fail(NotHeld.make({}))
+          );
           source.press("Space");
           source.move(Input.pointerX, 3);
           source.press(Input.pointerButton());
@@ -1858,9 +1858,9 @@ describe("the picture of the devices in the world", () => {
           yield* app.input();
           yield* app.tick(1);
           const held = yield* hashOf(app);
-          expect(
-            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
-          ).toBe(true);
+          expect(yield* Effect.exit(app.dispatch(Shoot, {}))).toEqual(
+            Exit.fail(NotHeld.make({}))
+          );
           expect(yield* hashOf(app)).toBe(held);
         }).pipe(withSource(source));
       })

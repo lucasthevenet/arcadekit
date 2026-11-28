@@ -659,8 +659,8 @@ describe("a singleton in an app", () => {
       const app = yield* App.make(game, { hashEvery: 1 });
       const world = yield* app.read(World);
       const before = world.hash();
-      expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Cheat, {})))).toBe(
-        true
+      expect(yield* Effect.exit(app.dispatch(Cheat, {}))).toEqual(
+        Exit.fail(Caught.make({}))
       );
       // Never written, so never there.
       expect(world.hash()).toBe(before);

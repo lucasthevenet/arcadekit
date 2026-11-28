@@ -486,7 +486,7 @@ describe("actions", () => {
         const refused = yield* Effect.exit(
           app.dispatch(Summon, { player: 1, hp: 0 })
         );
-        expect(Exit.isFailure(refused)).toBe(true);
+        expect(refused).toEqual(Exit.fail(NoSuchTarget.make({})));
         expect(world.entityCount).toBe(entities);
         expect(yield* waiting(app)).toBeUndefined();
 
@@ -636,12 +636,10 @@ describe("actions", () => {
             )
           );
           expect(
-            Exit.isFailure(
-              yield* Effect.exit(
-                app.dispatchByName("Attack", { attacker: two, target: one })
-              )
+            yield* Effect.exit(
+              app.dispatchByName("Attack", { attacker: two, target: one })
             )
-          ).toBe(true);
+          ).toEqual(Exit.fail(NotYourTurn.make({ player: 1 })));
         })
       );
 
