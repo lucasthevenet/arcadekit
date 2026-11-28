@@ -34,6 +34,19 @@ The table pairs each thing a simulation can't read with what it reads instead.
 - **Ordering.** Don't let the simulation depend on the iteration order of a `Map` or `Set` unless you filled it in a fixed order. Systems run stage by stage, and within a stage in the order they are listed, so the same game runs the same way every time. Two systems that touch the same data produce a different game in a different order. List them in the order that matters, or move one to another stage with `System.inStage`. A list in which one system would react a tick late to another's writes doesn't compile. See [order systems](../guides/systems.md#order-systems).
 - **Devices, files, sound and rendering** follow real time, so they run outside the tick, in the input and frame stages. A tick can't tell whether a file was loaded, a sound was heard or a frame was drawn. See [ticks and frames](ticks-and-frames.md).
 
+## Some functions of Math are rounded by each engine its own way
+
+ECMAScript fixes the result of `+`, `-`, `*`, `/` and `%`, and of `Math.sqrt`, `Math.fround`, `Math.abs`, `Math.sign`, `Math.floor`, `Math.ceil`, `Math.round`, `Math.trunc`, `Math.min`, `Math.max`, `Math.imul` and `Math.clz32`, so every engine gives the same bits for them. It calls the result of these implementation-approximated, which lets each engine round it its own way:
+
+- `Math.sin`, `Math.cos`, `Math.tan`, `Math.asin`, `Math.acos`, `Math.atan` and `Math.atan2`;
+- `Math.sinh`, `Math.cosh`, `Math.tanh`, `Math.asinh`, `Math.acosh` and `Math.atanh`;
+- `Math.exp`, `Math.expm1`, `Math.log`, `Math.log1p`, `Math.log2` and `Math.log10`;
+- `Math.pow` and `**`, `Math.cbrt` and `Math.hypot`.
+
+Two engines can give different bits for the same call to one of these. A tick that calls one can then end on a different world in each, so peers in different engines come apart, and a replay recorded in one engine diverges in another.
+
+Take a rotation from an angle with `Transform3d.axisAngle`, which is the same in every engine. To turn something by about `2 * t` radians each tick, for a small `t`, keep its direction as a vector and turn it by the cosine `(1 - t * t) / (1 + t * t)` and the sine `2 * t / (1 + t * t)`, as the cards of [`examples/three`](../../../../../examples/three/src/main.ts) turn.
+
 ## Real-time work runs outside the app's scheduler
 
 An app runs its fibers on its own scheduler, so a fiber resumes only when a tick lets it. Don't provide a different `Scheduler` to code inside an app.
@@ -80,6 +93,7 @@ The type checker and the default checks at run time miss these ways to break det
 - A write forced through a raw column that `eachChunk` hands out read-only, in any stage, is refused only by an app created with `verifyFrames`.
 - State a tick reads from outside the world, in a service, a plugin or a module, isn't put back by a rewind, so a rollback session runs the tick again differently. Only `Session.syncTest` detects it, by running each tick twice from the same moment. See [testing several peers](../guides/testing-peers.md#check-that-a-rewind-runs-the-same).
 - The hash doesn't cover [where each reader is](#the-worlds-hash-covers-what-a-simulation-can-observe), so two games with the same hash can still diverge.
+- A tick that calls a function of `Math` that [each engine rounds its own way](#some-functions-of-math-are-rounded-by-each-engine-its-own-way) runs the same every time in one engine. The break shows only between two engines.
 
 In a multiplayer game, a broken rule is caught at the first hash check after it changes the world. Peers compare the hashes of their worlds, and every session stops with `Drift.Drifted`, which reports the last tick they agreed on. To test such a game, run two peers side by side and compare their hashes, as [testing several peers](../guides/testing-peers.md#connect-several-peers) shows.
 
