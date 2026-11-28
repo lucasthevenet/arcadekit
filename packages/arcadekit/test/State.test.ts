@@ -2,6 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Context, Data, Effect, Exit, Result, Schema } from "effect";
 
 import { entityIndex } from "../src/ecs/component.ts";
+import { World as EcsWorld } from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -830,7 +831,7 @@ describe("hooks", () => {
         expect({ ...lookedWorld.singleton(Phase) }).toEqual({
           value: "playing",
           next: null,
-          entered: 1,
+          entered: true,
         });
       })
   );
@@ -1047,10 +1048,41 @@ describe("a state in a save", () => {
         expect({ ...(yield* loaded.read(World)).singleton(Level) }).toEqual({
           value: "two",
           next: null,
-          entered: 1,
+          entered: true,
         });
       })
   );
+
+  it("loads a save from when it kept whether it was entered as a number, with the same bytes and hash", () => {
+    // Its singleton as a state defined it before it held a Field.bool.
+    const Before = Singleton.define(
+      "st/Era",
+      {
+        value: Field.json<string>("one"),
+        next: Field.json<string | null>(null),
+        entered: Field.u8,
+      },
+      { value: "one", next: null, entered: 0 }
+    );
+    const Era = State.define("st/Era", ["one", "two", "three"]);
+    for (const entered of [0, 1]) {
+      const before = new EcsWorld();
+      const held = before.singleton(Before);
+      held.value = "two";
+      held.next = "three";
+      held.entered = entered;
+      const save = before.snapshot();
+      const loaded = new EcsWorld();
+      loaded.load(save, [Era.component]);
+      expect({ ...loaded.singleton(Era) }).toEqual({
+        value: "two",
+        next: "three",
+        entered: entered === 1,
+      });
+      expect(loaded.hash()).toBe(before.hash());
+      expect(loaded.snapshot()).toEqual(save);
+    }
+  });
 });
 
 describe("an entity scoped to a state", () => {
