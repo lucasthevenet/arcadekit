@@ -79,9 +79,11 @@ const components: readonly ComponentDef[] = [
   Position,
   Rotation,
   Scale,
+  Transform3d.Teleports,
   Transform2d.Position,
   Transform2d.Rotation,
   Transform2d.Scale,
+  Transform2d.Teleports,
   Rock,
   Ship,
   FlatRock,
@@ -2070,6 +2072,68 @@ describe("an entity drawn between two ticks", () => {
         yield* app.tick(1);
         yield* app.frame(0.5);
         expect(xAt(mesh(), 1)).toBe(-259.5);
+      })
+  );
+
+  it.effect(
+    "is drawn where it landed when it teleported, as a camera of the game's own puts it, with no distance given",
+    () =>
+      Effect.gen(function* () {
+        const followed: number[] = [];
+        const followedFlat: number[] = [];
+        const Follow = System.frame("th/Follow", function* () {
+          const solid = yield* Transform3d.smooth;
+          const flat = yield* Transform2d.smooth;
+          (yield* Query.View(Query.all(Position).pipe(Query.with(Rock)))).each(
+            (position, entity) => {
+              followed.push(solid.position(entity, position).x);
+            }
+          );
+          (yield* Query.View(
+            Query.all(Flat.Position).pipe(Query.with(FlatRock))
+          )).each((position, entity) => {
+            followedFlat.push(flat.position(entity, position).x);
+          });
+        });
+        const { app, flatMesh, hand, mesh } = yield* play(
+          App.define({
+            plugins,
+            systems: [Slide, Smoothed, SmoothedFlat, Follow],
+          })
+        );
+        const rock = yield* hand.spawn(
+          Rock,
+          Position.of({ x: 0, y: 1, z: 0 }),
+          Transform3d.Teleports
+        );
+        const card = yield* hand.spawn(
+          FlatRock,
+          Flat.Position.of({ x: 0, y: 2 }),
+          Flat.Teleports
+        );
+        const drawn: number[] = [];
+        const drawnFlat: number[] = [];
+        const draw = Effect.fnUntraced(function* (alpha: number) {
+          yield* app.frame(alpha);
+          drawn.push(xAt(mesh(), 1));
+          drawnFlat.push(xAt(flatMesh(), 2));
+        });
+        yield* draw(1);
+        yield* app.tick(1);
+        yield* draw(0.5);
+        // Off one edge and in at the other, as a teleport.
+        yield* hand.set(rock, Position, { x: -400 });
+        yield* hand.set(rock, Transform3d.Teleports, { count: 1 });
+        yield* hand.set(card, Flat.Position, { x: 300 });
+        yield* hand.set(card, Flat.Teleports, { count: 1 });
+        yield* app.tick(1);
+        yield* draw(0.5);
+        yield* app.tick(1);
+        yield* draw(0.5);
+        expect(drawn).toEqual([0, 5, -390, -385]);
+        expect(drawnFlat).toEqual([0, 5, 310, 315]);
+        expect(followed).toEqual(drawn);
+        expect(followedFlat).toEqual(drawnFlat);
       })
   );
 

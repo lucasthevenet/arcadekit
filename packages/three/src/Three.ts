@@ -136,9 +136,10 @@ export interface KindOptions {
   readonly smooth?: boolean;
   /**
    * With `smooth`, the farthest an entity may move in one tick and still be
-   * interpolated, in scene units. An entity that moves farther, such as one
-   * that wraps from one edge to the other, is drawn where it is. Defaults to no
-   * limit.
+   * interpolated, in scene units. An entity that moves farther is drawn where
+   * it is. Defaults to no limit. An entity that the game teleports, such as
+   * one that wraps from one edge to the other, is drawn where it landed with
+   * no `snap`, when it counts the teleport in its transform's `Teleports`.
    */
   readonly snap?: number;
 }

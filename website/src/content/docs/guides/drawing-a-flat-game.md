@@ -149,7 +149,7 @@ The player starts in the level's bottom left corner, and the view stops at the l
 | `at` | The origin | Where the view is until it finds the entity it follows |
 | `within` | None | A rectangle, `{ left, right, bottom, top }`, that the view never shows past. Along a side shorter than the view, the view is centred on it |
 | `smooth` | `false` | Whether the view follows the entity between two ticks. It reads `Transform2d.smooth`, the store a kind drawn with `smooth` draws from, so the entity stays put on the canvas. Give it the `smooth` of the kind that draws the entity, or the entity shakes against the view |
-| `snap` | None | With `smooth`, the farthest the entity may move in a tick and still be followed between its two positions. Give it the kind's `snap` |
+| `snap` | None | With `smooth`, the farthest the entity may move in a tick and still be followed between its two positions. Give it the kind's `snap`. A [teleport](transforms.md#teleport-an-entity) counted in `Transform2d.Teleports` needs none |
 
 - The view is fitted each frame to the canvas's size in that frame, so a canvas that changes shape shows more or less of the level across, and never a stretched image. `Three.plugin` asks the renderer for that size at the start of each frame, and `Three.Scene` keeps it as `size`. The renderers of `Three.layerWebGL` and `Three.layerRenderer` give it.
 - Its camera, and where it aims while it finds nothing to follow, are a `System.local` of its own, so each app has its own.
