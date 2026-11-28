@@ -865,7 +865,7 @@ describe("hooks", () => {
               (yield* State.Setter(Weather)).set("dry");
             }
           });
-          const app: App.App = yield* weatherFirst
+          const app: App.Any<never> = yield* weatherFirst
             ? App.make(App.define({ systems: [Rain, Sun, Menu, Play, Change] }))
             : App.make(
                 App.define({ systems: [Play, Menu, Sun, Rain, Change] })

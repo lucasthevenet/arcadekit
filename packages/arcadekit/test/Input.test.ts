@@ -397,7 +397,7 @@ describe("the input stage", () => {
           yield* made.input();
           expect(yield* pointsOf(made)).toBe(0);
           // And the input stage is not run from inside a tick.
-          let nested: App.App | undefined;
+          let nested: App.Any<never> | undefined;
           const Nested = System.tick("Nested", function* () {
             if (nested !== undefined) {
               yield* nested.input();
