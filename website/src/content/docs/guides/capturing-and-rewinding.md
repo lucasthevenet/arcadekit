@@ -88,7 +88,7 @@ Browser.runMain(
 );
 ```
 
-`Timeline.keep(app)` keeps a game's turns: the game as it was before each turn, for as long as the scope it runs in lasts. A **turn** is what a tick or a dispatched action did with what came from outside: a move of the player's, from a key, a UI or `app.enqueue`. A tick with nothing from outside isn't one.
+`Timeline.keep(app)` keeps a game's turns: the game as it was before each turn, for as long as the scope it runs in lasts. A **turn** is what a tick or a dispatched action did with what came from outside: a move of the player's, from a key, a UI or `app.enqueue`. A tick with nothing from outside isn't one, and neither is a move the rules refuse.
 
 - `Timeline.Undo` goes back a turn, and `Timeline.Redo` forward again one it went back. They are actions, so a key bound to them in the input stage, a UI that sends them with `ui.send(Timeline.Undo)`, and the rules ask for them alike. The game lists `Timeline.plugin`, which handles them, and the app goes back or forward once the tick that applies one has run.
 - Code outside the game goes back and forward with `Timeline.undo(app)` and `Timeline.redo(app)`, between ticks. Each succeeds with whether there was a turn to go to.
