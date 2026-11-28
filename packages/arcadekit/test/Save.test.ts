@@ -7,6 +7,7 @@ import {
   Layer,
   Logger,
   Option,
+  Result,
   Schema,
 } from "effect";
 
@@ -1524,39 +1525,46 @@ describe("a save the rules ask for", () => {
   });
 
   it.effect(
-    "that a store of the game's own throws for is told as Save.StoreFailed",
+    "that a store of the game's own throws for is a defect: the game stops, and Driver.run dies with what it threw",
     () =>
       Effect.gen(function* () {
-        const game = yield* Test.make(Told);
-        const told: Save.SlotStatus[] = [];
-        game.ui.subscribe(Status, (status) => {
-          told.push(status);
-        });
-        yield* Save.autosave(game.app);
-        yield* game.app.dispatch(Finish, {});
-        yield* game.step();
-        expect(told.at(-1)).toEqual({
-          _tag: "Failed",
-          error: new Save.StoreFailed({
-            slot: "finished",
-            message: "The quota is exceeded.",
-          }),
-        });
-      }).pipe(
-        Effect.provide(
-          Layer.merge(
-            Save.layer({
-              ...Save.makeMemory(),
-              set: () =>
-                Effect.sync(() => {
-                  throw new Error("The quota is exceeded.");
+        const quota = new Error("The quota is exceeded.");
+        const logged: string[] = [];
+        const display = Driver.makeManualDisplay();
+        const running = yield* Effect.forkScoped(
+          Driver.run(Levels, {
+            hz: 60,
+            ready: (app) => Save.autosave(app),
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Driver.layer(display),
+                Save.layer({
+                  ...Save.makeMemory(),
+                  set: () =>
+                    Effect.sync(() => {
+                      throw quota;
+                    }),
                 }),
-            }),
-            Logger.layer([])
-          )
-        ),
-        Effect.scoped
-      )
+                Logger.layer([
+                  Logger.make((entry) => {
+                    logged.push(String(entry.message));
+                  }),
+                ])
+              )
+            )
+          ),
+          { startImmediately: true }
+        );
+        // The rules ask for "auto" at one second of the game's time.
+        for (let i = 0; i < 70; i++) {
+          display.frame((i * 1000) / 60);
+        }
+        expect(logged).toEqual([]);
+        const exit = running.pollUnsafe();
+        assert(exit !== undefined, "Driver.run is still running");
+        expect(Result.getOrThrow(Exit.findDefect(exit))).toBe(quota);
+      }).pipe(Effect.scoped)
   );
 
   it("whose slot's status is not for the code of the tick to read", () => {
