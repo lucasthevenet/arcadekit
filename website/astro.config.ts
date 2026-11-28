@@ -3,8 +3,9 @@
 // A Starlight site whose pages are the repository's own markdown, read in place: src/lib/pages.ts
 // finds them, src/lib/loader.ts adds them to Starlight's `docs` collection, and src/lib/sidebar.ts
 // groups them. As a page renders, the Markdown processor's plugins make the links the pages
-// already have work here (links.ts), and let a table fit a phone (tables.ts). The build fails on a
-// dead link (dead-links.ts).
+// already have work here (links.ts), and let a table fit a phone (tables.ts). A link to where a
+// page or a section was lands where it went (moved.ts). The build fails on a dead link
+// (dead-links.ts).
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
@@ -12,6 +13,7 @@ import starlightSidebarTopics from "starlight-sidebar-topics";
 
 import { deadLinks } from "./src/lib/dead-links.ts";
 import { createLinkRewriter } from "./src/lib/links.ts";
+import { MOVED, movedAddresses } from "./src/lib/moved.ts";
 import { discoverPages } from "./src/lib/pages.ts";
 import { sidebarTopics } from "./src/lib/sidebar.ts";
 import {
@@ -123,6 +125,7 @@ export default defineConfig({
         processedDirs: [".."],
       },
     }),
-    deadLinks(links),
+    movedAddresses(MOVED),
+    deadLinks(links, MOVED),
   ],
 });

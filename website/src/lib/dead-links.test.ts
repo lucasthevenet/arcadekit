@@ -77,6 +77,61 @@ describe("the built site's links", () => {
     expect(findBrokenLinks(dist)).toStrictEqual([]);
   });
 
+  it("hold a moved address whole when the site has its new place and not its old one", () => {
+    const dist = builtSite({
+      "guides/testing/index.html": page('<h2 id="make">Make</h2>'),
+      "guides/testing-by-hand/index.html": page(
+        '<h2 id="by-hand">By hand</h2>'
+      ),
+      "reference/Replay/index.html": page(""),
+    });
+    expect(
+      findBrokenLinks(dist, {
+        "/guides/testing#by-hand": "/guides/testing-by-hand#by-hand",
+        "/reference/Journal": "/reference/Replay",
+      })
+    ).toStrictEqual([]);
+  });
+
+  it("break a moved address whose new place is missing, or whose old one the site still has", () => {
+    const dist = builtSite({
+      "guides/testing/index.html": page('<h2 id="make">Make</h2>'),
+      "reference/Replay/index.html": page(""),
+    });
+    expect(
+      findBrokenLinks(dist, {
+        "/guides/testing#by-hand": "/guides/testing-by-hand#by-hand",
+        "/guides/testing#gone": "/guides/testing#nope",
+        "/guides/testing#make": "/reference/Replay",
+        "/reference/Replay": "/guides/testing",
+      })
+    ).toStrictEqual([
+      {
+        page: "/guides/testing#by-hand",
+        href: "/guides/testing-by-hand#by-hand",
+        reason: "moved.ts moves it there, but no page has this address",
+      },
+      {
+        page: "/guides/testing#gone",
+        href: "/guides/testing#nope",
+        reason:
+          'moved.ts moves it there, but /guides/testing has no heading or anchor "nope"',
+      },
+      {
+        page: "/guides/testing#make",
+        href: "/reference/Replay",
+        reason:
+          "moved.ts moves it away, but the site still has /guides/testing#make",
+      },
+      {
+        page: "/reference/Replay",
+        href: "/guides/testing",
+        reason:
+          "moved.ts moves it away, but the site still has /reference/Replay",
+      },
+    ]);
+  });
+
   it("leave links to other sites alone", () => {
     const dist = builtSite({
       "index.html": page(

@@ -88,6 +88,15 @@ Two kinds of link are not checked:
 
 A bare issue number in a page's text, such as `#25`, becomes a link to that issue on GitHub. GitHub doesn't link one in a file, so the pages keep writing them plain.
 
+## An address that moved
+
+A link to where a page or a section was still lands where it went. `MOVED` in [`src/lib/moved.ts`](src/lib/moved.ts) has a row for each address that moved, with the address it has now, so splitting a page or renaming one adds a row there:
+
+- A section that moved to another page, such as `/guides/testing#run-the-frame-stage-by-hand`. A fragment never reaches the server, so a script in every page's head looks the address up and sends the reader on. Without the script, the reader lands at the top of the old page.
+- A whole page, such as `/reference/arcadekit/Journal`. The build writes its row to `dist/_redirects`, which Cloudflare serves as a permanent redirect, and the browser keeps the fragment. `pnpm --filter @arcadekit/website preview` serves no redirect.
+
+The build fails on a row whose new address is not a page or an anchor of the site, and on one whose old address still is, since its row would send readers away from it.
+
 ## What it adds to a page
 
 The files are written for GitHub, so the site adds a little as it renders them, and changes no file:
