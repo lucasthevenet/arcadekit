@@ -64,17 +64,14 @@ const Velocity = Component.define("page/Velocity", {
   z: Field.f32,
 });
 /** How fast a mote spins about the vertical, in radians a second. */
-const Spin = Component.define("page/Spin", {
-  rate: Field.f32,
-  angle: Field.f32,
-});
+const Spin = Component.define("page/Spin", { rate: Field.f32 });
 
 // A mote's colour is the game's to say, as where it is: one that comes off
 // a wall takes that wall's.
 const Drifting = Query.all(Position, Velocity, Color.Rgb).pipe(
   Query.writes(Position, Velocity, Color.Rgb)
 );
-const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation, Spin));
+const Spinning = Query.all(Rotation, Spin).pipe(Query.writes(Rotation));
 
 // The rules know a colour as three numbers and nothing else. What draws
 // them converts each for the renderer.
@@ -112,11 +109,17 @@ const Turn = System.tick("Turn", function* () {
   const { delta } = yield* Time;
   (yield* Query.View(Spinning)).eachChunk((start, end, rotation, spin) => {
     for (let i = start; i < end; i++) {
-      const angle = spin.angle[i]! + spin.rate[i]! * delta;
-      spin.angle[i] = angle;
-      // About the vertical: a quaternion written out, with nothing made.
-      rotation.y[i] = Math.sin(angle / 2);
-      rotation.w[i] = Math.cos(angle / 2);
+      // A turn about the vertical by about rate * delta, a quaternion written
+      // out with nothing made. Half the turn's sine and cosine are the tangent
+      // half-angle formulas of u, a quarter of it: + - * /, which every engine
+      // rounds alike, where Math.sin and Math.cos may differ.
+      const u = (spin.rate[i]! * delta) / 4;
+      const sin = (2 * u) / (1 + u * u);
+      const cos = (1 - u * u) / (1 + u * u);
+      const y = rotation.y[i]!;
+      const w = rotation.w[i]!;
+      rotation.y[i] = y * cos + w * sin;
+      rotation.w[i] = w * cos - y * sin;
     }
   });
 });
@@ -129,8 +132,10 @@ const Carded = Query.all(Transform2d.Position, Transform2d.Rotation).pipe(
 );
 const Wheel = System.tick("Wheel", function* () {
   const { delta } = yield* Time;
-  const cos = Math.cos(delta * 0.3);
-  const sin = Math.sin(delta * 0.3);
+  // A turn by about 0.3 * delta, from the motes' formulas of t, half of that.
+  const t = delta * 0.15;
+  const cos = (1 - t * t) / (1 + t * t);
+  const sin = (2 * t) / (1 + t * t);
   (yield* Query.View(Carded)).eachChunk((start, end, position, rotation) => {
     for (let i = start; i < end; i++) {
       const x = position.x[i]!;
@@ -196,19 +201,19 @@ const Rules = Plugin.make("page/Rules", {
         Position.of({ x: within(), y: within(), z: within() }),
         Velocity.of({ x: speed(), y: speed(), z: speed() }),
         Rotation.of({ x: 0, y: 0, z: 0, w: 1 }),
-        Spin.of({ rate: speed() / 4, angle: 0 }),
+        Spin.of({ rate: speed() / 4 }),
         Scale.of({ x: size, y: size, z: size }),
         Color.Rgb.of(Color.hex(0xcb_cb_cb))
       );
     }
     for (let i = 0; i < CARDS; i++) {
       const around = (i / CARDS) * Math.PI * 2;
+      // A turn of twice `around` about z has the sine and the cosine of
+      // `around` for its z and w, the same in every engine.
+      const { z: sin, w: cos } = Transform3d.axisAngle(0, 0, 1, 2 * around);
       commands.spawn(
         Card,
-        Transform2d.Position.of({
-          x: Math.cos(around) * 40,
-          y: Math.sin(around) * 40,
-        }),
+        Transform2d.Position.of({ x: cos * 40, y: sin * 40 }),
         Transform2d.Rotation.of({ angle: around }),
         Transform2d.Scale.of({ x: 1, y: 1.5 })
       );
