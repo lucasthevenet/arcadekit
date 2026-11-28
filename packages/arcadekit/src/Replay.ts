@@ -160,8 +160,7 @@ const OPEN_BRACE = 0x7b;
  * recording. `problem` names the kind of failure:
  *
  * - `"no JSON form"`: a payload in the recording's log has no JSON form, as a
- *   bigint, or no payload at all, given to `app.enqueueByName` under a name
- *   the game doesn't have;
+ *   bigint put in the log of a recording by hand;
  * - `"not a recording"`: the bytes aren't a recording, or one whose structure
  *   doesn't hold;
  * - `"older format"`: an earlier version of arcadekit wrote it as text, and
@@ -196,7 +195,7 @@ export const encode = (
       ? Exit.fail(
           new Invalid({
             problem: "no JSON form",
-            message: `Replay.encode can't write this recording: a payload in its log has no JSON form. An action enqueued by a name the game doesn't have is logged with the payload it was given. ${said(Cause.squash(bytes.cause))}`,
+            message: `Replay.encode can't write this recording: a payload in its log has no JSON form. ${said(Cause.squash(bytes.cause))}`,
           })
         )
       : Exit.succeed(bytes.value.slice());
@@ -409,7 +408,12 @@ const stepperOf = <E, HU>(
       } else if (entry.queued === true) {
         // Enqueued again at the point it arrived, so that it takes its turn
         // among the actions the replay's own simulation issues.
-        yield* app.enqueueByName(entry.name, entry.payload, entry.from);
+        const queued = yield* Effect.exit(
+          app.enqueueByName(entry.name, entry.payload, entry.from)
+        );
+        if (Exit.isFailure(queued)) {
+          return diverged(next, entry, Cause.squash(queued.cause));
+        }
         waiting.push({
           index: next,
           entry,

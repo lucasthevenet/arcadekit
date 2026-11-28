@@ -195,8 +195,14 @@ export class Inbox {
 
   /**
    * Queues an action as data for the next tick, as `app.enqueueByName` does.
+   * Outside the simulation, a payload that is no JSON value fails with
+   * `Action.InvalidPayload`.
    */
-  enqueueByName(name: string, payload: unknown, from?: string): void {
+  enqueueByName(
+    name: string,
+    payload: unknown,
+    from?: string
+  ): Exit.Exit<void, Action.InvalidPayload> {
     const { intake, runner } = this.parts;
     if (runner.simulating) {
       if (from !== undefined) {
@@ -211,11 +217,24 @@ export class Inbox {
         entry: undefined,
         from,
       });
-      return;
+      return Exit.void;
+    }
+    // Input from outside, in the JSON form that the log holds and the other
+    // peers are sent. A payload that is no JSON value is refused here, as
+    // `enqueue` refuses one with no JSON form. Queued, it would leave a log
+    // that can't be written and a message that can't be sent.
+    const json = Schema.decodeUnknownExit(Schema.Json)(payload);
+    if (Exit.isFailure(json)) {
+      return Exit.fail(
+        Action.InvalidPayload.make({
+          action: name,
+          message: said(Cause.squash(json.cause)),
+        })
+      );
     }
     if (this.diverted === undefined) {
       this.deliver(name, payload, from);
-      return;
+      return Exit.void;
     }
     if (from !== undefined) {
       throw new Error(
@@ -223,6 +242,7 @@ export class Inbox {
       );
     }
     this.diverted(name, payload);
+    return Exit.void;
   }
 
   /**

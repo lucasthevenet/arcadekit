@@ -434,6 +434,18 @@ describe("a lockstep session", () => {
           // As data, which is how a tool or another program issues one.
           yield* ada.app.enqueueByName("ls/Drop", { by: "nobody", value: 1.5 });
           yield* ada.app.enqueueByName("ls/Nothing", {});
+          // No payload at all is no data to send: refused here, and sent to
+          // nobody.
+          expect(
+            yield* Effect.exit(ada.app.enqueueByName("ls/Drop", undefined))
+          ).toEqual(
+            Exit.fail(
+              Action.InvalidPayload.make({
+                action: "ls/Drop",
+                message: "Expected JSON value",
+              })
+            )
+          );
           for (let i = 0; i < 5; i++) {
             yield* round(peers, net);
           }
