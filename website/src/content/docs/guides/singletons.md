@@ -3,7 +3,7 @@ title: "Singletons"
 description: "A singleton is data that exists once per world, such as the score. Learn how to define one, read and write it, and how saves treat it."
 ---
 
-A **singleton** is data that exists once per world, such as the score, whose turn it is, or the current level. Its fields are [component fields](components.md#choose-a-field-type), of the same types, and the third argument of `Singleton.define` is its initial value. `yield* Score` gives you the world's value to read. `yield* Score.writes` gives the same value with fields you can assign. Only the simulation can ask for it: a system of the tick, an action handler or a plugin's `setup`.
+A **singleton** is data that exists once per world, such as the score, whose turn it is, or the current level. Its fields are [component fields](components.md#choose-a-field-type), of the same types, and the third argument of `Singleton.define` is its initial value. `yield* Singleton.Read(Score)` gives you the world's value to read. `yield* Singleton.Write(Score)` gives the same value with fields you can assign. Only the simulation can ask for it: a system of the tick, an action handler or a plugin's `setup`.
 
 ```ts
 import { Field, Plugin, Singleton, System } from "arcadekit";
@@ -15,7 +15,7 @@ const Score = Singleton.define(
 );
 
 const Bonus = System.tick("game/Bonus", function* () {
-  const score = yield* Score.writes;
+  const score = yield* Singleton.Write(Score);
   score.points += 1;
 });
 

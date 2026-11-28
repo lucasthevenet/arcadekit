@@ -697,7 +697,7 @@ describe("a level's models", () => {
     Schema.Struct({ to: Schema.Literals(["dock", "space"]) })
   );
   const go = Action.handler(Go, function* ({ to }) {
-    (yield* Level.sets).set(to);
+    (yield* State.Setter(Level)).set(to);
   });
   const at = (x: number) => Transform3d.Position.of({ x, y: 0, z: 0 });
   const Harbour = Plugin.make("gl/Harbour", {

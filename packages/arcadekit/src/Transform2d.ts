@@ -140,7 +140,7 @@ const row = new Row();
  *
  *   const Draw = System.frame("game/Draw", function* () {
  *     const smooth = yield* Transform2d.smooth
- *     ;(yield* Sprites).each((position, _sprite, entity) => {
+ *     ;(yield* Query.View(Sprites)).each((position, _sprite, entity) => {
  *       const at = smooth.position(entity, position, 64)
  *       context.fillRect(at.x, at.y, 8, 8)
  *     })

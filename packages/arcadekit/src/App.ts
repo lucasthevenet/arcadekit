@@ -238,12 +238,12 @@ export interface Any<E = unknown> {
    *
    *   const world = yield* app.read(World)
    *   world.get(rock, Position)?.x
-   *   const score = yield* app.read(Score)
+   *   const score = yield* app.read(Singleton.Read(Score))
    *
    * Code outside the game changes it only with an action, through `enqueue`
    * or `dispatch`, which the log holds and a replay repeats. So `effect` can
    * require nothing that writes. A query with `Query.writes`, `Commands`,
-   * `World.writes`, an event, `State.sets` or `Singleton.writes` doesn't
+   * `World.writes`, an event, `State.Setter` or `Singleton.Write` doesn't
    * compile, and the error says why. Run it only between ticks, since it
    * dies anywhere else.
    */

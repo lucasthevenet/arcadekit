@@ -211,7 +211,7 @@ const row = new Row();
  *
  *   const Follow = System.frame("game/Follow", function* () {
  *     const smooth = yield* Transform3d.smooth
- *     ;(yield* Players).each((position, _player, entity) => {
+ *     ;(yield* Query.View(Players)).each((position, _player, entity) => {
  *       const at = smooth.position(entity, position, 50)
  *       camera.position.set(at.x, at.y + 10, at.z + 20)
  *     })

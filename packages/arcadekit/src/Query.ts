@@ -3,22 +3,22 @@
  * to a system's loop.
  *
  *   const Moving = Query.all(Position, Velocity).pipe(Query.without(Stunned))
- *   const moving = yield* Moving
+ *   const moving = yield* Query.View(Moving)
  *
  * A change query asks only for what changed, and visits nothing else:
  *
  *   const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position))
  *   const Born = Query.all(Sprite).pipe(Query.added(Sprite))
- *   const Gone = Query.removed(Sprite)
  *
- *   (yield* Moved).each((pos, sprite) => { ... })   // written since this system last looked
- *   for (const entity of (yield* Gone).read()) { ... }
+ *   (yield* Query.View(Moved)).each((pos, sprite) => { ... })   // written since this system last looked
+ *   for (const entity of (yield* Query.Removed(Sprite)).read()) { ... }
  *
  * Each system tracks its own position in what changed, and sees each change
  * once.
  */
-import { Effect, Effectable } from "effect";
+import type { Effect } from "effect";
 import { dual } from "effect/Function";
+import * as Pipeable from "effect/Pipeable";
 
 import type { RemovedReader } from "./ecs/changes.ts";
 import type {
@@ -31,15 +31,20 @@ import type {
 } from "./ecs/component.ts";
 import type { Described, QuerySpec, QueryView, Terms } from "./ecs/query.ts";
 import { whole } from "./internal/handed.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { World } from "./Services.ts";
+
+// Keeps what a query watches in its type, which nothing else of it says.
+declare const WatchingBrand: unique symbol;
 
 /**
  * A query, which says what entities to visit and what to do with their
  * components. It is immutable, and belongs to no world.
  *
- * A query is an Effect. `yield*` on it returns a view of the matching
- * entities, and puts `World`, with what the query writes and watches, in the
- * requirements of the system that yields it.
+ * A system asks for its view with `yield* Query.View(query)`, which puts
+ * `World`, with what the query writes and watches, in the system's
+ * requirements.
  *
  * @typeParam D its terms, the components it passes to the loop
  * @typeParam W what it watches, from `Query.changed` and `Query.added`
@@ -47,11 +52,11 @@ import { World } from "./Services.ts";
  * @category Models
  */
 export class Query<D extends Terms, W extends Watching = Watching>
-  extends Effectable.Class<QueryView<D>, never, Needs<D, W>>
+  extends Pipeable.Class
   implements QuerySpec<D>
 {
   declare readonly [Described]: true;
-  private effect: Effect.Effect<QueryView<D>, never, World> | undefined;
+  declare readonly [WatchingBrand]: W;
 
   constructor(
     readonly terms: D,
@@ -76,16 +81,32 @@ export class Query<D extends Terms, W extends Watching = Watching>
 
   /** The terms it only reads: every one that `Query.writes` doesn't name. */
   readonly readDefs: readonly ComponentDef[];
-
-  asEffect(): Effect.Effect<QueryView<D>, never, Needs<D, W>> {
-    // Built once and reused: the world caches the view per query, so after
-    // the first tick this is a service lookup plus a Map hit. A change
-    // query's view is the one of whoever is running: `world.reader`.
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      whole(world).view(this)
-    ));
-  }
 }
+
+// The world caches the view per query, so after the first tick this is a
+// service lookup plus a Map hit. A change query's view is the one of whoever
+// is running: `world.reader`.
+const viewOf = <D extends Terms>(
+  given: Given,
+  query: QuerySpec<D>
+): QueryView<D> => whole(service(given, World)).view(query);
+
+/**
+ * Asks for a query's view of the matching entities, in the world of the
+ * system that yields it.
+ *
+ *   const moving = yield* Query.View(Moving)
+ *   moving.each((pos, vel) => { ... })
+ *
+ * It puts `World`, with what the query writes and watches, in the system's
+ * requirements. A frame or an input system that asks for the view of a query
+ * with `Query.writes` doesn't compile.
+ *
+ * @category Capabilities
+ */
+export const View = <D extends Terms, W extends Watching>(
+  query: Query<D, W>
+): Effect.Effect<QueryView<D>, never, Needs<D, W>> => lookup(viewOf, query);
 
 /**
  * Matches entities that have all of these components, and passes their data to
@@ -186,7 +207,7 @@ export type Unwrapped<D extends readonly (ComponentDef | Maybe)[]> = {
  *
  *   const Placed = Query.all(Position, Query.maybe(Rotation), Query.maybe(Scale))
  *
- *   (yield* Placed).eachChunk((start, end, position, rotation, scale) => {
+ *   (yield* Query.View(Placed)).eachChunk((start, end, position, rotation, scale) => {
  *     if (rotation === undefined) { ... } // no entity of this run has one
  *   })
  *
@@ -463,7 +484,7 @@ export type Certain<D extends Terms, C extends ComponentDef> = [
 
 /**
  * In a system's requirements, says that the system writes the component named
- * `N`. The system yields a query that names the component with
+ * `N`. The system asks for the view of a query that names the component with
  * `Query.writes`, or asks for `World.writes` with it. Nobody writes this type
  * or provides it. A
  * system's type holds it, and `App.define` and `Plugin.make` read it there to
@@ -477,7 +498,8 @@ export interface Writes<out N extends string> {
 
 /**
  * In a system's requirements, says that the system watches the component named
- * `N` for writes, because it yields a query made with `Query.changed`. As with
+ * `N` for writes, because it asks for the view of a query made with
+ * `Query.changed`. As with
  * `Writes`, nobody writes this type or provides it.
  *
  * @category Type-level
@@ -488,8 +510,8 @@ export interface Watches<out N extends string> {
 
 /**
  * In a system's requirements, says that the system watches for entities that
- * gain the component named `N`, because it yields a query made with
- * `Query.added`. As with `Writes`, nobody writes this type or provides it.
+ * gain the component named `N`, because it asks for the view of a query made
+ * with `Query.added`. As with `Writes`, nobody writes this type or provides it.
  *
  * @category Type-level
  */
@@ -499,7 +521,7 @@ export interface WatchesAdded<out N extends string> {
 
 /**
  * In a system's requirements, says that the system reads which entities lost
- * the component named `N`, because it yields `Query.removed`. What it has read
+ * the component named `N`, because it yields `Query.Removed`. What it has read
  * belongs to the game, so `app.read` doesn't take it. As with `Writes`, nobody
  * writes this type or provides it.
  *
@@ -578,8 +600,9 @@ type Written<D extends Terms> = {
 }[number];
 
 /**
- * What yielding a query requires: the world, and what the query writes and
- * watches. A system that yields the query has these in its requirements.
+ * What `Query.View` requires: the world, and what the query writes and
+ * watches. A system that asks for the query's view has these in its
+ * requirements.
  *
  * @category Type-level
  */
@@ -737,11 +760,17 @@ export const writes: {
   }
 );
 
+const removedOf = (given: Given, component: ComponentDef): RemovedReader =>
+  whole(service(given, World)).removed(component);
+
 /**
- * The entities that lost a component since the system last read, as
- * `Query.removed` makes it. `(yield* Query.removed(Sprite)).read()` returns
- * their ids, oldest first, once per removal. A despawned entity lost
- * everything it had, and its id is no longer alive.
+ * Asks for a reader of the entities that lost a component since the system
+ * last read.
+ *
+ *   for (const entity of (yield* Query.Removed(Burning)).read()) { ... }
+ *
+ * `read` returns their ids, oldest first, once per removal. A despawned
+ * entity lost everything it had, and its id is no longer alive.
  *
  * Removals are tracked from the first read, and each system and handler tracks
  * its own position.
@@ -753,37 +782,9 @@ export const writes: {
  *   components its entity had. A system that reads removals, listed ahead of
  *   the system that despawns or removes, reads them a tick late. List it after.
  *
- * @category Models
+ * @category Capabilities
  */
-export class Removed<N extends string = string> extends Effectable.Class<
-  RemovedReader,
-  never,
-  World | WatchesRemoved<N>
-> {
-  private effect:
-    | Effect.Effect<RemovedReader, never, World | WatchesRemoved<N>>
-    | undefined;
-
-  constructor(readonly component: ComponentDef) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<RemovedReader, never, World | WatchesRemoved<N>> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      whole(world).removed(this.component)
-    ));
-  }
-}
-
-/**
- * Makes a reader of the entities that lost a component since the system last
- * read.
- *
- *   const Extinguished = Query.removed(Burning)
- *   for (const entity of (yield* Extinguished).read()) { ... }
- *
- * @category Constructors
- */
-export const removed = <const D extends ComponentDef>(
+export const Removed = <const D extends ComponentDef>(
   component: D
-): Removed<NameOf<D>> => new Removed(component);
+): Effect.Effect<RemovedReader, never, World | WatchesRemoved<NameOf<D>>> =>
+  lookup(removedOf, component);

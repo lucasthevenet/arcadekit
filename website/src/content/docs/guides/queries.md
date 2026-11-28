@@ -27,13 +27,13 @@ const Moving = Query.all(Position, Velocity).pipe(
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity, entity) => {
+  (yield* Query.View(Moving)).each((position, velocity, entity) => {
     position.x += velocity.x * delta;
   });
 });
 ```
 
-A query is a value, defined once at module level. In a system, `yield*` gives you a view of it for the current tick. `Query.with(Player)` narrows a query to entities that also have a component, without passing its data to the loop. `Query.without(Frozen)` excludes entities that have a component.
+A query is a value, defined once at module level. In a system, `yield* Query.View(query)` gives you a view of it for the current tick. `Query.with(Player)` narrows a query to entities that also have a component, without passing its data to the loop. `Query.without(Frozen)` excludes entities that have a component.
 
 Both loops below work with every query, and visit entities in the same order: tables in the order they were created, and rows in ascending order.
 
@@ -58,7 +58,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).eachChunk((start, end, position, velocity) => {
+  (yield* Query.View(Moving)).eachChunk((start, end, position, velocity) => {
     for (let i = start; i < end; i++) {
       position.x[i] = position.x[i]! + velocity.x[i]! * delta;
     }
@@ -88,11 +88,13 @@ const OnFire = Query.all(Position, Burning).pipe(Query.writes(Burning));
 
 const Burn = System.tick("game/Burn", function* () {
   const { delta } = yield* Time;
-  (yield* OnFire).eachChunk((start, end, position, burning, entities) => {
-    for (let i = start; i < end; i++) {
-      burning.columns.seconds[burning.indexOf(entities[i]!)]! -= delta;
+  (yield* Query.View(OnFire)).eachChunk(
+    (start, end, position, burning, entities) => {
+      for (let i = start; i < end; i++) {
+        burning.columns.seconds[burning.indexOf(entities[i]!)]! -= delta;
+      }
     }
-  });
+  );
 });
 ```
 
@@ -114,7 +116,7 @@ const Scale = Component.define("game/Scale", { factor: Field.f32 });
 const Drawn = Query.all(Position, Query.maybe(Scale));
 
 const Draw = System.frame("game/Draw", function* () {
-  (yield* Drawn).eachChunk((start, end, position, scale) => {
+  (yield* Query.View(Drawn)).eachChunk((start, end, position, scale) => {
     if (scale === undefined) {
       for (let i = start; i < end; i++) {
         // drawn at its own size, from position.x[i]! and position.y[i]!
@@ -150,7 +152,7 @@ A write forced past the compiler into the raw column of a term the query only re
 
 ## Visit only what changed
 
-A **change query** visits only the entities that something happened to since the system last ran it. `Query.changed` visits the entities whose component was written, and `Query.added` those that gained it. `Query.removed` returns the ids of the entities that lost it.
+A **change query** visits only the entities that something happened to since the system last ran it. `Query.changed` visits the entities whose component was written, and `Query.added` those that gained it. `Query.Removed` returns the ids of the entities that lost it.
 
 ```ts
 import { Component, Field, Query, System } from "arcadekit";
@@ -163,11 +165,11 @@ const Sprite = Component.define("game/Sprite", { frame: Field.u16 });
 
 const Born = Query.all(Sprite).pipe(Query.added(Sprite));
 const Moved = Query.all(Position, Sprite).pipe(Query.changed(Position));
-const Gone = Query.removed(Sprite);
+const Gone = Query.Removed(Sprite);
 
 const Track = System.tick("game/Track", function* () {
-  (yield* Born).each((sprite, entity) => {}); // added a Sprite since last run
-  (yield* Moved).each((position, sprite) => {}); // had its Position written since
+  (yield* Query.View(Born)).each((sprite, entity) => {}); // added a Sprite since last run
+  (yield* Query.View(Moved)).each((position, sprite) => {}); // had its Position written since
   for (const entity of (yield* Gone).read()) {
   } // lost its Sprite, or was despawned
 });
@@ -179,7 +181,7 @@ const Track = System.tick("game/Track", function* () {
 - The first run visits every matching entity, because to a query that never ran, everything is new. A system that builds something for each entity `Query.added(Sprite)` visits therefore also covers the entities that existed before it, or that came from a save.
 - An entity is visited once, however many times it was written, in the usual query order. An entity that has since lost the component, or been despawned, isn't visited.
 - With several components, or `changed` and `added` together, an entity is visited when any of them applies.
-- `Query.removed` reports each removal once, oldest first, starting from the first time a reader asks. The id of a despawned entity is no longer alive.
+- `Query.Removed` reports each removal once, oldest first, starting from the first time a reader asks. The id of a despawned entity is no longer alive.
 - When nothing changed, a visit costs under 100 ns, whatever the size of the world.
 
 Use a change query for data that changes occasionally. For a system that visits every entity every tick, use an ordinary query.
@@ -215,7 +217,7 @@ const Players = Query.all(Position).pipe(
 );
 
 const Wrap = System.tick("game/Wrap", function* () {
-  const [position, player] = (yield* Players).single();
+  const [position, player] = (yield* Query.View(Players)).single();
   if (position.x > 100) {
     position.x = 0;
   }
@@ -229,7 +231,7 @@ const Wrap = System.tick("game/Wrap", function* () {
 
 ## What a view has
 
-`yield*` on a query gives a view of it, and so does `yield* app.read(query)` outside the game, in a test or a tool:
+`yield* Query.View(query)` gives a view of a query, and so does `yield* app.read(Query.View(query))` outside the game, in a test or a tool:
 
 | Member | What it does |
 | --- | --- |
@@ -240,7 +242,7 @@ const Wrap = System.tick("game/Wrap", function* () {
 | `entities()` | Returns the ids, in the order a loop visits them. For a change query, it counts as a visit |
 | `pointingAt(relation, target)` | Narrows `each` and `eachChunk` to the entities that point at `target`. See [relations](relations.md#visit-the-entities-that-point-at-a-target) |
 
-`app.read` takes a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.removed`, because what they write and visit belongs to the game.
+`app.read` takes a query that only reads. A query with `Query.writes`, `Query.changed` or `Query.added` doesn't compile there, and neither does `Query.Removed`, because what they write and visit belongs to the game.
 
 ## Read more
 

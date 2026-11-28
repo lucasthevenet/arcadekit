@@ -11,8 +11,8 @@
  *     ...
  *   })
  *
- *   const phase = yield* Phase           // value, next, is
- *   const writing = yield* Phase.sets    // a tick system or a handler
+ *   const phase = yield* State.Reader(Phase)           // value, next, is
+ *   const writing = yield* State.Setter(Phase)    // a tick system or a handler
  *   writing.set("playing")               // entered at the start of the next tick
  *
  *   const commands = yield* Commands.spawns(Wall).pipe(State.scoping(Phase, "playing"))
@@ -25,7 +25,7 @@
  * A state makes at most one transition per tick. When several states have
  * pending transitions, they are entered in order of name.
  */
-import { Effect, Effectable } from "effect";
+import { Effect } from "effect";
 
 import { Component, Field } from "./ecs/component.ts";
 import type {
@@ -35,6 +35,8 @@ import type {
   SingletonSpec,
 } from "./ecs/component.ts";
 import { whole } from "./internal/handed.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import {
   defining,
   handleOf,
@@ -59,9 +61,9 @@ type Fields = {
 };
 
 /**
- * What `yield* SomeState` returns in any stage: the current value, the value
+ * What `yield* State.Reader(SomeState)` returns in any stage: the current value, the value
  * requested next, and whether it is one of a list. Only a system of the tick
- * or a handler can set the state, with `yield* SomeState.sets`.
+ * or a handler can set the state, with `yield* State.Setter(SomeState)`.
  *
  * @category Models
  */
@@ -76,7 +78,7 @@ export interface Reader<V extends string> {
 }
 
 /**
- * A tick system's handle to a state, from `yield* SomeState.sets`. It reads the
+ * A tick system's handle to a state, from `yield* State.Setter(SomeState)`. It reads the
  * current value, and requests another.
  *
  * @category Models
@@ -95,27 +97,25 @@ export interface Setter<V extends string> extends Reader<V> {
 }
 
 /**
- * A state's definition. It is an Effect, and `yield*` on it returns a
- * `State.Reader` of the world's value. It is also the singleton that holds that
- * value.
+ * A state's definition. `yield* State.Reader(SomeState)` returns a
+ * `State.Reader` of the world's value, and `yield* State.Setter(SomeState)`
+ * a `State.Setter`, which can also `set` it. It is also the singleton that
+ * holds that value.
  *
  * @category Models
  */
-export class State<V extends string, N extends string = string>
-  extends Effectable.Class<Reader<V>, never, World>
-  implements SingletonSpec<Fields>
-{
+export class State<
+  V extends string,
+  N extends string = string,
+> implements SingletonSpec<Fields> {
   readonly component: ComponentDef<Fields>;
   readonly initial: { value: string; next: string | null; entered: number };
-  private effect: Effect.Effect<Reader<V>, never, World> | undefined;
-  private writing: Effect.Effect<Setter<V>, never, World | Sim> | undefined;
 
   constructor(
     readonly name: N,
     readonly values: readonly V[],
     first: V
   ) {
-    super();
     const spec = Component.singleton(
       name,
       {
@@ -129,24 +129,42 @@ export class State<V extends string, N extends string = string>
     this.initial = spec.initial;
     defining(this as unknown as State<string>);
   }
-
-  asEffect(): Effect.Effect<Reader<V>, never, World> {
-    return (this.effect ??= Effect.map(Effect.service(World), (world) =>
-      readerOf(whole(world), this)
-    ));
-  }
-
-  /**
-   * The state's `Setter`, which can also `set` it. Requiring it puts `Sim`
-   * in the system's requirements, which a frame or input system doesn't
-   * accept.
-   */
-  get sets(): Effect.Effect<Setter<V>, never, World | Sim> {
-    return (this.writing ??= Effect.map(Effect.service(World), (world) =>
-      handleOf(whole(world), this)
-    ));
-  }
 }
+
+const reading = <V extends string, N extends string>(
+  given: Given,
+  state: State<V, N>
+): Reader<V> => readerOf(whole(service(given, World)), state);
+
+/**
+ * Asks for a state's `State.Reader` of the world's value. The code of any
+ * stage can ask.
+ *
+ *   if ((yield* State.Reader(Mode)).is("playing")) { ... }
+ *
+ * @category Capabilities
+ */
+export const Reader = <V extends string, N extends string>(
+  state: State<V, N>
+): Effect.Effect<Reader<V>, never, World> => lookup(reading, state);
+
+const setting = <V extends string, N extends string>(
+  given: Given,
+  state: State<V, N>
+): Setter<V> => handleOf(whole(service(given, World)), state);
+
+/**
+ * Asks for a state's `State.Setter`, which can also `set` it. Asking for it
+ * puts `Sim` in the system's requirements, which a frame or input system
+ * doesn't accept.
+ *
+ *   (yield* State.Setter(Mode)).set("paused")
+ *
+ * @category Capabilities
+ */
+export const Setter = <V extends string, N extends string>(
+  state: State<V, N>
+): Effect.Effect<Setter<V>, never, World | Sim> => lookup(setting, state);
 
 /**
  * Defines a state from its name, its possible values, and the value a game
@@ -263,7 +281,7 @@ export const scoped = <V extends string, N extends string, S extends V>(
  * - The tags are in the system's requirements, as those `Commands.spawns`
  *   names, so a system that watches one with `Query.added` is listed after.
  * - A value known only when the system runs, such as the level a state is
- *   in, works as a literal does: `State.scoping(Level, (yield* Level).value)`.
+ *   in, works as a literal does: `State.scoping(Level, (yield* State.Reader(Level)).value)`.
  * - Piped twice, the commands give the tags of both.
  *
  * @category Combinators
@@ -294,7 +312,7 @@ export const is = <V extends string>(
   state: State<V>,
   ...values: readonly [NoInfer<V>, ...NoInfer<V>[]]
 ): Effect.Effect<boolean, never, World> =>
-  Effect.map(state, (handle) => handle.is(...values));
+  Effect.map(Reader(state), (handle) => handle.is(...values));
 
 const hook = <
   const N extends string,
@@ -360,7 +378,7 @@ export const onEnter = <
  * Use when entering a state means one thing from one place and another from
  * another, such as starting a run from the menu and resuming it from a pause.
  * A hook that runs on every entry is `State.onEnter`. An exit hook can tell
- * where the game goes without one: `(yield* Phase).next` is the value it
+ * where the game goes without one: `(yield* State.Reader(Phase)).next` is the value it
  * enters.
  *
  * **Details**
@@ -399,7 +417,7 @@ export const onTransition = <
 
 /**
  * Makes a system that runs once when the game leaves a state, at the start of
- * that tick, before the enter hooks of the next state. `yield*` on the state
+ * that tick, before the enter hooks of the next state. `State.Reader`
  * still returns the one being left, and the entities scoped to it, which
  * `State.scoped` tags, are still there.
  *

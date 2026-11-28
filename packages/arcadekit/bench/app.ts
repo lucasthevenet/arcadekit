@@ -97,7 +97,7 @@ const Power = State.define("bench/Power", ["on", "off"]);
 /** A system that fetches a query and the time, then does nothing. */
 const idle = <const I extends number>(i: I) =>
   System.tick(`Idle${i}`, function* () {
-    yield* Moving;
+    yield* Query.View(Moving);
     yield* Time;
   });
 
@@ -123,7 +123,7 @@ const idling = (power: "on" | "off"): number =>
       ] as const;
       const Switched = Plugin.make("bench/Switched", {
         setup: Effect.gen(function* () {
-          (yield* Power.sets).set(power);
+          (yield* State.Setter(Power)).set(power);
         }),
       });
       const app = yield* App.make(App.define({ plugins: [Switched], systems }));
@@ -138,7 +138,7 @@ const Clock = Singleton.define(
 );
 /** A clock that runs every tick, as a puzzle's timer does. */
 const Counting = System.tick("bench/Counting", function* () {
-  (yield* Clock.writes).ticks++;
+  (yield* Singleton.Write(Clock)).ticks++;
 });
 /** A move of the player's: the first piece slides, a write to the board's positions. */
 const Slide = Action.define("bench/Slide");
@@ -147,7 +147,7 @@ const Board = Plugin.make("bench/Board", {
   systems: [Counting],
   handlers: [
     Action.handler(Slide, function* () {
-      (yield* Moving).eachChunk((start, _end, pos) => {
+      (yield* Query.View(Moving)).eachChunk((start, _end, pos) => {
         pos.x[start]! += 1;
       });
     }),
@@ -184,9 +184,9 @@ const playing = (kept: boolean, moved: boolean): number =>
           20_000
         );
         const { tick } = app.time;
-        const { ticks } = yield* app.read(Clock);
+        const { ticks } = yield* app.read(Singleton.Read(Clock));
         let first = Number.NaN;
-        (yield* app.read(Seen)).eachChunk((start, _end, pos) => {
+        (yield* app.read(Query.View(Seen))).eachChunk((start, _end, pos) => {
           first = pos.x[start]!;
         });
         if (ticks !== tick || first !== (moved ? tick : 0)) {
@@ -199,7 +199,7 @@ const playing = (kept: boolean, moved: boolean): number =>
           yield* app.tick(DT);
           if (
             !(yield* Timeline.undo(app)) ||
-            (yield* app.read(Clock)).ticks !== tick
+            (yield* app.read(Singleton.Read(Clock))).ticks !== tick
           ) {
             throw new Error(
               "Timeline.keep did not hold the game as it was after the last tick timed."
@@ -297,7 +297,7 @@ const showing = (mode: "same" | "new" | "nobody"): number =>
       });
       let frames = 0;
       const Show = View.publish(Hud, function* () {
-        const stats = yield* Stats;
+        const stats = yield* Singleton.Read(Stats);
         return {
           score: mode === "new" ? frames : stats.score,
           lives: stats.lives,
@@ -338,7 +338,7 @@ const sounding = (happening: boolean): number =>
       const Bounced = Event.define("bench/Bounced");
       const Score = System.tick("bench/Score", function* () {
         if (happening) {
-          (yield* Scored.emits).emit();
+          (yield* Event.Emitter(Scored)).emit();
         }
       });
       const Sfx = Sound.sheet("bench/Sfx", {
@@ -374,7 +374,7 @@ const scoring = (): number =>
       const Phase = State.define("bench/MusicPhase", ["playing", "title"]);
       const Tracks = Sound.sheet("bench/Tracks", { theme: "/theme.ogg" });
       const Score = Sound.music("bench/Music", function* () {
-        return (yield* Phase).value === "playing"
+        return (yield* State.Reader(Phase)).value === "playing"
           ? { track: Tracks.theme, volume: 0.5 }
           : undefined;
       });
@@ -398,7 +398,7 @@ const atRest = (): number =>
       const Phase = State.define("bench/RestPhase", ["title", "playing"]);
       const Shown = View.define("bench/Shown", { phase: "title" });
       const Show = View.publish(Shown, function* () {
-        return { phase: (yield* Phase).value as string };
+        return { phase: (yield* State.Reader(Phase)).value as string };
       });
       const source = Input.makeManualSource();
       const Resting = App.define({
@@ -433,10 +433,10 @@ const Drawn = System.local(() => ({ sum: 0 }));
 /** A system that draws: it fetches a query and the time, and with `reading` reads every column. */
 export const drawer = <const I extends number>(i: I, reading: boolean) =>
   System.frame(`Draw${i}`, function* () {
-    const moving = yield* Seen;
+    const moving = yield* Query.View(Seen);
     yield* Time;
     if (reading) {
-      const drawn = yield* Drawn;
+      const drawn = yield* System.Kept(Drawn);
       moving.eachChunk((start, end, pos, vel) => {
         const px = pos.x;
         const vx = vel.x;

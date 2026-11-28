@@ -50,12 +50,12 @@ const Score = Singleton.define(
 );
 
 const ShowHud = View.publish(Hud, function* () {
-  const score = yield* Score;
+  const score = yield* Singleton.Read(Score);
   return { score: score.points, lives: score.lives };
 });
 
 const newGame = Action.handler(NewGame, function* () {
-  const score = yield* Score.writes;
+  const score = yield* Singleton.Write(Score);
   score.points = 0;
   score.lives = 3;
 });
@@ -156,17 +156,17 @@ export const ShowRank = View.publish(
   Rank,
   {
     when: function* () {
-      return (yield* Score).points;
+      return (yield* Singleton.Read(Score)).points;
     },
   },
   function* () {
-    const { points } = yield* Score;
+    const { points } = yield* Singleton.Read(Score);
     return { title: points >= 1000 ? "master" : "novice" };
   }
 );
 ```
 
-The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` and the body return data, such as `(yield* Score).points` or `{ ...(yield* Score) }`. A singleton read whole, `yield* Score` or `(yield* World).singleton(Score)`, doesn't compile as either, even inside arrays and objects up to 32 levels deep: it is the world's own object, the same every frame, so it would never differ.
+The body runs again only when what `when` returns changes. Anything else it reads shows as it was when the body last ran. `when` and the body return data, such as `(yield* Singleton.Read(Score)).points` or `{ ...(yield* Singleton.Read(Score)) }`. A singleton read whole, `yield* Singleton.Read(Score)` or `(yield* World).singleton(Score)`, doesn't compile as either, even inside arrays and objects up to 32 levels deep: it is the world's own object, the same every frame, so it would never differ.
 
 ## Show a view in one part of the game
 

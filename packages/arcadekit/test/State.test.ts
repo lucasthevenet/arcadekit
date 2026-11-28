@@ -50,7 +50,7 @@ const Go = Action.define(
   { error: Refused }
 );
 const go = Action.handler(Go, function* ({ refuse, to }) {
-  const phase = yield* Phase.sets;
+  const phase = yield* State.Setter(Phase);
   const from = phase.value;
   phase.set(to);
   if (refuse) {
@@ -66,8 +66,8 @@ describe("a state", () => {
         const app = yield* App.make(App.define({ handlers: [go] }));
         const read = yield* app.read(
           Effect.gen(function* () {
-            const phase = yield* Phase;
-            const weather = yield* Weather;
+            const phase = yield* State.Reader(Phase);
+            const weather = yield* State.Reader(Weather);
             return [phase.value, phase.next, weather.value, weather.is("wet")];
           })
         );
@@ -92,7 +92,7 @@ describe("a state", () => {
       const seen: string[] = [];
       const asked: unknown[] = [];
       const Watch = System.tick("Watch", function* () {
-        const phase = yield* Phase.sets;
+        const phase = yield* State.Setter(Phase);
         seen.push(`${phase.value}${phase.next ? `>${phase.next}` : ""}`);
         const { tick } = yield* Time;
         if (tick === 2) {
@@ -222,7 +222,7 @@ describe("a run condition", () => {
         );
         const Flip = Action.define("st/Flip", Schema.Struct({}));
         const flip = Action.handler(Flip, function* () {
-          const held = yield* Switch.writes;
+          const held = yield* Singleton.Write(Switch);
           held.on = held.on === 1 ? 0 : 1;
         });
         class Broken extends Data.TaggedError("Broken")<{}> {}
@@ -233,7 +233,7 @@ describe("a run condition", () => {
           if (asked > 100) {
             return yield* new Broken();
           }
-          return (yield* Switch).on === 1;
+          return (yield* Singleton.Read(Switch)).on === 1;
         });
         const ran: number[] = [];
         const Both = System.tick("Both", function* () {
@@ -296,7 +296,7 @@ describe("a run condition", () => {
     () =>
       Effect.gen(function* () {
         const Pause = System.tick("Pause", function* () {
-          const phase = yield* Phase.sets;
+          const phase = yield* State.Setter(Phase);
           if (phase.value === "playing") {
             phase.set("paused");
           }
@@ -307,7 +307,10 @@ describe("a run condition", () => {
               Pause,
               noting("Steady", ran).pipe(
                 System.runIf(
-                  Effect.map(Phase, (phase) => phase.next === undefined)
+                  Effect.map(
+                    State.Reader(Phase),
+                    (phase) => phase.next === undefined
+                  )
                 )
               ),
               noting("Playing", ran).pipe(
@@ -368,7 +371,7 @@ describe("a run condition", () => {
                   )
                 ),
                 System.tick("Count", function* () {
-                  ran.push(`${(yield* Balls).count()} balls`);
+                  ran.push(`${(yield* Query.View(Balls)).count()} balls`);
                 }),
                 // With no condition there is no time it is not run, and
                 // nothing is done in its place.
@@ -429,7 +432,7 @@ describe("a run condition", () => {
           System.runIf(Effect.succeed(false)),
           // @ts-expect-error a frame system cannot set a state
           System.otherwise(
-            Effect.map(Phase.sets, (phase) => phase.set("paused"))
+            Effect.map(State.Setter(Phase), (phase) => phase.set("paused"))
           )
         );
         // And what it needs and can fail with are the system's: a frame
@@ -513,26 +516,29 @@ describe("a run condition", () => {
         const moved: number[] = [];
         const Emit = System.tick("Emit", function* () {
           const { tick } = yield* Time;
-          (yield* Bounced.emits).emit({ at: tick });
-          (yield* Balls).each((ball, entity) => {
+          (yield* Event.Emitter(Bounced)).emit({ at: tick });
+          (yield* Query.View(Balls)).each((ball, entity) => {
             if (entityIndex(entity) === tick % 3) {
               ball.x = tick;
             }
           });
         });
         const Listen = System.tick("Listen", function* () {
-          for (const { at } of (yield* Bounced).read()) {
+          for (const { at } of (yield* Event.Reader(Bounced)).read()) {
             heard.push(at);
           }
           moved.push(
-            (yield* Balls.pipe(Query.changed(Ball))).entities().length
+            (yield* Query.View(Balls.pipe(Query.changed(Ball)))).entities()
+              .length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
         // The same, drawn between ticks.
         const drawn: number[] = [];
         const Look = System.frame("Look", function* () {
           drawn.push(
-            (yield* Query.all(Ball).pipe(Query.changed(Ball))).entities().length
+            (yield* Query.View(
+              Query.all(Ball).pipe(Query.changed(Ball))
+            )).entities().length
           );
         }).pipe(System.runIf(State.is(Phase, "playing")));
         const Three = Plugin.make("st/Three", {
@@ -658,7 +664,7 @@ describe("hooks", () => {
       Effect.gen(function* () {
         const seen: string[] = [];
         const Leaving = State.onExit(Phase, "menu", "Leaving", function* () {
-          seen.push(`leaving ${(yield* Phase).value}`);
+          seen.push(`leaving ${(yield* State.Reader(Phase)).value}`);
           (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 1 }));
         });
         const Entering = State.onEnter(
@@ -668,13 +674,13 @@ describe("hooks", () => {
           function* () {
             // What the hook before it queued has been applied.
             seen.push(
-              `entering ${(yield* Phase).value} with ${(yield* Balls).count()}`
+              `entering ${(yield* State.Reader(Phase)).value} with ${(yield* Query.View(Balls)).count()}`
             );
             (yield* Commands.spawns(Ball)).spawn(Ball.of({ x: 2 }));
           }
         );
         const Count = System.tick("Count", function* () {
-          seen.push(`tick with ${(yield* Balls).count()}`);
+          seen.push(`tick with ${(yield* Query.View(Balls)).count()}`);
         });
         const app = yield* App.make(
           App.define({ systems: [Count, Entering, Leaving], handlers: [go] })
@@ -741,12 +747,12 @@ describe("hooks", () => {
           "SkipIntro",
           function* () {
             ran.push("SkipIntro");
-            (yield* Phase.sets).set("playing");
+            (yield* State.Setter(Phase)).set("playing");
           }
         );
         const Bail = State.onExit(Phase, "menu", "Bail", function* () {
           ran.push("Bail");
-          (yield* Phase.sets).set("paused");
+          (yield* State.Setter(Phase)).set("paused");
         });
         const app = yield* start(
           App.define({
@@ -774,7 +780,7 @@ describe("hooks", () => {
         const ran: string[] = [];
         const Overrule = State.onEnter(Phase, "menu", "Overrule", function* () {
           ran.push("Overrule");
-          (yield* Phase.sets).set("paused");
+          (yield* State.Setter(Phase)).set("paused");
         });
         const app = yield* start(
           App.define({ systems: [...hooks(ran), Overrule], handlers: [go] })
@@ -794,13 +800,13 @@ describe("hooks", () => {
     () =>
       Effect.gen(function* () {
         const Late = System.tick("Late", function* () {
-          const phase = yield* Phase.sets;
+          const phase = yield* State.Setter(Phase);
           if ((yield* Time).tick === 3) {
             phase.set("playing");
           }
         });
         const Draw = System.frame("Draw", function* () {
-          void (yield* Phase).value;
+          void (yield* State.Reader(Phase)).value;
         });
         const looked = yield* App.make(App.define({ systems: [Late] }));
         const drawn = yield* App.make(App.define({ systems: [Draw] }));
@@ -853,11 +859,11 @@ describe("hooks", () => {
               return;
             }
             if (weatherFirst) {
-              (yield* Weather.sets).set("dry");
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Weather)).set("dry");
+              (yield* State.Setter(Phase)).set("playing");
             } else {
-              (yield* Phase.sets).set("playing");
-              (yield* Weather.sets).set("dry");
+              (yield* State.Setter(Phase)).set("playing");
+              (yield* State.Setter(Weather)).set("dry");
             }
           });
           const app: App.App = yield* weatherFirst
@@ -904,7 +910,7 @@ describe("a state in a save", () => {
   const Level = State.define("st/Level", ["one", "two", "three"]);
   const Next = Action.define("st/Next", Schema.Struct({}));
   const next = Action.handler(Next, function* () {
-    const level = yield* Level.sets;
+    const level = yield* State.Setter(Level);
     level.set(level.value === "one" ? "two" : "three");
   });
   const Built = Component.define("st/Built", { level: Field.json<string>("") });
@@ -918,7 +924,7 @@ describe("a state in a save", () => {
       build("two"),
       build("three"),
       System.tick("Roll", function* () {
-        (yield* Balls).each((ball) => {
+        (yield* Query.View(Balls)).each((ball) => {
           ball.x += 1;
         });
       }).pipe(System.runIf(State.is(Level, "two", "three"))),
@@ -929,7 +935,7 @@ describe("a state in a save", () => {
     }),
   });
   const built = (app: App.Any) =>
-    Effect.map(app.read(Query.all(Built)), (view) => {
+    Effect.map(app.read(Query.View(Query.all(Built))), (view) => {
       const out: string[] = [];
       view.each((row) => {
         out.push(row.level);
@@ -979,7 +985,7 @@ describe("a state in a save", () => {
         expect(yield* built(loaded)).toEqual(["one", "two", "three"]);
         expect(loadedWorld.hash()).toBe(world.hash());
         let x = 0;
-        (yield* loaded.read(Query.all(Ball))).each((ball) => {
+        (yield* loaded.read(Query.View(Query.all(Ball)))).each((ball) => {
           x = ball.x;
         });
         expect(x).toBe(3);
@@ -1003,7 +1009,7 @@ describe("a state in a save", () => {
         const After = State.define("st/Door", ["open", "shut"]);
         const Prop = Action.define("st/Prop", Schema.Struct({}));
         const prop = Action.handler(Prop, function* () {
-          (yield* Before.sets).set("ajar");
+          (yield* State.Setter(Before)).set("ajar");
         });
         const app = yield* App.make(App.define({ handlers: [prop] }));
         expect(yield* Effect.exit(app.dispatch(Prop, {}))).toEqual(Exit.void);
@@ -1012,7 +1018,7 @@ describe("a state in a save", () => {
         assert(Exit.isSuccess(save));
         const loaded = yield* App.make(App.define({}), { save: save.value });
         const exit = yield* Effect.exit(
-          loaded.read(Effect.map(After, (door) => door.value))
+          loaded.read(Effect.map(State.Reader(After), (door) => door.value))
         );
         assert(Exit.isFailure(exit));
         expect(String(Cause.squash(exit.cause))).toContain(
@@ -1051,7 +1057,7 @@ describe("a state in a save", () => {
 describe("an entity scoped to a state", () => {
   const Dry = Action.define("st/Dry", Schema.Struct({}));
   const dry = Action.handler(Dry, function* () {
-    (yield* Weather.sets).set("dry");
+    (yield* State.Setter(Weather)).set("dry");
   });
 
   const Wall = Component.define("st/Wall", { n: Field.u8 });
@@ -1067,7 +1073,7 @@ describe("an entity scoped to a state", () => {
   /** Builds walls 1 to 3 scoped to playing, and 4 scoped to playing and paused. */
   const Build = State.onEnter(Phase, "playing", "Build", function* () {
     const commands = yield* Commands.spawns(Wall, playing, paused);
-    if ((yield* Query.all(Wall)).count() > 0) {
+    if ((yield* Query.View(Query.all(Wall))).count() > 0) {
       return;
     }
     for (const n of [1, 2, 3]) {
@@ -1077,7 +1083,7 @@ describe("an entity scoped to a state", () => {
   });
 
   const walls = (app: App.Any) =>
-    Effect.map(app.read(Walls), (view) => {
+    Effect.map(app.read(Query.View(Walls)), (view) => {
       const out: number[] = [];
       view.each((wall) => {
         out.push(wall.n);
@@ -1091,13 +1097,13 @@ describe("an entity scoped to a state", () => {
       Effect.gen(function* () {
         const log: string[] = [];
         const Leaving = State.onExit(Phase, "playing", "Leaving", function* () {
-          log.push(`exit sees ${(yield* Walls).count()}`);
+          log.push(`exit sees ${(yield* Query.View(Walls)).count()}`);
         });
         const Enter = State.onEnter(Phase, "menu", "Enter", function* () {
-          log.push(`enter sees ${(yield* Walls).count()}`);
+          log.push(`enter sees ${(yield* Query.View(Walls)).count()}`);
         });
         const Gone = System.tick("Gone", function* () {
-          const gone = (yield* Query.removed(Wall)).read().length;
+          const gone = (yield* Query.Removed(Wall)).read().length;
           if (gone > 0) {
             log.push(`removed ${gone}`);
           }
@@ -1169,7 +1175,7 @@ describe("an entity scoped to a state", () => {
         const Meddle = State.onExit(Phase, "playing", "Meddle", function* () {
           const commands = yield* Commands.spawns(Wall, playing, menu);
           const byN = new Map<number, Entity>();
-          (yield* Walls).each((wall, entity) => {
+          (yield* Query.View(Walls)).each((wall, entity) => {
             byN.set(wall.n, entity);
           });
           commands.despawn(byN.get(1)!);
@@ -1210,7 +1216,7 @@ describe("an entity scoped to a state", () => {
         yield* app.dispatch(Go, { to: "menu", refuse: false });
         yield* app.tick(1);
         expect(yield* walls(app)).toEqual([3]);
-        expect((yield* app.read(Query.all(Aims))).count()).toBe(0);
+        expect((yield* app.read(Query.View(Query.all(Aims)))).count()).toBe(0);
       })
   );
 
@@ -1220,7 +1226,7 @@ describe("an entity scoped to a state", () => {
       Effect.gen(function* () {
         const ByHand = State.onExit(Phase, "playing", "ByHand", function* () {
           const commands = yield* Commands;
-          const view = yield* Query.all(Wall);
+          const view = yield* Query.View(Query.all(Wall));
           for (const entity of view
             .entities()
             .toSorted((a, b) => entityIndex(a) - entityIndex(b))) {
@@ -1234,7 +1240,7 @@ describe("an entity scoped to a state", () => {
           "Shuffle",
           function* () {
             const commands = yield* Commands;
-            const [first] = (yield* Query.all(Wall)).entities();
+            const [first] = (yield* Query.View(Query.all(Wall))).entities();
             commands.despawn(first!);
           }
         );
@@ -1409,7 +1415,7 @@ describe("an entity scoped to a state", () => {
       Query.added(State.scoped(Level, "playing"))
     );
     const Count = System.tick("Count", function* () {
-      (yield* NewInLevel).count();
+      (yield* Query.View(NewInLevel)).count();
     });
     const said: [
       System.Misordered<readonly [typeof Count, typeof Spawn]>,
@@ -1418,7 +1424,7 @@ describe("an entity scoped to a state", () => {
       : "misordered" = "nothing";
     const NewInPhase = Query.all().pipe(Query.added(playing));
     const Late = System.tick("Late", function* () {
-      (yield* NewInPhase).count();
+      (yield* Query.View(NewInPhase)).count();
     });
     const late: System.Misordered<readonly [typeof Late, typeof Spawn]> =
       '"Late" watches "st/Phase.Scoped.playing" with Query.added, and "Spawn" spawns or adds it later in the tick, so "Late" would react a tick late. List "Late" after "Spawn", or place it in a later stage.';
@@ -1498,7 +1504,7 @@ describe("a run, started, paused, resumed and restarted", () => {
         expect(started).toEqual(["StartRun", "Resumed", "StartRun"]);
         expect(
           (yield* app.read(
-            Query.all().pipe(Query.with(playing, paused))
+            Query.View(Query.all().pipe(Query.with(playing, paused)))
           )).count()
         ).toBe(5);
       })
@@ -1560,7 +1566,7 @@ describe("a run, started, paused, resumed and restarted", () => {
       )).spawn(Crate.of({ n: 1 }));
     });
     const Late = System.tick("Late", function* () {
-      (yield* Query.all().pipe(Query.added(playing))).count();
+      (yield* Query.View(Query.all().pipe(Query.added(playing)))).count();
     });
     App.define(
       // @ts-expect-error the watcher would see the scoped wall a tick late
@@ -1569,7 +1575,7 @@ describe("a run, started, paused, resumed and restarted", () => {
     expect(App.define({ systems: [Spawn, Late] }).systems).toHaveLength(2);
     // A scope of the value the state is in, known when the system runs.
     System.tick("Now", function* () {
-      const phase = yield* Phase;
+      const phase = yield* State.Reader(Phase);
       (yield* Commands.spawns(Crate).pipe(
         State.scoping(Phase, phase.value)
       )).spawn(Crate.of({ n: 2 }));
@@ -1597,7 +1603,7 @@ describe("a run, started, paused, resumed and restarted", () => {
       });
       const app = yield* App.make(App.define({ plugins: [Build] }));
       const world = yield* app.read(World);
-      const [wall] = (yield* app.read(Everything)).entities();
+      const [wall] = (yield* app.read(Query.View(Everything))).entities();
       expect([
         world.has(wall!, State.scoped(Phase, "menu")),
         world.has(wall!, one),

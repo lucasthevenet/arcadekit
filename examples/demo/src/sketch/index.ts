@@ -2,7 +2,7 @@
  * What the demo draws, which under Node is a note of how high the highest
  * thing is. Leave the plugin out and the game is the same.
  */
-import { Frame, Plugin, System, Time } from "arcadekit";
+import { Frame, Plugin, Query, System, Time } from "arcadekit";
 import { Context } from "effect";
 
 import * as Physics from "../physics/index.ts";
@@ -25,7 +25,7 @@ const Draw = System.frame("Draw", function* () {
   const { delta } = yield* Time;
   const note = yield* Note;
   let highest = 0;
-  (yield* Physics.Bodies).eachChunk((start, end, pos, vel) => {
+  (yield* Query.View(Physics.Bodies)).eachChunk((start, end, pos, vel) => {
     for (let i = start; i < end; i++) {
       highest = Math.max(highest, pos.y[i]! + vel.y[i]! * delta * alpha);
     }

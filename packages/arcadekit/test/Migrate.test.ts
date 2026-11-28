@@ -66,7 +66,7 @@ const Buff0 = Component.define(
 );
 const Heal0 = Action.define("mg/Heal", Schema.Struct({ amount: Schema.Int }));
 const heal0 = Action.handler(Heal0, function* ({ amount }) {
-  (yield* Query.all(Hp0).pipe(Query.writes(Hp0))).each((hp) => {
+  (yield* Query.View(Query.all(Hp0).pipe(Query.writes(Hp0)))).each((hp) => {
     hp.points += amount;
   });
 });
@@ -130,9 +130,11 @@ const Buff2 = Component.define(
 );
 const Mend2 = Action.define("mg/Mend", Schema.Struct({ by: Schema.Int }));
 const mend2 = Action.handler(Mend2, function* ({ by }) {
-  (yield* Query.all(Health2).pipe(Query.writes(Health2))).each((health) => {
-    health.points += by;
-  });
+  (yield* Query.View(Query.all(Health2).pipe(Query.writes(Health2)))).each(
+    (health) => {
+      health.points += by;
+    }
+  );
 });
 const Recruit2 = Action.define("mg/Recruit", Schema.Struct({}));
 const recruit2 = Action.handler(Recruit2, function* () {
@@ -196,7 +198,7 @@ const Spark = Component.define("mv/Spark", { n: Field.u8 });
 const Sparks = Query.all(Spark);
 /** Emitted by the last system, and read by the first: it waits for a tick. */
 const Hitting0 = System.tick("mv/Hits", function* () {
-  (yield* Hit0.emits).emit({ damage: 2 });
+  (yield* Event.Emitter(Hit0)).emit({ damage: 2 });
 });
 const Version0Moves = App.define({
   plugins: [
@@ -206,7 +208,7 @@ const Version0Moves = App.define({
         const commands = yield* Commands.spawns(Spark, play);
         commands.spawn(Spark.of({ n: 1 }), play);
         commands.spawn(Spark.of({ n: 2 }), play);
-        (yield* Phase0.sets).set("play");
+        (yield* State.Setter(Phase0)).set("play");
       }),
       systems: [Hitting0],
       handlers: [Action.handler(Move0, function* () {})],
@@ -412,7 +414,7 @@ describe("a save from another version of the game", () => {
 
             // The ids are the ones the old game handed out, and dead ones stay dead.
             expect(
-              (yield* app.read(Query.all(Health2)))
+              (yield* app.read(Query.View(Query.all(Health2))))
                 .entities()
                 .toSorted((a, b) => idOf(a) - idOf(b))
             ).toEqual(entities.toSorted((a, b) => idOf(a) - idOf(b)));
@@ -448,7 +450,7 @@ describe("a save from another version of the game", () => {
       yield* withApp(App.make(Version2, { save }), (app, world) =>
         Effect.gen(function* () {
           // One table now: the units that never had the tag, then those that did.
-          const named = yield* app.read(Query.all(Name2));
+          const named = yield* app.read(Query.View(Query.all(Name2)));
           const order = named.entities();
           const names = order.map((entity) => world.get(entity, Name2)?.value);
           expect(names).toEqual([
@@ -919,7 +921,7 @@ describe("a save's events, actions and states", () => {
             migrations,
             systems: [
               System.tick("mv/Hear", function* () {
-                for (const { damage } of (yield* Struck).read()) {
+                for (const { damage } of (yield* Event.Reader(Struck)).read()) {
                   heard.push(damage);
                 }
               }),
@@ -929,7 +931,7 @@ describe("a save's events, actions and states", () => {
                 stepped.push(step);
               }),
               Action.handler(End1, function* () {
-                (yield* Phase1.sets).set("over");
+                (yield* State.Setter(Phase1)).set("over");
               }),
             ],
           });
@@ -953,8 +955,12 @@ describe("a save's events, actions and states", () => {
         ]);
         yield* withApp(App.make(Carried, { save }), (app, world) =>
           Effect.gen(function* () {
-            expect((yield* app.read(Phase1)).value).toBe("playing");
-            expect((yield* app.read(Sparks)).entities().length).toBe(2);
+            expect((yield* app.read(State.Reader(Phase1))).value).toBe(
+              "playing"
+            );
+            expect(
+              (yield* app.read(Query.View(Sparks))).entities().length
+            ).toBe(2);
             yield* app.tick(1);
             // The event that was waiting is heard under its new name, and the
             // move applied with the payload it has now.
@@ -963,7 +969,7 @@ describe("a save's events, actions and states", () => {
             // The sparks are still the state's: leaving it takes them.
             yield* app.dispatch(End1, {});
             yield* app.tick(1);
-            expect((yield* app.read(Phase1)).value).toBe("over");
+            expect((yield* app.read(State.Reader(Phase1))).value).toBe("over");
             expect(world.entityCount).toBe(0);
           })
         );

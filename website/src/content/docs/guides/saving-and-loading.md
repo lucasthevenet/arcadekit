@@ -101,7 +101,16 @@ A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, sav
 ## Save when the rules ask
 
 ```ts
-import { App, Driver, Field, Save, Singleton, System, Timer } from "arcadekit";
+import {
+  App,
+  Driver,
+  Event,
+  Field,
+  Save,
+  Singleton,
+  System,
+  Timer,
+} from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
@@ -109,12 +118,12 @@ const Level = Singleton.define("game/Level", { won: Field.u8 }, { won: 0 });
 
 // The rules say when: once the level is won, and every minute of play.
 const LevelEnd = System.tick("game/LevelEnd", function* () {
-  if ((yield* Level).won === 1) {
-    (yield* Save.Asked.emits).emit({ slot: "level" });
+  if ((yield* Singleton.Read(Level)).won === 1) {
+    (yield* Event.Emitter(Save.Asked)).emit({ slot: "level" });
   }
 });
 const Autosave = System.tick("game/Autosave", function* () {
-  (yield* Save.Asked.emits).emit({ slot: "auto" });
+  (yield* Event.Emitter(Save.Asked)).emit({ slot: "auto" });
 }).pipe(Timer.every(60));
 const Game = App.define({ systems: [LevelEnd, Autosave] });
 
@@ -146,7 +155,7 @@ const Saved = View.define("game/Saved", { label: "" });
 
 export const ShowSaved = View.publish(Saved, function* () {
   return {
-    label: Save.match(yield* Auto, {
+    label: Save.match(yield* Save.Status(Auto), {
       Off: () => "",
       Unasked: () => "",
       Saved: () => "Saved",

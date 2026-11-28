@@ -54,7 +54,7 @@ describe("Transform3d", () => {
         });
         const app = yield* App.make(App.define({ plugins: [Bare] }));
         const world = yield* app.read(World);
-        const bare = (yield* app.read(Query.all(Position, Scale)))
+        const bare = (yield* app.read(Query.View(Query.all(Position, Scale))))
           .entities()
           .map((entity) => ({
             scale: world.get(entity, Scale),
@@ -74,14 +74,14 @@ describe("Transform3d", () => {
       Effect.gen(function* () {
         const Drift = System.tick("tf/Drift", function* () {
           const { delta } = yield* Time;
-          (yield* Query.all(Position).pipe(Query.writes(Position))).eachChunk(
-            (start, end, position) => {
-              for (let i = start; i < end; i++) {
-                position.x[i] = position.x[i]! + 2 * delta;
-                position.z[i] = position.z[i]! - delta;
-              }
+          (yield* Query.View(
+            Query.all(Position).pipe(Query.writes(Position))
+          )).eachChunk((start, end, position) => {
+            for (let i = start; i < end; i++) {
+              position.x[i] = position.x[i]! + 2 * delta;
+              position.z[i] = position.z[i]! - delta;
             }
-          );
+          });
         });
         const spawned: Spawned[] = [];
         const Rocks = Plugin.make("tf/Rocks", {
@@ -163,7 +163,7 @@ describe("Transform3d", () => {
       });
       const app = yield* App.make(App.define({ plugins: [Turned] }));
       const world = yield* app.read(World);
-      const turned = (yield* app.read(Query.all(Rotation)))
+      const turned = (yield* app.read(Query.View(Query.all(Rotation))))
         .entities()
         .map((entity) => world.get(entity, Rotation)?.w);
       expect(turned).toEqual([Math.fround(quarter.w)]);

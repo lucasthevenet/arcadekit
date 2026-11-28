@@ -45,7 +45,7 @@ const rolling = (...speeds: readonly number[]) =>
 /** Where each ball is. */
 const positions = Effect.fnUntraced(function* (app: App.Any) {
   const xs: number[] = [];
-  (yield* app.read(Rolled)).each((ball) => {
+  (yield* app.read(Query.View(Rolled))).each((ball) => {
     xs.push(ball.x);
   });
   return xs;
@@ -53,7 +53,7 @@ const positions = Effect.fnUntraced(function* (app: App.Any) {
 
 const Roll = System.tick("Roll", function* () {
   const { delta } = yield* Time;
-  (yield* Balls).each((ball) => {
+  (yield* Query.View(Balls)).each((ball) => {
     ball.x += ball.vx * delta;
   });
 });
@@ -734,10 +734,10 @@ describe("ticking when needed", () => {
         );
         const Light = Action.define("dr/Light", Schema.Struct({}));
         const light = Action.handler(Light, function* () {
-          (yield* Fuse.writes).left = 6;
+          (yield* Singleton.Write(Fuse)).left = 6;
         });
         const Burn = System.tick("Burn", function* () {
-          const fuse = yield* Fuse.writes;
+          const fuse = yield* Singleton.Write(Fuse);
           if (fuse.left > 0) {
             fuse.left -= 1;
           }

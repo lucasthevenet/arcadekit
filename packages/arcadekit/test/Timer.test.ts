@@ -45,11 +45,11 @@ const Reload = Action.define(
 );
 
 const trigger = Action.handler(Trigger, function* ({ held }) {
-  (yield* Log.writes).firing = held ? 1 : 0;
+  (yield* Singleton.Write(Log)).firing = held ? 1 : 0;
 });
 const Guns = Query.all(Gun).pipe(Query.writes(Gun));
 const reload = Action.handler(Reload, function* ({ seconds }) {
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = seconds;
   });
 });
@@ -59,9 +59,9 @@ const BULLET_LIFE = 0.5;
 
 const Fire = System.tick("tm/Fire", function* () {
   const { delta, tick } = yield* Time;
-  const log = yield* Log.writes;
+  const log = yield* Singleton.Write(Log);
   const commands = yield* Commands.spawns(Bullet, Timer.Lifetime);
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = Timer.tick(gun.cooldown, delta);
     if (log.firing === 1 && Timer.ready(gun.cooldown)) {
       gun.cooldown = COOLDOWN;
@@ -73,7 +73,7 @@ const Fire = System.tick("tm/Fire", function* () {
 
 const Wave = System.tick("tm/Wave", function* () {
   const { tick } = yield* Time;
-  const log = yield* Log.writes;
+  const log = yield* Singleton.Write(Log);
   log.waves = [...log.waves, tick];
 }).pipe(Timer.every(1));
 
@@ -118,7 +118,7 @@ describe("a cooldown", () => {
       yield* app.dispatch(Trigger, { held: true });
       yield* run(app, 12);
       // Ready on the first tick, then once a second: every fourth tick.
-      expect((yield* app.read(Log)).shots).toEqual([1, 5, 9]);
+      expect((yield* app.read(Singleton.Read(Log))).shots).toEqual([1, 5, 9]);
     })
   );
 
@@ -185,7 +185,7 @@ describe("a lifetime", () => {
       const counts: number[] = [];
       for (let i = 0; i < 6; i++) {
         yield* app.tick(DELTA);
-        counts.push((yield* app.read(Bullets)).count());
+        counts.push((yield* app.read(Query.View(Bullets))).count());
       }
       // Spawned on the first tick and the fifth, each there for two ticks.
       expect(counts).toEqual([1, 1, 0, 0, 1, 1]);
@@ -246,7 +246,7 @@ describe("a system that runs every so often", () => {
           expected.push(tick);
         }
       }
-      expect((yield* app.read(Log)).waves).toEqual(expected);
+      expect((yield* app.read(Singleton.Read(Log))).waves).toEqual(expected);
       expect(expected.slice(0, 4)).toEqual([3, 6, 8, 11]);
     })
   );
@@ -257,7 +257,7 @@ describe("a system that runs every so often", () => {
       yield* app.tick(2.5);
       yield* app.tick(0.25);
       yield* app.tick(2.5);
-      expect((yield* app.read(Log)).waves).toEqual([1, 3]);
+      expect((yield* app.read(Singleton.Read(Log))).waves).toEqual([1, 3]);
     })
   );
 
@@ -272,13 +272,15 @@ describe("a system that runs every so often", () => {
         );
         const Shut = Action.define("tm/Shut", Schema.Struct({}));
         const shut = Action.handler(Shut, function* () {
-          (yield* Gate.writes).open = 0;
+          (yield* Singleton.Write(Gate)).open = 0;
         });
         const Gated = System.tick("tm/Gated", function* () {
-          const log = yield* Log.writes;
+          const log = yield* Singleton.Write(Log);
           log.waves = [...log.waves, (yield* Time).tick];
         }).pipe(
-          System.runIf(Effect.map(Gate.asEffect(), (gate) => gate.open === 1)),
+          System.runIf(
+            Effect.map(Singleton.Read(Gate), (gate) => gate.open === 1)
+          ),
           Timer.every(1)
         );
         const app = yield* App.make(
@@ -287,7 +289,7 @@ describe("a system that runs every so often", () => {
         yield* run(app, 2);
         yield* app.dispatch(Shut, {});
         yield* run(app, 10);
-        expect((yield* app.read(Log)).waves).toEqual([]);
+        expect((yield* app.read(Singleton.Read(Log))).waves).toEqual([]);
       })
   );
 
@@ -331,7 +333,10 @@ const played = (app: ShooterApp, from: number, to: number) =>
       }
       yield* app.tick(DELTA);
     }
-    return { log: yield* app.read(Log), hash: yield* hashOf(app) };
+    return {
+      log: yield* app.read(Singleton.Read(Log)),
+      hash: yield* hashOf(app),
+    };
   });
 
 describe("timers in the world", () => {
@@ -344,7 +349,7 @@ describe("timers in the world", () => {
       const again = yield* Replay.verify(yield* Replay.record(app), Shooter, {
         hashEvery: 1,
       });
-      expect(yield* again.read(Log)).toEqual(first.log);
+      expect(yield* again.read(Singleton.Read(Log))).toEqual(first.log);
       expect(yield* hashOf(again)).toBe(first.hash);
     })
   );

@@ -254,10 +254,10 @@ const Asked = Event.define(
 export const plugin = Plugin.make("arcadekit/Timeline", {
   handlers: [
     Action.handler(Undo, function* () {
-      (yield* Asked.emits).emit({ to: "undo" });
+      (yield* Event.Emitter(Asked)).emit({ to: "undo" });
     }),
     Action.handler(Redo, function* () {
-      (yield* Asked.emits).emit({ to: "redo" });
+      (yield* Event.Emitter(Asked)).emit({ to: "redo" });
     }),
   ],
 });

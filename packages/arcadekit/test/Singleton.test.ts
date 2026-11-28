@@ -107,7 +107,7 @@ describe("a singleton", () => {
     () =>
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [] }));
-        const turn = yield* app.read(Turn);
+        const turn = yield* app.read(Singleton.Read(Turn));
         expectTypeOf(turn).toEqualTypeOf<
           Singleton.Read<typeof Turn.component.schema>
         >();
@@ -121,7 +121,7 @@ describe("a singleton", () => {
           Singleton.Read<typeof Turn.component.schema>
         >();
         expect(world.singleton(Turn)).toBe(turn);
-        expect(yield* app.read(Turn)).toBe(turn);
+        expect(yield* app.read(Singleton.Read(Turn))).toBe(turn);
         expect({ ...turn }).toEqual({ player: 1, round: 0 });
       })
   );
@@ -584,7 +584,7 @@ const Cheat = Action.define("sg/Cheat", Schema.Struct({}), {
 });
 
 const endTurn = Action.handler(EndTurn, function* ({ player }) {
-  const turn = yield* Turn.writes;
+  const turn = yield* Singleton.Write(Turn);
   if (turn.player !== player) {
     return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
@@ -593,16 +593,16 @@ const endTurn = Action.handler(EndTurn, function* ({ player }) {
   return turn.round;
 });
 const cheat = Action.handler(Cheat, function* () {
-  const turn = yield* Turn.writes;
-  const score = yield* Score.writes;
+  const turn = yield* Singleton.Write(Turn);
+  const score = yield* Singleton.Write(Score);
   turn.round += 100;
   score.points += 1000;
   score.best = "the cheat";
   return yield* Caught.make({});
 });
 const Reward = System.tick("Reward", function* () {
-  const turn = yield* Turn.writes;
-  const score = yield* Score.writes;
+  const turn = yield* Singleton.Write(Turn);
+  const score = yield* Singleton.Write(Score);
   if (turn.round > 0 && turn.round % 2 === 0) {
     score.points += turn.round;
     score.best = `player ${turn.player}`;
@@ -620,7 +620,7 @@ describe("a singleton in an app", () => {
       Effect.gen(function* () {
         const rounds: number[] = [];
         const Watch = System.tick("Watch", function* () {
-          rounds.push((yield* Turn).round);
+          rounds.push((yield* Singleton.Read(Turn)).round);
         });
         const app = yield* App.make(
           App.define({ plugins: [Rules], systems: [Watch] }),
@@ -649,7 +649,7 @@ describe("a singleton in an app", () => {
         expect(rounds).toEqual([1, 2]);
         // No entity was needed for any of it.
         expect(world.entityCount).toBe(0);
-        expect((yield* app.read(Query.all())).count()).toBe(0);
+        expect((yield* app.read(Query.View(Query.all()))).count()).toBe(0);
       })
   );
 
@@ -748,11 +748,11 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
   let built = 0;
   /** Reads the index, and builds it from the world when it has none. */
   const Look = System.tick("sg/Look", function* () {
-    const index = yield* Index.writes;
+    const index = yield* Singleton.Write(Index);
     if (index.byX === undefined) {
       built++;
       const byX: Record<number, number> = {};
-      (yield* Spots).each((spot) => {
+      (yield* Query.View(Spots)).each((spot) => {
         byX[spot.x] = (byX[spot.x] ?? 0) + 1;
       });
       index.byX = byX;
@@ -765,7 +765,7 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
     { error: Refused }
   );
   const clear = Action.handler(Clear, function* ({ refuse }) {
-    (yield* Index.writes).byX = {};
+    (yield* Singleton.Write(Index)).byX = {};
     if (refuse) {
       return yield* Refused.make({});
     }
@@ -788,7 +788,8 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
       Effect.gen(function* () {
         built = 0;
         const app = yield* App.make(Game);
-        const byX = () => Effect.map(app.read(Index), (index) => index.byX);
+        const byX = () =>
+          Effect.map(app.read(Singleton.Read(Index)), (index) => index.byX);
         yield* app.tick(1);
         yield* app.tick(1);
         expect(built).toBe(1);
@@ -809,10 +810,13 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
           return;
         }
         const loaded = yield* App.make(Game, { save: save.value });
-        expect((yield* loaded.read(Index)).byX).toBeUndefined();
+        expect((yield* loaded.read(Singleton.Read(Index))).byX).toBeUndefined();
         yield* loaded.tick(1);
         expect(built).toBe(2);
-        expect((yield* loaded.read(Index)).byX).toEqual({ 1: 2, 2: 1 });
+        expect((yield* loaded.read(Singleton.Read(Index))).byX).toEqual({
+          1: 2,
+          2: 1,
+        });
         // A rewind keeps it, since nothing wrote the singleton since.
         yield* Timeline.rewind(app, moment.value);
         expect(yield* byX()).toEqual({ 1: 2, 2: 1 });

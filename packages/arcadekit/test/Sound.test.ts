@@ -57,10 +57,10 @@ const Throw = Action.define(
 
 const Fall = System.tick("sd/Fall", function* () {
   const { delta } = yield* Time;
-  const bounced = yield* Bounced.emits;
-  const bounces = yield* Bounces.writes;
+  const bounced = yield* Event.Emitter(Bounced);
+  const bounces = yield* Singleton.Write(Bounces);
   let count = 0;
-  (yield* Balls).each((ball) => {
+  (yield* Query.View(Balls)).each((ball) => {
     ball.speed += 10 * delta;
     ball.y -= ball.speed * delta;
     if (ball.y <= 0) {
@@ -109,14 +109,14 @@ const Rules = Plugin.make("sd/Rules", {
   systems: [Fall],
   handlers: [
     Action.handler(Drop, function* ({ height }) {
-      (yield* Dropped.emits).emit({});
+      (yield* Event.Emitter(Dropped)).emit({});
       if (height > 100) {
         return yield* TooHigh.make({});
       }
       (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: height, speed: 0 }));
     }),
     Action.handler(Mute, function* ({ on }) {
-      (yield* Phase.sets).set(on ? "muted" : "playing");
+      (yield* State.Setter(Phase)).set(on ? "muted" : "playing");
     }),
     Action.handler(Throw, function* ({ speed }) {
       (yield* Commands.spawns(Ball)).spawn(Ball.of({ y: 0.001, speed }));
@@ -567,7 +567,9 @@ describe("a game with sound", () => {
         expect(saves[0]).toBeDefined();
         expect(saves[0]).toEqual(saves[1]);
         // And it was heard: every bounce that was fast enough.
-        expect((yield* heard.read(Bounces)).count).toBeGreaterThan(5);
+        expect(
+          (yield* heard.read(Singleton.Read(Bounces))).count
+        ).toBeGreaterThan(5);
         expect(
           sound.played.filter((one) => one.cue === "thud").length
         ).toBeGreaterThan(5);

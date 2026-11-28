@@ -86,29 +86,31 @@ const WALLS = [
 
 const Drift = System.tick("Drift", function* () {
   const { delta } = yield* Time;
-  (yield* Drifting).eachChunk((start, end, position, velocity, tint) => {
-    for (const [axis, wall] of WALLS) {
-      const at = position[axis];
-      const speed = velocity[axis];
-      for (let i = start; i < end; i++) {
-        let next = at[i]! + speed[i]! * delta;
-        // Off a wall of the box, and back, in the colour of that wall.
-        if (next > BOX || next < -BOX) {
-          speed[i] = -speed[i]!;
-          next = at[i]!;
-          tint.r[i] = wall.r;
-          tint.g[i] = wall.g;
-          tint.b[i] = wall.b;
+  (yield* Query.View(Drifting)).eachChunk(
+    (start, end, position, velocity, tint) => {
+      for (const [axis, wall] of WALLS) {
+        const at = position[axis];
+        const speed = velocity[axis];
+        for (let i = start; i < end; i++) {
+          let next = at[i]! + speed[i]! * delta;
+          // Off a wall of the box, and back, in the colour of that wall.
+          if (next > BOX || next < -BOX) {
+            speed[i] = -speed[i]!;
+            next = at[i]!;
+            tint.r[i] = wall.r;
+            tint.g[i] = wall.g;
+            tint.b[i] = wall.b;
+          }
+          at[i] = next;
         }
-        at[i] = next;
       }
     }
-  });
+  );
 });
 
 const Turn = System.tick("Turn", function* () {
   const { delta } = yield* Time;
-  (yield* Spinning).eachChunk((start, end, rotation, spin) => {
+  (yield* Query.View(Spinning)).eachChunk((start, end, rotation, spin) => {
     for (let i = start; i < end; i++) {
       const angle = spin.angle[i]! + spin.rate[i]! * delta;
       spin.angle[i] = angle;
@@ -129,7 +131,7 @@ const Wheel = System.tick("Wheel", function* () {
   const { delta } = yield* Time;
   const cos = Math.cos(delta * 0.3);
   const sin = Math.sin(delta * 0.3);
-  (yield* Carded).eachChunk((start, end, position, rotation) => {
+  (yield* Query.View(Carded)).eachChunk((start, end, position, rotation) => {
     for (let i = start; i < end; i++) {
       const x = position.x[i]!;
       const y = position.y[i]!;
@@ -157,11 +159,11 @@ const Piloted = Query.all(Position).pipe(
 
 const Steer = System.tick("Steer", function* () {
   const { delta } = yield* Time;
-  const { x, y } = yield* Fly;
+  const { x, y } = yield* Input.Read(Fly);
   if (x === 0 && y === 0) {
     return;
   }
-  const [position] = (yield* Piloted).single();
+  const [position] = (yield* Query.View(Piloted)).single();
   position.x += x * 30 * delta;
   position.y += y * 30 * delta;
 });
@@ -241,12 +243,12 @@ const Deck = Assets.bundle("page/Deck", {
 const DeckOut = System.local(() => ({ out: true }));
 const PutAway = System.input("page/PutAway", function* () {
   if ((yield* Input.Devices).pressed.includes("KeyC")) {
-    const deck = yield* DeckOut;
+    const deck = yield* System.Kept(DeckOut);
     deck.out = !deck.out;
   }
 });
 const KeepDeck = Assets.during(Deck).pipe(
-  System.runIf(Effect.map(DeckOut, ({ out }) => out))
+  System.runIf(Effect.map(System.Kept(DeckOut), ({ out }) => out))
 );
 
 const Cards = Three.instancesFrom("page/Cards", {
@@ -284,7 +286,7 @@ const Ships = Three.objectsFrom("page/Ships", {
 const Going = System.local(() => ({ angle: 0 }));
 const Orbit = System.frame("Orbit", function* () {
   const { camera } = yield* Three.Scene;
-  const going = yield* Going;
+  const going = yield* System.Kept(Going);
   going.angle += (yield* Frame).delta * 0.1;
   const { angle } = going;
   camera.position.set(Math.sin(angle) * 170, 40, Math.cos(angle) * 170);
@@ -296,7 +298,7 @@ const hud = document.querySelector("#hud") as HTMLElement;
 const Counted = System.local(() => ({ shown: 0, frames: 0 }));
 const Hud = System.frame("Hud", function* () {
   const { tick } = yield* Time;
-  const counted = yield* Counted;
+  const counted = yield* System.Kept(Counted);
   counted.frames++;
   const now = performance.now();
   // Twice a second: text that changes every frame is work nobody can read.

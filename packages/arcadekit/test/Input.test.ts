@@ -72,7 +72,7 @@ const told = (devices: Input.Sample) => ({
 const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
-  (yield* Ships).each((ship) => {
+  (yield* Query.View(Ships)).each((ship) => {
     if (keys.down("ArrowLeft")) {
       ship.x -= 10 * delta;
     }
@@ -93,7 +93,7 @@ const Flying = Plugin.make("Flying", {
 });
 const ship = Effect.fnUntraced(function* (app: App.Any) {
   let found = { x: Number.NaN, shots: Number.NaN };
-  (yield* app.read(Seen)).each((one) => {
+  (yield* app.read(Query.View(Seen))).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
   return found;
@@ -116,13 +116,13 @@ const Docked = Plugin.make("in/Docked", {
 /** A point, given from outside the game. */
 const Award = Action.define("in/Award", Schema.Struct({}));
 const award = Action.handler(Award, function* () {
-  (yield* Score.writes).points += 1;
+  (yield* Singleton.Write(Score)).points += 1;
 });
 const hashOf = Effect.fnUntraced(function* (app: App.Any) {
   return (yield* app.read(World)).hash();
 });
 const pointsOf = Effect.fnUntraced(function* (app: App.Any) {
-  return (yield* app.read(Score)).points;
+  return (yield* app.read(Singleton.Read(Score))).points;
 });
 const reports = (app: App.Any): unknown[] =>
   app.actionLog
@@ -163,7 +163,7 @@ describe("the input stage", () => {
         );
         const Pause = Action.define("in/Pause", Schema.Struct({}));
         const pause = Action.handler(Pause, function* () {
-          (yield* Phase.sets).set("paused");
+          (yield* State.Setter(Phase)).set("paused");
         });
         const app = yield* App.make(
           App.define({
@@ -320,7 +320,7 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         const Bump = Action.define("in/Bump", Schema.Struct({}));
         const bump = Action.handler(Bump, function* () {
-          (yield* Score.writes).points += 1;
+          (yield* Singleton.Write(Score)).points += 1;
         });
         const attempts: Record<string, Effect.Effect<unknown, never, Dice>> = {
           "A draw from world.random": Effect.map(Effect.service(Dice), (dice) =>
@@ -454,7 +454,7 @@ describe("the input stage", () => {
     () =>
       Effect.gen(function* () {
         const Scribble = System.input("Scribble", function* () {
-          (yield* Seen).eachChunk((start, end, ships) => {
+          (yield* Query.View(Seen)).eachChunk((start, end, ships) => {
             for (let i = start; i < end; i++) {
               // @ts-expect-error a read query's columns are not assigned
               ships.x[i] = 99;
@@ -485,7 +485,7 @@ describe("the input stage", () => {
           Schema.Struct({ by: Schema.Int })
         );
         const bump = Action.handler(Bump, function* ({ by }) {
-          (yield* Score.writes).points += by;
+          (yield* Singleton.Write(Score)).points += by;
         });
         const Press = System.input("Press", function* () {
           (yield* Action.Actions).enqueue(Bump, { by: 2 });
@@ -517,7 +517,7 @@ describe("the input stage", () => {
             Schema.Struct({ by: Schema.Int })
           );
           const bump = Action.handler(Bump, function* ({ by }) {
-            (yield* Score.writes).points += by;
+            (yield* Singleton.Write(Score)).points += by;
           });
           const Press = System.input("Press", function* () {
             const devices = yield* Input.Devices;
@@ -527,7 +527,7 @@ describe("the input stage", () => {
           });
           const seen: number[] = [];
           const Look = System.tick("Look", function* () {
-            seen.push((yield* Score).points);
+            seen.push((yield* Singleton.Read(Score)).points);
           });
           const app = yield* App.make(
             App.define({ handlers: [bump], systems: [Press, Look] }),
@@ -607,7 +607,7 @@ describe("the input stage", () => {
           Schema.Struct({ at: Schema.Int })
         );
         const Land = System.tick("Land", function* () {
-          (yield* Landed.emits).emit({ at: (yield* Time).tick });
+          (yield* Event.Emitter(Landed)).emit({ at: (yield* Time).tick });
         });
         const heard: number[] = [];
         const also: number[] = [];
@@ -618,7 +618,7 @@ describe("the input stage", () => {
           stage: "input" | "frame"
         ) => {
           const body = function* () {
-            for (const landed of (yield* Landed).read()) {
+            for (const landed of (yield* Event.Reader(Landed)).read()) {
               into.push(landed.at);
             }
           };
@@ -681,7 +681,7 @@ describe("the input stage", () => {
           if (by > 5) {
             return yield* TooMuch.make({});
           }
-          (yield* Done.emits).emit({ by });
+          (yield* Event.Emitter(Done)).emit({ by });
         });
         const hear = (
           name: string,
@@ -690,10 +690,10 @@ describe("the input stage", () => {
           refused: string[]
         ) => {
           const body = function* () {
-            for (const event of (yield* Done).read()) {
+            for (const event of (yield* Event.Reader(Done)).read()) {
               done.push(event.by);
             }
-            for (const event of (yield* Action.Rejected).read()) {
+            for (const event of (yield* Event.Reader(Action.Rejected)).read()) {
               refused.push(`${event.action} ${event.error._tag}`);
             }
           };
@@ -784,7 +784,7 @@ describe("the input stage", () => {
         const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
         const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
         const emit = Action.handler(Emit, function* () {
-          (yield* Done.emits).emit({ at: (yield* Time).tick + 1 });
+          (yield* Event.Emitter(Done)).emit({ at: (yield* Time).tick + 1 });
         });
         // A system that first listens late hears what is still kept: only
         // what its stage has not yet had its chance at.
@@ -795,7 +795,7 @@ describe("the input stage", () => {
         ) => {
           const body = function* () {
             if (listening()) {
-              for (const event of (yield* Done).read()) {
+              for (const event of (yield* Event.Reader(Done)).read()) {
                 heard.push(event.at);
               }
             }
@@ -835,11 +835,11 @@ describe("the input stage", () => {
         const Done = Event.define("in/Kept", Schema.Struct({}));
         const Emit = Action.define("in/Emit", Schema.Struct({}));
         const emit = Action.handler(Emit, function* () {
-          (yield* Done.emits).emit({});
+          (yield* Event.Emitter(Done)).emit({});
         });
         let heard = 0;
         const Hear = System.input("Hear", function* () {
-          heard += (yield* Done).read().length;
+          heard += (yield* Event.Reader(Done)).read().length;
         });
         const ticked = function* (ticks: number) {
           const app = yield* App.make(
@@ -1736,7 +1736,7 @@ describe("the picture of the devices in the world", () => {
         // system runs before the game's.
         const Key = Input.button("in/ProbeKey", ["Space"]);
         const Probing = System.input("in/Probing", function* () {
-          const key = yield* Key;
+          const key = yield* Input.Read(Key);
           if (key.pressed || key.released) {
             (yield* Action.Actions).enqueue(Probe, {});
           }
@@ -1819,7 +1819,7 @@ describe("the picture of the devices in the world", () => {
           if (!(yield* Input.Keyboard).down("Space")) {
             return yield* NotHeld.make({});
           }
-          (yield* Score.writes).points += 1;
+          (yield* Singleton.Write(Score)).points += 1;
         });
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
@@ -2144,13 +2144,13 @@ describe("controls", () => {
   it("are read where an Input.controls declares them, are named with a slash, and are bound to codes that are codes", () => {
     const reads = [
       System.tick("in/Tick", function* () {
-        void (yield* Jump).held;
+        void (yield* Input.Read(Jump)).held;
       }),
       System.frame("in/Frame", function* () {
-        void (yield* Steer);
+        void (yield* Input.Read(Steer));
       }),
       System.input("in/Input", function* () {
-        void (yield* Move).x;
+        void (yield* Input.Read(Move)).x;
       }),
     ] as const;
     for (const system of reads) {
@@ -2164,7 +2164,7 @@ describe("controls", () => {
     }
     const Probe = Action.define("in/ProbeJump", Schema.Struct({}));
     const probe = Action.handler(Probe, function* () {
-      void (yield* Jump).pressed;
+      void (yield* Input.Read(Jump)).pressed;
     });
     expectTypeOf(
       App.make(App.define({ plugins: [Input.plugin], handlers: [probe] }))
@@ -2172,10 +2172,10 @@ describe("controls", () => {
     expectTypeOf(
       App.make(App.define({ plugins: [Controls], handlers: [probe] }))
     ).toExtend<Effect.Effect<unknown, never>>();
-    expectTypeOf(Jump).toExtend<
+    expectTypeOf(Input.Read(Jump)).toEqualTypeOf<
       Effect.Effect<Input.ButtonState, never, Input.Declared<"in/Jump">>
     >();
-    expectTypeOf(Move).toExtend<
+    expectTypeOf(Input.Read(Move)).toEqualTypeOf<
       Effect.Effect<Input.StickState, never, Input.Declared<"in/Move">>
     >();
     // A name is its feature and what it is, and a code is one a device has.
@@ -2234,7 +2234,7 @@ describe("controls", () => {
         yield* Effect.gen(function* () {
           const seen: string[] = [];
           const Look = System.tick("in/Look", function* () {
-            seen.push(said((yield* Time).tick, yield* Jump));
+            seen.push(said((yield* Time).tick, yield* Input.Read(Jump)));
           });
           const app = yield* App.make(
             App.define({ plugins: [Controls], systems: [Look] }),
@@ -2301,8 +2301,8 @@ describe("controls", () => {
         yield* Effect.gen(function* () {
           const seen: number[][] = [];
           const Look = System.tick("in/Look", function* () {
-            const move = yield* Move;
-            seen.push(rounded([yield* Steer, move.x, move.y]));
+            const move = yield* Input.Read(Move);
+            seen.push(rounded([yield* Input.Read(Steer), move.x, move.y]));
           });
           const app = yield* App.make(
             App.define({ plugins: [Controls], systems: [Look] })
@@ -2366,19 +2366,19 @@ describe("controls", () => {
         yield* Effect.gen(function* () {
           const seen: string[] = [];
           const Flash = System.frame("in/Flash", function* () {
-            const jump = yield* Jump;
+            const jump = yield* Input.Read(Jump);
             const { count } = yield* Frame;
             seen.push(`frame ${count}${jump.pressed ? " pressed" : ""}`);
           });
           const Hear = System.input("in/Hear", function* () {
-            const jump = yield* Jump;
+            const jump = yield* Input.Read(Jump);
             const pointer = yield* Input.Pointer;
             seen.push(
               `input${jump.held ? " held" : ""}${jump.pressed ? " pressed" : ""} ${pointer.x},${pointer.y}`
             );
           });
           const Look = System.tick("in/Look", function* () {
-            seen.push(said((yield* Time).tick, yield* Jump));
+            seen.push(said((yield* Time).tick, yield* Input.Read(Jump)));
           });
           const app = yield* App.make(
             App.define({ plugins: [Controls], systems: [Look, Hear, Flash] })
@@ -2425,7 +2425,7 @@ describe("controls", () => {
         });
         const seen: string[] = [];
         const Look = System.tick("in/Look", function* () {
-          seen.push(said((yield* Time).tick, yield* Jump));
+          seen.push(said((yield* Time).tick, yield* Input.Read(Jump)));
         });
         const Game = App.define({
           plugins: [Controls],
@@ -2503,10 +2503,10 @@ describe("controls", () => {
             }
           });
           const Hear = System.input("in/Hear", function* () {
-            seen.push(said(0, yield* Jump));
+            seen.push(said(0, yield* Input.Read(Jump)));
           });
           const Look = System.tick("in/Look", function* () {
-            seen.push(said((yield* Time).tick, yield* Jump));
+            seen.push(said((yield* Time).tick, yield* Input.Read(Jump)));
           });
           const app = yield* App.make(
             App.define({ plugins: [Controls], systems: [Choose, Hear, Look] }),
@@ -2551,7 +2551,7 @@ describe("controls", () => {
           const seen: string[] = [];
           const Look = System.tick("in/Look", function* () {
             seen.push(
-              `${said((yield* Time).tick, yield* Jump)} ${yield* Steer}`
+              `${said((yield* Time).tick, yield* Input.Read(Jump))} ${yield* Input.Read(Steer)}`
             );
           });
           const app = yield* App.make(
@@ -2644,10 +2644,10 @@ describe("an input system", () => {
   // its own, which can carry the player.
   const Issue = System.input("in/Issue", function* () {
     const actions = yield* Action.Actions;
-    if ((yield* Jump).pressed) {
+    if ((yield* Input.Read(Jump)).pressed) {
       actions.enqueue(Leap, undefined);
     }
-    if ((yield* Shoot).pressed) {
+    if ((yield* Input.Read(Shoot)).pressed) {
       const pointer = yield* Input.Pointer;
       actions.enqueue(Fire, { x: pointer.x, y: pointer.y });
     }
@@ -2808,10 +2808,10 @@ describe("a platformer", () => {
   );
   // The rules read what the player does, and no key.
   const Run = System.tick("pf/Run", function* () {
-    const hero = yield* Hero.writes;
+    const hero = yield* Singleton.Write(Hero);
     const { delta } = yield* Time;
-    hero.x += 6 * (yield* Move) * delta;
-    if ((yield* Jump).pressed && hero.y === 0) {
+    hero.x += 6 * (yield* Input.Read(Move)) * delta;
+    if ((yield* Input.Read(Jump)).pressed && hero.y === 0) {
       hero.rise = 12;
       hero.jumps += 1;
     }
@@ -2824,14 +2824,14 @@ describe("a platformer", () => {
   // What draws it flashes once for each press of the jump.
   const flashes: number[] = [];
   const Flash = System.frame("pf/Flash", function* () {
-    if ((yield* Jump).pressed) {
+    if ((yield* Input.Read(Jump)).pressed) {
       flashes.push((yield* Frame).count);
     }
   });
   // A settings menu: R, then the key the jump is to be, with the pad's B.
   const Menu = System.local(() => ({ asking: false }));
   const Settings = System.input("pf/Settings", function* () {
-    const menu = yield* Menu;
+    const menu = yield* System.Kept(Menu);
     const { pressed } = yield* Input.Devices;
     if (!menu.asking) {
       menu.asking = pressed.includes("KeyR");
@@ -2864,19 +2864,19 @@ describe("a platformer", () => {
         const start = Effect.fnUntraced(function* () {
           const game = yield* Test.make(Platformer, { seed: 3 });
           const settings = Input.settingsOf(game.app, Controls);
-          yield* settings.rebind(Jump, yield* JumpKeys);
+          yield* settings.rebind(Jump, yield* Setting.get(JumpKeys));
           return { game, settings };
         });
         const jumped = Effect.fnUntraced(function* (
           game: Effect.Success<ReturnType<typeof start>>["game"],
           code: Input.ButtonCode
         ) {
-          const before = (yield* game.app.read(Hero)).jumps;
+          const before = (yield* game.app.read(Singleton.Read(Hero))).jumps;
           game.input.tap(code);
           for (let i = 0; i < 60; i++) {
             yield* game.step();
           }
-          return (yield* game.app.read(Hero)).jumps > before;
+          return (yield* game.app.read(Singleton.Read(Hero))).jumps > before;
         });
         const { game, settings } = yield* start().pipe(
           Effect.provide(Setting.layer(store))
@@ -2903,11 +2903,11 @@ describe("a platformer", () => {
           Setting.makeMemory({ "pf/JumpKeys": '["Spce"]' })
         );
         expect(
-          yield* Effect.provide(Effect.flip(JumpKeys), spelt)
+          yield* Effect.provide(Effect.flip(Setting.get(JumpKeys)), spelt)
         ).toMatchObject({ _tag: "SettingInvalid", key: "pf/JumpKeys" });
         expect(
           yield* Effect.provide(
-            Effect.orElseSucceed(JumpKeys, () => Jump.bindings),
+            Effect.orElseSucceed(Setting.get(JumpKeys), () => Jump.bindings),
             spelt
           )
         ).toEqual(Jump.bindings);
@@ -2949,7 +2949,7 @@ describe("a platformer", () => {
         flashes.length = 0;
         const game = yield* Test.make(Platformer, { seed: 3 });
         const hero = Effect.fnUntraced(function* () {
-          const { jumps, x, y } = yield* game.app.read(Hero);
+          const { jumps, x, y } = yield* game.app.read(Singleton.Read(Hero));
           return { jumps, x: Math.round(x * 1000) / 1000, y };
         });
         const steps = Effect.fnUntraced(function* (count: number) {
@@ -2996,7 +2996,7 @@ describe("a platformer", () => {
         const recording = yield* Replay.record(game.app);
         const again = yield* Replay.verify(recording, Platformer);
         expect(yield* hashOf(again)).toBe(yield* hashOf(game.app));
-        const replayed = yield* again.read(Hero);
+        const replayed = yield* again.read(Singleton.Read(Hero));
         expect(replayed.jumps).toBe(4);
       })
   );
@@ -3030,7 +3030,7 @@ describe("a platformer", () => {
         yield* steps(60);
         // Each tick ran twice to the same hash, system by system.
         expect(test.checked).toBe(142);
-        const { jumps } = yield* test.app.read(Hero);
+        const { jumps } = yield* test.app.read(Singleton.Read(Hero));
         expect([jumps, flashes.length]).toEqual([2, 2]);
       })
   );

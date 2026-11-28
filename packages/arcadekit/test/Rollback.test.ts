@@ -331,11 +331,13 @@ describe("a rollback session", () => {
         );
         const Ring = Action.define("rb/Ring", Schema.Struct({}));
         const ring = Action.handler(Ring, function* (_, { from }) {
-          (yield* Rang.emits).emit({ by: from ?? "" });
+          (yield* Event.Emitter(Rang)).emit({ by: from ?? "" });
         });
         const heard: string[] = [];
         const Listen = System.frame("rb/Listen", function* () {
-          heard.push(...(yield* Rang).read().map((rang) => rang.by));
+          heard.push(
+            ...(yield* Event.Reader(Rang)).read().map((rang) => rang.by)
+          );
         });
         const Ringing = App.define({ systems: [Listen], handlers: [ring] });
         yield* withMade(
@@ -609,13 +611,13 @@ describe("a rollback session", () => {
         });
         const Spoil = System.tick("rb/Spoil", function* () {
           if ((yield* Time).tick === 2) {
-            (yield* Query.all(Holder).pipe(Query.writes(Holder))).each(
-              (holder) => {
-                // Not plain data: no snapshot can hold it.
-                // @ts-expect-error A function is not JSON.
-                holder.thing = () => 1;
-              }
-            );
+            (yield* Query.View(
+              Query.all(Holder).pipe(Query.writes(Holder))
+            )).each((holder) => {
+              // Not plain data: no snapshot can hold it.
+              // @ts-expect-error A function is not JSON.
+              holder.thing = () => 1;
+            });
           }
         });
         const Hold = Plugin.make("rb/Hold", {
@@ -663,7 +665,7 @@ describe("a rollback session", () => {
         );
         const Halt = Action.define("rb/Halt", Schema.Struct({}));
         const halt = Action.handler(Halt, function* () {
-          (yield* Halted.writes).on = 1;
+          (yield* Singleton.Write(Halted)).on = 1;
         });
         const Lay = Plugin.make("rb/Lay", {
           setup: Effect.map(Commands.spawns(Dot), (commands) => {
@@ -678,9 +680,9 @@ describe("a rollback session", () => {
           if ((yield* Time).tick !== 3) {
             return;
           }
-          const dots = (yield* Dots).entities();
+          const dots = (yield* Query.View(Dots)).entities();
           const world = yield* World.writes(Dot);
-          if ((yield* Halted).on === 1) {
+          if ((yield* Singleton.Read(Halted)).on === 1) {
             world.set(dots[5]!, Dot, { x: 50 });
             return;
           }
@@ -693,8 +695,8 @@ describe("a rollback session", () => {
         const drawn: { changed: Entity[]; added: Entity[] }[] = [];
         const Draw = System.frame("rb/Draw", function* () {
           drawn.push({
-            changed: (yield* Changed).entities(),
-            added: (yield* Added).entities(),
+            changed: (yield* Query.View(Changed)).entities(),
+            added: (yield* Query.View(Added)).entities(),
           });
         });
         yield* withMade(
@@ -709,7 +711,7 @@ describe("a rollback session", () => {
           (session) =>
             Effect.gen(function* () {
               const { app } = session;
-              const dots = (yield* app.read(Dots)).entities();
+              const dots = (yield* app.read(Query.View(Dots))).entities();
               // Ahead of grace, who has said nothing: every tick is a guess.
               for (let tick = 0; tick < 5; tick++) {
                 yield* session.tick();

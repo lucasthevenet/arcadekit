@@ -53,8 +53,8 @@ export const Rules = Plugin.make("game/Rules", {
   }),
   handlers: [
     Action.handler(Aim, function* ({ x, y }) {
-      const aimed = yield* Aimed.writes;
-      const [at] = (yield* Players).single();
+      const aimed = yield* Singleton.Write(Aimed);
+      const [at] = (yield* Query.View(Players)).single();
       aimed.angle = Math.atan2(y - at.y, x - at.x);
     }),
   ],
@@ -113,7 +113,7 @@ const Heroes = Three.instancesFrom("game/Heroes", {
 const Click = Input.button("game/Click", [Input.pointerButton()]);
 
 const Aiming = System.input("game/Aiming", function* () {
-  if ((yield* Click).pressed) {
+  if ((yield* Input.Read(Click)).pressed) {
     const at = yield* Three.toPlane(yield* Input.Pointer);
     (yield* Action.Actions).enqueue(Aim, at);
   }

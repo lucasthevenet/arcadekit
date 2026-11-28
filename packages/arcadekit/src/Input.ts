@@ -15,8 +15,8 @@
  *   const Controls = Input.controls("game/Controls", [Jump, Move])
  *
  *   const Run = System.tick("game/Run", function*() {
- *     const move = yield* Move          // { x, y }: y up, of length 1 at most
- *     if ((yield* Jump).pressed) ...    // went down in this tick
+ *     const move = yield* Input.Read(Move)          // { x, y }: y up, of length 1 at most
+ *     if ((yield* Input.Read(Jump)).pressed) ...    // went down in this tick
  *   })
  *
  * The devices are outside the game. The input stage, `System.input`, reads
@@ -41,7 +41,7 @@
  * Nothing provides a source to a replay or a server, and no devices are read
  * there.
  */
-import { Context, Effect, Effectable, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Scope } from "effect";
 
 import * as Action from "./Action.ts";
@@ -73,6 +73,8 @@ import type {
   Faces,
   Undrawn,
 } from "./internal/input.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { partsOf } from "./internal/parts.ts";
 import * as Plugin from "./Plugin.ts";
 import { Time, World } from "./Services.ts";
@@ -630,7 +632,7 @@ export interface Declared<out N extends string> {
 }
 
 /**
- * A button's state, as `yield* button` returns it.
+ * A button's state, as `Input.Read` returns it.
  *
  * @category Models
  */
@@ -648,7 +650,7 @@ export interface ButtonState {
 }
 
 /**
- * A stick's direction, as `yield* stick` returns it: x right and y up, from
+ * A stick's direction, as `Input.Read` returns it: x right and y up, from
  * -1 to 1, and of length 1 at most.
  *
  * @category Models
@@ -731,10 +733,13 @@ const stickSchema: Schema.Codec<StickBindings> = Schema.Struct({
   deadzone: Schema.optionalKey(Schema.Finite),
 });
 
+// Keeps a control's state in its type, which nothing else of it says.
+declare const StateBrand: unique symbol;
+
 /**
  * Something the player does, named by the game and bound to the devices:
- * what `Input.button`, `Input.axis` and `Input.stick` declare. It is an
- * Effect, and `yield*` returns its state in the stage that reads it.
+ * what `Input.button`, `Input.axis` and `Input.stick` declare.
+ * `yield* Input.Read(control)` returns its state in the stage that reads it.
  *
  * @typeParam N its name
  * @typeParam A its state
@@ -746,7 +751,8 @@ export interface Control<
   out N extends string = string,
   out A = unknown,
   out B = unknown,
-> extends Effect.Effect<A, never, Declared<N>> {
+> {
+  readonly [StateBrand]?: A;
   /** Its name, which no other control of the game has. */
   readonly name: N;
   /** What it is bound to unless the game rebinds it. */
@@ -811,13 +817,9 @@ type Face<A> = () => A;
 const keyOf = <N extends string, A>(name: N) =>
   Context.Service<Declared<N>, Face<A>>(`arcadekit/Input.${name}`);
 
-class Declaration<
-  K extends AnyControl["kind"],
-  N extends string,
-  A,
-  B,
-> extends Effectable.Class<A, never, Declared<N>> {
-  private effect: Effect.Effect<A, never, Declared<N>> | undefined;
+class Declaration<K extends AnyControl["kind"], N extends string, A, B> {
+  /** Where each stage keeps what reads the control's state. */
+  readonly face: Context.Service<Declared<N>, Face<A>>;
 
   constructor(
     readonly kind: K,
@@ -825,16 +827,38 @@ class Declaration<
     readonly bindings: B,
     readonly schema: Schema.Codec<B>
   ) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<A, never, Declared<N>> {
-    return (this.effect ??= Effect.map(
-      Effect.service(keyOf<N, A>(this.name)),
-      (read) => read()
-    ));
+    this.face = keyOf<N, A>(name);
   }
 }
+
+const stateOf = <A>(given: Given, control: Control<string, A>): A => {
+  if (!(control instanceof Declaration)) {
+    throw new Error(
+      `Input.Read was given "${control.name}", which Input.button, Input.axis or Input.stick did not declare.`
+    );
+  }
+  return service(
+    given,
+    (control as Declaration<never, string, A, unknown>).face
+  )();
+};
+
+/**
+ * Asks for a control's state in the stage that reads it: in the tick, what
+ * the world holds of it, and in the frame and input stages, what the devices
+ * say now.
+ *
+ *   const jump = yield* Input.Read(Jump)   // { held, pressed, released }
+ *   const x = yield* Input.Read(Steer)     // from -1 to 1
+ *
+ * A game that reads a control declares it with `Input.controls`, or doesn't
+ * compile.
+ *
+ * @category Capabilities
+ */
+export const Read = <N extends string, A>(
+  control: Control<N, A>
+): Effect.Effect<A, never, Declared<N>> => lookup(stateOf, control);
 
 /**
  * A control's name: its feature, a slash, and what it is, as `"game/Jump"`.
@@ -850,7 +874,7 @@ export type Name = `${string}/${string}`;
  *   const Jump = Input.button("game/Jump", ["Space", Input.padButton(0, 0)])
  *
  *   const Leap = System.tick("game/Leap", function* () {
- *     const jump = yield* Jump   // { held, pressed, released }
+ *     const jump = yield* Input.Read(Jump)   // { held, pressed, released }
  *     if (jump.pressed) ...
  *   })
  *
@@ -885,7 +909,7 @@ export const button = <const N extends Name>(
  *     pad: Input.padAxis(0, 0),
  *   })
  *
- *   const x = yield* Steer
+ *   const x = yield* Input.Read(Steer)
  *
  * @category Constructors
  */
@@ -912,7 +936,7 @@ export const axis = <const N extends Name>(
  *     pad: Input.padStick(0, "left"),
  *   })
  *
- *   const { x, y } = yield* Move
+ *   const { x, y } = yield* Input.Read(Move)
  *
  * **Details**
  *
@@ -972,7 +996,7 @@ export const rebind = <N extends string, B>(
   Effect.gen(function* () {
     // Declared, as the type says: a control nobody declared has no bindings.
     yield* keyOf(control.name);
-    (yield* Rebound).set(control.name, bindings);
+    (yield* System.Kept(Rebound)).set(control.name, bindings);
   });
 
 /**
@@ -987,7 +1011,7 @@ export const bindingsOf = <N extends string, B>(
 ): Effect.Effect<B, never, Declared<N> | System.Locals> =>
   Effect.gen(function* () {
     yield* keyOf(control.name);
-    return bindingsIn(control, yield* Rebound);
+    return bindingsIn(control, yield* System.Kept(Rebound));
   });
 
 /**
@@ -1128,7 +1152,7 @@ const ReportSchema = Schema.Struct({
 export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
 
 const report = Action.handler(Report, function* (payload) {
-  const held = yield* Held.writes;
+  const held = yield* Singleton.Write(Held);
   // It is applied at the start of a tick, before the tick is counted: the
   // tick whose systems see it first is the next.
   const tick = (yield* Time).tick + 1;
@@ -1147,7 +1171,7 @@ const report = Action.handler(Report, function* (payload) {
  * compares both with the state the game will have at its next tick, and
  * reports any difference as an action.
  */
-const Read = System.input("arcadekit/Input.Read", function* () {
+const ReadDevices = System.input("arcadekit/Input.Read", function* () {
   // Where there are no devices there is nothing to bring the state up to
   // date with: it stays as it was last reported, by a log or by another
   // machine. No devices is not devices with every button up.
@@ -1171,7 +1195,7 @@ const Read = System.input("arcadekit/Input.Read", function* () {
   }
   let said: Changes | undefined;
   if (controls.length > 0) {
-    sampling.begin(controls, yield* Rebound, devices);
+    sampling.begin(controls, yield* System.Kept(Rebound), devices);
     said = controlsIn(controls, sampling, devices);
   }
   const payload = difference(buttons, axes, devices, said);
@@ -1428,7 +1452,7 @@ const board = Layer.effectContext(
  */
 export const plugin = Plugin.make("arcadekit/Input", {
   handlers: [report],
-  systems: [Read],
+  systems: [ReadDevices],
   layer: board,
 });
 

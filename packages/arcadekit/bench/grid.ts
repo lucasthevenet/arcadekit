@@ -99,7 +99,7 @@ type Size = readonly [width: number, height: number];
 const digger = ([width, height]: Size) => {
   const Floor = floorOf(width, height, WALL);
   const Dig = System.tick("bench/Dig", function* () {
-    const floor = yield* Floor.writes;
+    const floor = yield* Singleton.Write(Floor);
     const at = (yield* Time).tick % (width * height);
     const x = at % width;
     const y = (at - x) / width;
@@ -133,7 +133,7 @@ const digging = (size: Size | undefined, hashed: boolean): number =>
         throw new Error(`${checks} hashes were taken in ${ticks} ticks.`);
       }
       if (map !== undefined) {
-        const { tiles } = yield* app.read(map.Floor);
+        const { tiles } = yield* app.read(Singleton.Read(map.Floor));
         if (opened(tiles) !== openAfter(ticks, tiles.width * tiles.height)) {
           throw new Error(`${ticks} ticks did not dig a tile each.`);
         }
@@ -213,12 +213,14 @@ const asking = (
         }),
       });
       const Walk = System.tick("bench/Walk", function* () {
-        const { tiles } = yield* Floor;
+        const { tiles } = yield* Singleton.Read(Floor);
         let steps = 0;
         let blocked = 0;
-        const here = ask ? Grid.occupants(tiles, yield* Creatures) : undefined;
+        const here = ask
+          ? Grid.occupants(tiles, yield* Query.View(Creatures))
+          : undefined;
         let side = (yield* Time).tick;
-        (yield* Walkers).each((spot) => {
+        (yield* Query.View(Walkers)).each((spot) => {
           const [dx, dy] = Grid.sides[side++ & 3]!;
           const x = spot.x + dx;
           const y = spot.y + dy;
@@ -233,7 +235,7 @@ const asking = (
           spot.y = y;
           steps++;
         });
-        const walked = yield* Walked.writes;
+        const walked = yield* Singleton.Write(Walked);
         walked.steps += steps;
         walked.blocked += blocked;
       });
@@ -246,7 +248,7 @@ const asking = (
         TICKS.runs,
         TICKS.warmup
       );
-      const { steps, blocked } = yield* app.read(Walked);
+      const { steps, blocked } = yield* app.read(Singleton.Read(Walked));
       if (steps === 0 || (ask && blocked === 0)) {
         throw new Error(
           `${steps} steps and ${blocked} blocked: nobody walked.`

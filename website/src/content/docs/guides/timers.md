@@ -36,9 +36,9 @@ const Guns = Query.all(Gun).pipe(Query.writes(Gun));
 
 const Fire = System.tick("game/Fire", function* () {
   const { delta } = yield* Time;
-  const trigger = yield* Trigger;
+  const trigger = yield* Singleton.Read(Trigger);
   const commands = yield* Commands.spawns(Bullet);
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = Timer.tick(gun.cooldown, delta);
     if (trigger.held === 1 && Timer.ready(gun.cooldown)) {
       gun.cooldown = 0.2;
@@ -52,7 +52,7 @@ const Hold = Action.define(
   Schema.Struct({ held: Schema.Boolean })
 );
 const hold = Action.handler(Hold, function* ({ held }) {
-  (yield* Trigger.writes).held = held ? 1 : 0;
+  (yield* Singleton.Write(Trigger)).held = held ? 1 : 0;
 });
 
 export const Rules = Plugin.make("game/Rules", {

@@ -126,14 +126,14 @@ const makeGame = () => {
     Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) })
   );
   const go = Action.handler(Go, function* ({ to }) {
-    (yield* Level.sets).set(to);
+    (yield* State.Setter(Level)).set(to);
   });
   const drawn: string[] = [];
   const Draw = System.frame("Draw", function* () {
-    const forest = yield* Forest;
-    const cave = yield* Cave;
+    const forest = yield* Assets.Status(Forest);
+    const cave = yield* Assets.Status(Cave);
     drawn.push(
-      `${(yield* Level).value}: forest ${forest._tag}${forest._tag === "Ready" ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
+      `${(yield* State.Reader(Level)).value}: forest ${forest._tag}${forest._tag === "Ready" ? ` (${forest.assets.layout.name}, ${forest.assets.backdrop.size} bytes)` : ""}, cave ${cave._tag}`
     );
   });
   const Game = Plugin.make("Game", {
@@ -475,7 +475,7 @@ describe("a level's assets", () => {
         });
         const seen: string[] = [];
         const Draw = System.frame("Draw", function* () {
-          seen.push((yield* Forest)._tag);
+          seen.push((yield* Assets.Status(Forest))._tag);
         });
         const Keep = Assets.during(Forest).pipe(
           System.runIf(State.is(Level, "forest"))
@@ -485,7 +485,7 @@ describe("a level's assets", () => {
           Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
         );
         const visit = Action.handler(Visit, function* ({ to }) {
-          (yield* Level.sets).set(to);
+          (yield* State.Setter(Level)).set(to);
         });
         // It is of the stage before a frame's own.
         expect(Keep.stage).toBe("preFrame");
@@ -575,7 +575,7 @@ describe("a level's assets", () => {
         const logged: unknown[] = [];
         const errors: Assets.Failed[] = [];
         const Peek = System.frame("Peek", function* () {
-          const forest = yield* Forest;
+          const forest = yield* Assets.Status(Forest);
           if (forest._tag === "Failed") {
             errors.push(forest.error);
           }
@@ -802,7 +802,7 @@ describe("a level's assets", () => {
           "Cheat",
           // @ts-expect-error assets are real time
           function* () {
-            yield* Forest;
+            yield* Assets.Status(Forest);
           }
         );
         System.tick(
@@ -816,7 +816,7 @@ describe("a level's assets", () => {
           // The input stage may ask, as the frame stage may.
           let status = "";
           const Ask = System.input("Ask", function* () {
-            status = (yield* Forest)._tag;
+            status = (yield* Assets.Status(Forest))._tag;
           });
           const asking = yield* App.make(
             App.define({ plugins: [Game], systems: [Ask] })
@@ -845,20 +845,23 @@ describe("a level's assets", () => {
         const Build = Action.define("as/Build", Layout);
         const handlers = [
           Action.handler(Enter, function* () {
-            (yield* Level.sets).set("forest");
+            (yield* State.Setter(Level)).set("forest");
           }),
           Action.handler(Build, function* ({ name, walls }) {
             const commands = yield* Commands.spawns(Wall);
             for (let at = 0; at < walls; at++) {
               commands.spawn(Wall.of({ at }));
             }
-            (yield* Built.writes).level = name;
+            (yield* Singleton.Write(Built)).level = name;
           }),
         ] as const;
         // What comes from a file comes in as an action, once the file is there.
         const Begin = System.input("Begin", function* () {
-          const forest = yield* Forest;
-          if (forest._tag === "Ready" && (yield* Built).level === "") {
+          const forest = yield* Assets.Status(Forest);
+          if (
+            forest._tag === "Ready" &&
+            (yield* Singleton.Read(Built)).level === ""
+          ) {
             (yield* Action.Actions).enqueue(Build, forest.assets.layout);
           }
         });
@@ -882,13 +885,17 @@ describe("a level's assets", () => {
           yield* app.dispatch(Enter, {});
           yield* step(0.1);
           yield* step(0.1);
-          expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
+          expect((yield* app.read(Query.View(Query.all(Wall)))).count()).toBe(
+            0
+          );
           slow.waiting
             .get("/forest.json")!
             .arrive(new TextEncoder().encode('{"walls":4,"name":"Forest"}'));
           yield* Effect.promise(settle);
           yield* step(0.1);
-          expect((yield* app.read(Query.all(Wall))).count()).toBe(4);
+          expect((yield* app.read(Query.View(Query.all(Wall)))).count()).toBe(
+            4
+          );
           yield* step(0.1);
           yield* step(0.1);
           // Issued once.
@@ -916,7 +923,9 @@ describe("a level's assets", () => {
           { hashEvery: 1 }
         );
         expect((yield* again.read(World)).hash()).toBe(hash);
-        expect((yield* again.read(Query.all(Wall))).count()).toBe(4);
+        expect((yield* again.read(Query.View(Query.all(Wall)))).count()).toBe(
+          4
+        );
       })
   );
 
@@ -1063,7 +1072,9 @@ describe("a level's assets", () => {
       });
       const seen: string[] = [];
       const Look = System.frame("Look", function* () {
-        seen.push(`${(yield* Forest)._tag} ${(yield* Raw)._tag}`);
+        seen.push(
+          `${(yield* Assets.Status(Forest))._tag} ${(yield* Assets.Status(Raw))._tag}`
+        );
       });
       const Enter = Action.define("as/EnterShared", Schema.Struct({}));
       const counting: Assets.LoaderShape = {
@@ -1079,7 +1090,7 @@ describe("a level's assets", () => {
             plugins: [Assets.plugin],
             handlers: [
               Action.handler(Enter, function* () {
-                (yield* Level.sets).set("forest");
+                (yield* State.Setter(Level)).set("forest");
               }),
             ],
             systems: [
@@ -1199,7 +1210,7 @@ describe("a level's assets", () => {
         });
         let status: Assets.Status<unknown> | undefined;
         const Look = System.frame("Look", function* () {
-          status = yield* Cursed;
+          status = yield* Assets.Status(Cursed);
         });
         yield* Effect.gen(function* () {
           const app = yield* App.make(
@@ -1275,7 +1286,10 @@ describe("levels as data", () => {
   const Levels = Assets.family("lv/Level", (level: number) => ({
     layout: Assets.json(`/levels/${level}.json`, Walls),
   }));
-  const level = Effect.map(Progress, (progress) => progress.level);
+  const level = Effect.map(
+    Singleton.Read(Progress),
+    (progress) => progress.level
+  );
   const Build = Action.define(
     "lv/Build",
     Schema.Struct({ level: Schema.Int, walls: Schema.Array(Schema.Int) })
@@ -1283,13 +1297,13 @@ describe("levels as data", () => {
   // A level replaces the one before: its walls go, and the new ones come.
   const build = Action.handler(Build, function* ({ walls }) {
     const commands = yield* Commands.spawns(Wall);
-    (yield* Query.all(Wall)).each((_, entity) => {
+    (yield* Query.View(Query.all(Wall))).each((_, entity) => {
       commands.despawn(entity);
     });
     for (const at of walls) {
       commands.spawn(Wall.of({ at }));
     }
-    (yield* Progress.writes).builds += 1;
+    (yield* Singleton.Write(Progress)).builds += 1;
   });
   const Go = Action.define("lv/Go", Schema.Struct({ level: Schema.Int }));
   const LevelReady = Assets.onReady(Levels, level, build, ({ layout }, at) => ({
@@ -1300,7 +1314,7 @@ describe("levels as data", () => {
     plugins: [LevelReady],
     handlers: [
       Action.handler(Go, function* ({ level: to }) {
-        (yield* Progress.writes).level = to;
+        (yield* Singleton.Write(Progress)).level = to;
       }),
     ],
   });
@@ -1334,7 +1348,10 @@ describe("levels as data", () => {
         : []
     );
   const buildsOf = (app: Pick<App.Any, "read">) =>
-    Effect.map(app.read(Progress), (progress) => progress.builds);
+    Effect.map(
+      app.read(Singleton.Read(Progress)),
+      (progress) => progress.builds
+    );
 
   it.effect(
     "hands each level's file to the rules once, a level with no walls too, and again when the game comes back to it",
@@ -1352,14 +1369,14 @@ describe("levels as data", () => {
         yield* app.dispatch(Go, { level: 1 });
         yield* play(app);
         expect(yield* buildsOf(app)).toBe(3);
-        expect((yield* app.read(Query.all(Wall))).count()).toBe(0);
+        expect((yield* app.read(Query.View(Query.all(Wall)))).count()).toBe(0);
       }).pipe(Effect.provide(Assets.layer(Assets.makeMemory(files))))
   );
 
   it.effect("plays a level that is added as a file, and no code", () =>
     Effect.gen(function* () {
       const walls = Effect.map(
-        Query.all(Wall),
+        Query.View(Query.all(Wall)),
         (query) => query.entities().length
       );
       for (const [given, wanted] of [
@@ -1397,7 +1414,7 @@ describe("levels as data", () => {
         }
         const hash = (yield* one.read(World)).hash();
         expect((yield* two.read(World)).hash()).toBe(hash);
-        expect((yield* one.read(Query.all(Wall))).count()).toBe(2);
+        expect((yield* one.read(Query.View(Query.all(Wall)))).count()).toBe(2);
         const replayed = yield* Replay.verify(
           yield* Replay.record(one),
           App.define({ plugins: [Rules] }),

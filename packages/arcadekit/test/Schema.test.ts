@@ -77,7 +77,9 @@ const Game = App.define({
 const begin = <A extends App.Any, E>(make: Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     const app = yield* make;
-    const [target] = (yield* app.read(Query.all(Health))).entities();
+    const [target] = (yield* app.read(
+      Query.View(Query.all(Health))
+    )).entities();
     assert(target !== undefined, "the game begins with a thing to damage");
     return { app, world: yield* app.read(World), target };
   });
@@ -246,7 +248,7 @@ describe("actions with a schema", () => {
         const rejected: string[] = [];
         const events: (typeof Action.Rejected.codec)["Type"][] = [];
         const Watch = System.tick("Watch", function* () {
-          for (const event of (yield* Action.Rejected).read()) {
+          for (const event of (yield* Event.Reader(Action.Rejected)).read()) {
             rejected.push(`${event.action}: ${event.error._tag}`);
             events.push(event);
           }
@@ -439,8 +441,8 @@ describe("events with a schema", () => {
         const seen: unknown[] = [];
         const Emit = System.tick("Emit", function* () {
           // An event with no payload is emitted with none.
-          (yield* Started.emits).emit();
-          const hit = yield* Hit.emits;
+          (yield* Event.Emitter(Started)).emit();
+          const hit = yield* Event.Emitter(Hit);
           // The payload is typed by the schema: a string here would not compile.
           hit.emit({
             target: entityOf(1),
@@ -465,7 +467,7 @@ describe("events with a schema", () => {
           });
         });
         const Read = System.tick("Read", function* () {
-          for (const hit of (yield* Hit).read()) {
+          for (const hit of (yield* Event.Reader(Hit)).read()) {
             seen.push(hit.amount);
           }
         });
@@ -540,13 +542,13 @@ describe("events with a schema", () => {
       Effect.gen(function* () {
         const Twin = Event.define("sc/Hit", Schema.Number);
         const Both = System.tick("Both", function* () {
-          (yield* Hit.emits).emit({
+          (yield* Event.Emitter(Hit)).emit({
             target: entityOf(1),
             amount: 1,
             at: new Date(1),
             seed: 1n,
           });
-          (yield* Twin.emits).emit(1);
+          (yield* Event.Emitter(Twin)).emit(1);
         });
         yield* withApp(App.make(App.define({ systems: [Both] })), (app) =>
           Effect.gen(function* () {
@@ -557,11 +559,11 @@ describe("events with a schema", () => {
         );
         // Each on its own, in an app of its own, is fine.
         const Alone = System.tick("Alone", function* () {
-          (yield* Twin.emits).emit(2);
+          (yield* Event.Emitter(Twin)).emit(2);
         });
         const heard: number[] = [];
         const Hear = System.tick("Hear", function* () {
-          heard.push(...(yield* Twin).read());
+          heard.push(...(yield* Event.Reader(Twin)).read());
         });
         yield* withApp(
           App.make(App.define({ systems: [Alone, Hear] })),
@@ -573,7 +575,7 @@ describe("events with a schema", () => {
         );
         // An event that is only read is known by its name as well.
         const Shout = System.tick("Shout", function* () {
-          (yield* Hit.emits).emit({
+          (yield* Event.Emitter(Hit)).emit({
             target: entityOf(1),
             amount: 1,
             at: new Date(1),

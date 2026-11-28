@@ -31,7 +31,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 const Movement = System.tick("physics/Movement", function* () {
   const { width } = yield* Bounds;
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity) => {
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x = Math.min(width, position.x + velocity.x * delta);
   });
 });
@@ -150,7 +150,7 @@ export const Falling = Query.all(Position, Velocity).pipe(
 
 export const Fall = System.tick("physics/Fall", function* () {
   const { delta } = yield* Time;
-  (yield* Falling).eachChunk((start, end, position, velocity) =>
+  (yield* Query.View(Falling)).eachChunk((start, end, position, velocity) =>
     fall(start, end, position.y, velocity.y, delta)
   );
 });

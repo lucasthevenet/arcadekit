@@ -33,7 +33,6 @@ import {
   Context,
   Data,
   Effect,
-  Effectable,
   Exit,
   Layer,
   Option,
@@ -45,6 +44,8 @@ import type * as App from "./App.ts";
 import type { SnapshotProblem } from "./ecs/snapshot.ts";
 import * as Event from "./Event.ts";
 import { said } from "./internal/intake.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { partsOf } from "./internal/parts.ts";
 import * as System from "./System.ts";
 
@@ -390,10 +391,10 @@ export const read = Effect.fn("Save.read")(function* (slot: string) {
  * replay asks again, and a game whose saves nothing keeps asks for nothing.
  *
  *   const LevelEnd = State.onEnter(Level, "won", "game/LevelEnd", function* () {
- *     (yield* Save.Asked.emits).emit({ slot: "auto" })
+ *     (yield* Save.Event.Emitter(Asked)).emit({ slot: "auto" })
  *   })
  *   const Every = System.tick("game/Autosave", function* () {
- *     (yield* Save.Asked.emits).emit({ slot: "auto" })
+ *     (yield* Save.Event.Emitter(Asked)).emit({ slot: "auto" })
  *   }).pipe(Timer.every(60))
  *
  * @category Events
@@ -531,7 +532,7 @@ export type SlotStatusCases<R> = {
  * Returns what the case of a slot's status returns, one function for each of
  * the four:
  *
- *   const label = Save.match(yield* Auto, {
+ *   const label = Save.match(yield* Save.Status(Auto), {
  *     Off: () => "",
  *     Unasked: () => "",
  *     Saved: () => "Saved",
@@ -558,30 +559,37 @@ const Autosaves = System.local(() => ({
 }));
 
 /**
- * A slot of `Save.Store`, by its name, as `Save.slot` makes it. It is an
- * Effect, so in a frame or an input system `yield*` returns its status in the
- * app.
+ * A slot of `Save.Store`, by its name, as `Save.slot` makes it. In a frame or
+ * an input system, `yield* Save.Status(slot)` returns its status in the app.
  *
  * @category Models
  */
-export class Slot extends Effectable.Class<SlotStatus, never, System.Locals> {
-  private effect: Effect.Effect<SlotStatus, never, System.Locals> | undefined;
-
+export class Slot {
   constructor(
     /** The slot's name, which `Save.Asked`, `Save.write` and `Save.read` take. */
     readonly name: string
-  ) {
-    super();
-  }
-
-  asEffect(): Effect.Effect<SlotStatus, never, System.Locals> {
-    return (this.effect ??= Effect.map(Autosaves, (autosaves) =>
-      autosaves.keeping === 0
-        ? OFF
-        : (autosaves.slots.get(this.name) ?? UNASKED)
-    ));
-  }
+  ) {}
 }
+
+const statusOf = (given: Given, slot: Slot): SlotStatus => {
+  const autosaves = service(given, System.Locals).get(Autosaves);
+  return autosaves.keeping === 0
+    ? OFF
+    : (autosaves.slots.get(slot.name) ?? UNASKED);
+};
+
+/**
+ * Asks for a slot's status in the app, which says what `Save.autosave` did
+ * with the save the game last asked for in it. A frame or an input system
+ * can ask.
+ *
+ *   const status = yield* Save.Status(Auto)
+ *
+ * @category Capabilities
+ */
+export const Status = (
+  slot: Slot
+): Effect.Effect<SlotStatus, never, System.Locals> => lookup(statusOf, slot);
 
 /**
  * Names a slot of `Save.Store`, whose status a frame or an input system reads
@@ -590,11 +598,11 @@ export class Slot extends Effectable.Class<SlotStatus, never, System.Locals> {
  *   const Auto = Save.slot("auto")
  *
  *   const Every = System.tick("game/Autosave", function* () {
- *     (yield* Save.Asked.emits).emit({ slot: Auto.name })
+ *     (yield* Save.Event.Emitter(Asked)).emit({ slot: Auto.name })
  *   }).pipe(Timer.every(60))
  *
  *   const ShowSaved = View.publish(Saved, function* () {
- *     return Save.match(yield* Auto, {
+ *     return Save.match(yield* Save.Status(Auto), {
  *       Off: () => "",
  *       Unasked: () => "",
  *       Saved: () => "Saved",
