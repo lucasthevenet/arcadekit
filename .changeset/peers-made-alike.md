@@ -6,6 +6,5 @@ Peers compare what they were made with before anything else. A session's first m
 
 What breaks:
 
-- `Drift.make({ peer, peers, start })` is `Drift.make({ peer, made })`, where `made` holds the peers and the start, and its comparison has `told(from, made)`.
-- `session.drifted`, `session.tickExit`'s failure and `Comparison.drifted` can be `Drift.Unlike` as well as `Drift.Drifted`.
+- `session.drifted` and `session.tickExit`'s failure can be `Drift.Unlike` as well as `Drift.Drifted`.
 - A peer whose game simulates otherwise, by the names of its systems, hooks and handlers, no longer plays with the others. One that only draws, plays sound or reads its devices otherwise still does.

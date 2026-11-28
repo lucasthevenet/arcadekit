@@ -216,9 +216,9 @@ export type TransformOf<O> = [Exclude<PositionName, Missing<O>>] extends [never]
 export type Entries = Readonly<Record<string, Assets.Asset<unknown>>>;
 
 /**
- * What a system of `Three.instances` or `Three.objects` requires from an app.
- * One of `Three.instancesFrom` or `Three.objectsFrom` requires
- * `Assets.Store` too.
+ * What a system of `Three.instances`, `Three.objects` or `Three.camera2d`
+ * requires from an app. One of `Three.instancesFrom` or `Three.objectsFrom`
+ * requires `Assets.Store` too.
  *
  * @category Type-level
  */
