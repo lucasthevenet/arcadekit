@@ -54,6 +54,54 @@ describe("a source map's lines", () => {
   });
 });
 
+describe("an @internal export", () => {
+  // A package of its own, so the test needs no build of the packages.
+  const page = () => {
+    const root = mkdtempSync(path.join(tmpdir(), "reference-"));
+    mkdirSync(path.join(root, "kit/dist"), { recursive: true });
+    mkdirSync(path.join(root, "kit/src"), { recursive: true });
+    writeFileSync(
+      path.join(root, "kit/dist/Mod.d.ts"),
+      [
+        "/** A player. */",
+        "export interface Player {\n    readonly play: () => void;\n}",
+        "/**\n * What a peer sent.\n *\n * @internal\n */",
+        "export interface Sent {\n    readonly at: number;\n}",
+        "/**\n * A frame that came twice.\n *\n * @internal\n */",
+        "export type Repeated = readonly [number, number];",
+        "/**\n * Compares two runs.\n *\n * @category Constructors\n * @internal\n */",
+        "export declare const make: (a: number, b: number) => boolean;",
+        "",
+      ].join("\n")
+    );
+    writeFileSync(path.join(root, "kit/src/Mod.ts"), "export {};\n");
+    return renderModule(
+      readModule(root, "kit", "kit", "Mod", "kit/src/Mod.ts"),
+      "https://github.com/o/r",
+      "main"
+    );
+  };
+
+  it("leaves the others on the page", () => {
+    expect(page()).toContain("### Player");
+  });
+
+  it.each([
+    ["an interface", "Sent"],
+    ["a type alias", "Repeated"],
+    ["a const", "make"],
+  ])("is left off its module's page when it is %s", (_, name) => {
+    const shown = page();
+    // A heading is what the page's table of contents lists.
+    expect(shown).not.toContain(`### ${name}`);
+    expect(shown).not.toMatch(new RegExp(`\\b${name}\\b`, "u"));
+  });
+
+  it("takes its category's heading with it when it was the only one", () => {
+    expect(page()).not.toContain("## Constructors");
+  });
+});
+
 const built = existsSync(
   path.join(REPO_ROOT, "packages/arcadekit/dist/Sound.d.ts")
 );
