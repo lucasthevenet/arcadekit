@@ -673,6 +673,21 @@ export function run<
   H extends App.Handlers = readonly [],
   P extends App.Plugins = readonly [],
   SV extends Save.Save | undefined = undefined,
+>(
+  game: App.Game<S, H, P>,
+  options: StepOptions & App.StartOptions<SV> & { readonly ready?: never }
+): Effect.Effect<
+  never,
+  | Plugin.ErrorOf<P[number]>
+  | (SV extends Save.Save ? Save.LoadRefused : never)
+  | App.TickError<S, P>,
+  Exclude<App.External<S, H, P>, Scope.Scope>
+>;
+export function run<
+  S extends App.Systems = readonly [],
+  H extends App.Handlers = readonly [],
+  P extends App.Plugins = readonly [],
+  SV extends Save.Save | undefined = undefined,
   E2 = never,
   R2 = never,
 >(
@@ -688,6 +703,10 @@ export function run<
   | App.TickError<S, P>,
   Exclude<App.External<S, H, P> | R2, Scope.Scope>
 >;
+export function run<A extends Paced<unknown> & Closes, E, R>(
+  session: Effect.Effect<A, E, R>,
+  options?: PacedOptions & { readonly ready?: never }
+): Effect.Effect<never, E | FailureOf<A>, Exclude<R, Scope.Scope>>;
 export function run<
   A extends Paced<unknown> & Closes,
   E,
