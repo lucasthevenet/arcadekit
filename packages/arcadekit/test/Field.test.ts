@@ -571,8 +571,7 @@ describe("a bool field", () => {
     world.set(entities[1]!, Switch, { on: true });
     expect(world.hash()).not.toBe(loaded.hash());
 
-    // Loaded with no migration, either way: any number but 0 is true.
-    asU8.set(entities[2]!, SwitchU8, { on: 7 });
+    // Loaded with no migration, either way.
     const fromU8 = new EcsWorld();
     fromU8.load(asU8.snapshot(), [Switch]);
     expect(entities.map((entity) => fromU8.get(entity, Switch)!.on)).toEqual([
@@ -580,11 +579,98 @@ describe("a bool field", () => {
       false,
       true,
     ]);
+    expect(fromU8.hash()).toBe(asU8.hash());
     const toU8 = new EcsWorld();
     toU8.load(loaded.snapshot(), [SwitchU8]);
     expect(entities.map((entity) => toU8.get(entity, SwitchU8)!.on)).toEqual([
       1, 0, 1,
     ]);
+  });
+
+  it("refuses a save that holds a number other than 0 or 1 where a bool field is now, as a changed component", () => {
+    const counts = { on: Field.u8, label: Field.json<string>("") };
+    const flags = { on: Field.bool, label: Field.json<string>("") };
+    const Count = Component.define("fld/Switch", counts);
+    const SparseCount = Component.define("fld/Toggle", counts, {
+      storage: "sparse",
+    });
+    const LeverCount = Singleton.define(
+      "fld/Lever",
+      { pulled: Field.u8, pulls: Field.u8 },
+      { pulled: 0, pulls: 0 }
+    );
+    const refused = (save: (world: EcsWorld) => void, def: ComponentDef) => {
+      const world = new EcsWorld();
+      save(world);
+      try {
+        new EcsWorld().load(world.snapshot(), [def]);
+      } catch (error) {
+        return error as SnapshotError;
+      }
+    };
+
+    const count = refused(
+      (world) => {
+        for (const on of [0, 1, 7]) {
+          world.spawn(Count.of({ on, label: "" }));
+        }
+      },
+      Component.define("fld/Switch", flags)
+    )!;
+    expect(count).toBeInstanceOf(SnapshotError);
+    expect(count.problem).toBe("component changed");
+    expect(count.component).toBe("fld/Switch");
+    expect(count.message).toBe(
+      '"fld/Switch.on" is a Field.bool, and the snapshot holds 7 there, which is neither false nor true: the field was a number when the snapshot was taken. A migration\'s mapField turns its numbers into true and false.'
+    );
+    const sparse = refused(
+      (world) => {
+        world.spawn(SparseCount.of({ on: 2, label: "" }));
+      },
+      Component.define("fld/Toggle", flags, { storage: "sparse" })
+    )!;
+    expect(sparse.problem).toBe("component changed");
+    expect(sparse.message).toMatch(/^"fld\/Toggle\.on" is a Field\.bool/);
+    const single = refused((world) => {
+      world.singleton(LeverCount).pulled = 255;
+    }, Lever.component)!;
+    expect(single.problem).toBe("component changed");
+    expect(single.message).toMatch(/^"fld\/Lever\.pulled" is a Field\.bool/);
+
+    // A count of only 0 and 1 is what a bool holds, and loads as one.
+    expect(
+      refused(
+        (world) => {
+          world.spawn(Count.of({ on: 1, label: "" }));
+        },
+        Component.define("fld/Switch", flags)
+      )
+    ).toBeUndefined();
+  });
+
+  it("refuses to save a number other than 0 or 1 written to its column, so that no save it makes is refused", () => {
+    const world = new EcsWorld();
+    const doors = [0, 1].map(() => world.spawn(Door));
+    world
+      .view(Query.all(Door).pipe(Query.writes(Door)))
+      .eachChunk((start, _end, door) => {
+        door.open[start + 1] = 4;
+      });
+    expect(world.get(doors[1]!, Door)!.open).toBe(true);
+    let error: unknown;
+    try {
+      world.snapshot();
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(SnapshotError);
+    expect((error as SnapshotError).problem).toBe("cannot be saved");
+    expect((error as SnapshotError).component).toBe("fld/Door");
+    expect((error as SnapshotError).message).toBe(
+      '"fld/Door.open" is a Field.bool, and holds 4, which a snapshot takes for neither false nor true: write 0 or 1 to its column.'
+    );
+    world.set(doors[1]!, Door, { open: true });
+    expect(() => world.snapshot()).not.toThrow();
   });
 });
 

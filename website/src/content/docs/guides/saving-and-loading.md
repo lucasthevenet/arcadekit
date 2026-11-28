@@ -229,7 +229,7 @@ The [replay](replays.md) checks itself against the tail's hash checks, so a save
 | `"unknown component"` | Holds a component this program doesn't define, or no longer by that name |
 | `"store changed"` | Holds an event waiting to be read that this program doesn't define, or one in a form its schema no longer takes |
 | `"unknown store"` | Holds what the world it was loaded into has no store for, such as queued actions in a world with no app |
-| `"component changed"` | Holds a component whose fields differ from the game's after any migrations ran. The message lists both |
+| `"component changed"` | Holds a component whose fields differ from the game's after any migrations ran, or a number other than 0 or 1 where the game has a `Field.bool`. The message lists both, or names the field |
 
 ## Read more
 

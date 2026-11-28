@@ -676,6 +676,32 @@ describe("a save that cannot be loaded", () => {
     })
   );
 
+  it.effect(
+    "says that a count is no flag, where a Field.u8 became a Field.bool",
+    () =>
+      Effect.gen(function* () {
+        const Count = Component.define("sv/Lamp", { lit: Field.u8 });
+        const Then = Plugin.make("sv/LampThen", {
+          setup: Effect.map(Commands.spawns(Count), (commands) => {
+            commands.spawn(Count.of({ lit: 3 }));
+          }),
+        });
+        const save = yield* withApp(
+          App.make(App.define({ plugins: [Then] })),
+          (app) =>
+            Effect.gen(function* () {
+              return unwrap(yield* Effect.exit(Save.make(app)));
+            })
+        );
+        Component.define("sv/Lamp", { lit: Field.bool });
+        const error = refusal(yield* load(save, App.define({})));
+        expect(error.problem).toBe("component changed");
+        expect(error.message).toMatch(
+          /^"sv\/Lamp\.lit" is a Field\.bool, and the snapshot holds 3 there/
+        );
+      })
+  );
+
   it.effect("is refused when its world is damaged", () =>
     Effect.gen(function* () {
       const { save } = yield* record(10, 5);

@@ -39,14 +39,14 @@ Other values use a field type that declares how snapshots and the hash treat the
 
 | Field | Holds | Saved and hashed |
 | --- | --- | --- |
-| `Field.bool` | `true` or `false`, as 1 or 0 in a `Uint8Array`, which `eachChunk` hands out as it is | As a `u8`, so a save written while the field was a `Field.u8` loads with no migration |
+| `Field.bool` | `true` or `false`, as 1 or 0 in a `Uint8Array`, which `eachChunk` hands out as it is | As a `u8`, so a save written while the field was a `Field.u8` of 0 and 1 loads with no migration. A save that holds another number there is refused |
 | `Field.json<T>(initial)` | Plain data: a string, number, boolean, bigint, `null` or `undefined`, or an array or object of strings, numbers, booleans and `null` | As is. Arrays and objects as the text `JSON.stringify` produces |
 | `Field.schema(schema, initial)` | Any value an Effect schema describes: a `Date`, a bigint inside an object, a class with a schema | In the schema's JSON encoding |
 | `Field.ref<T>(codec, initial)` | Any value, with your own `encode` and `decode` to plain data and back | In its encoded form |
 | `Field.transient<T>()` | A handle or cache that another system can rebuild | Neither. It is `undefined` in a world loaded from a snapshot, and after a [rewind](capturing-and-rewinding.md) in a table that changed since the moment |
 
 - The hash covers exactly what a snapshot saves, in its saved form, so a world loaded from a snapshot has the same hash.
-- A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, or one a codec or schema rejects. Loading fails the same way when a codec rejects a value.
+- A snapshot fails, naming the field, when it meets a value it can't encode: a non-plain value in a `json` field, one a codec or schema rejects, or a number other than 0 or 1 that a loop wrote to a `bool` field's column. Loading fails the same way when a codec rejects a value, or a `bool` field is given another number.
 - `initial` is what a `json`, `schema` or `ref` field holds in a component [added without a value](#create-and-change-entities), where a number field holds 0 and a `bool` field `false`. A `transient` field holds `undefined` there, as its type says.
 - A `json` field takes only a type that JSON holds. `Field.json<Date>(new Date())`, or an object with a `Map` in it, doesn't compile. Give such values a schema instead.
 - The value of a `json`, `ref`, `schema` or `transient` field is read-only all the way down. Replace it with `world.set` or by assigning the field in `each`. A change in place doesn't compile, because no change query would see it and no refused action would undo it.

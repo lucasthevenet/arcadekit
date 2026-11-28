@@ -59,7 +59,7 @@ const load = (save: Save.Save) => App.make(Duel, { save });
 - An older save is migrated one version at a time, by the step `from` each version on the way, `Migrate.step(from, edit)`.
 - A newer save is refused with `"newer version"`.
 
-Whatever the version, a load compares each component in the save with the game's: its storage, and its fields' names, order and kinds. A save that differs is refused with `"component changed"`, unless a migration makes it match. A change that keeps all of those is not seen. If a field now holds metres where it held pixels, or a `json` field holds objects of another shape, a save of the same version loads with no error and the game reads the old values as new ones. Increment the version with each such change, and convert the values in its migration with `mapField`.
+Whatever the version, a load compares each component in the save with the game's: its storage, and its fields' names, order and kinds. A save that differs is refused with `"component changed"`, unless a migration makes it match. A change that keeps all of those is not seen, and a `Field.u8` that is now a `Field.bool` is seen only by a number other than 0 or 1 in it. If a field now holds metres where it held pixels, or a `json` field holds objects of another shape, a save of the same version loads with no error and the game reads the old values as new ones. Increment the version with each such change, and convert the values in its migration with `mapField`.
 
 ## Change a save
 
