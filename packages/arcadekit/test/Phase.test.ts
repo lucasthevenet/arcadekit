@@ -8,7 +8,7 @@ describe("what an app is running", () => {
   it.effect("is told by its phase, in each stage and handler", () =>
     Effect.gen(function* () {
       const seen: [string, App.Phase][] = [];
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const note = (where: string) =>
         Effect.sync(() => {
           seen.push([where, app!.phase]);

@@ -274,7 +274,7 @@ describe("the frame loop", () => {
   it.effect("leaves nothing behind when it is interrupted", () =>
     Effect.gen(function* () {
       const display = Driver.makeManualDisplay();
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -322,7 +322,7 @@ describe("the frame loop", () => {
             };
           },
         };
-        let app: App.App | undefined;
+        let app: App.Any<never> | undefined;
         const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
             app = yield* App.make(App.define({ systems: [Roll] }));
@@ -463,7 +463,7 @@ describe("the frame loop", () => {
   it.effect("drops the backlog of a long stall, as fixedStep does", () =>
     Effect.gen(function* () {
       const display = Driver.makeManualDisplay();
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
@@ -504,7 +504,7 @@ describe("the display when none is provided", () => {
         cleared.add(id);
         clear(id as ReturnType<typeof set>);
       });
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));

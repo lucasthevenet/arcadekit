@@ -709,7 +709,7 @@ describe("the frame stage", () => {
             yield* inTick;
           }
         });
-        const app: App.App = yield* App.make(
+        const app: App.Any<never> = yield* App.make(
           App.define({ systems: [Reenter, InTick] })
         );
         inFrame = app.tick(1);

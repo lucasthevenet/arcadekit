@@ -383,7 +383,7 @@ describe("app.inspect", () => {
 
   it.effect("is refused during a tick", () =>
     Effect.gen(function* () {
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const Peek = System.tick("in/Peek", function* () {
         yield* World;
         yield* app!.inspect();

@@ -255,7 +255,7 @@ describe("a page's display", () => {
           callback(now);
         }
       };
-      let app: App.App | undefined;
+      let app: App.Any<never> | undefined;
       const fiber = yield* Effect.forkChild(
         Effect.gen(function* () {
           app = yield* App.make(App.define({ systems: [Roll] }));
