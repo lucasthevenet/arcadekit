@@ -42,7 +42,7 @@ const Bounced = Event.define(
   "sd/Bounced",
   Schema.Struct({ speed: Schema.Finite })
 );
-const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
+const Dropped = Event.define("sd/Dropped");
 class TooHigh extends Schema.TaggedError<TooHigh>()("TooHigh", {}) {}
 const Drop = Action.define("sd/Drop", {
   payload: Schema.Struct({ height: Schema.Finite }),
@@ -108,7 +108,7 @@ const Rules = Plugin.make("sd/Rules", {
   systems: [Fall],
   handlers: [
     Action.handler(Drop, function* ({ height }) {
-      (yield* Event.Emitter(Dropped)).emit({});
+      (yield* Event.Emitter(Dropped)).emit();
       if (height > 100) {
         return yield* TooHigh.make({});
       }
@@ -377,7 +377,7 @@ describe("Sound.Player", () => {
         (yield* Sound.Player).play(Sound.clip("bang"));
       }
     );
-    const Bang = Action.define("sd/Bang", { payload: Schema.Struct({}) });
+    const Bang = Action.define("sd/Bang");
     Action.handler(
       Bang,
       // @ts-expect-error sound is the frame's
@@ -726,7 +726,7 @@ describe("a bus", () => {
     () =>
       Effect.gen(function* () {
         const game = yield* Test.make(Menu.Game);
-        yield* game.app.dispatch(Menu.Catch, {});
+        yield* game.app.dispatch(Menu.Catch);
         yield* game.step();
         expect(game.sound.played).toEqual([
           { cue: "coin", volume: 1, rate: 1 },
@@ -737,7 +737,7 @@ describe("a bus", () => {
 
         // The menu: the music at half, the effects off.
         yield* game.app.dispatch(Menu.Choose, { music: 0.5, effects: false });
-        yield* game.app.dispatch(Menu.Catch, {});
+        yield* game.app.dispatch(Menu.Catch);
         yield* game.step();
         // The coin is played silent, and the theme plays on at half, at once.
         expect(game.sound.played.at(-1)).toEqual({
@@ -756,7 +756,7 @@ describe("a bus", () => {
         expect(game.sound.scored.length).toBe(2);
 
         yield* game.app.dispatch(Menu.Choose, { music: 1, effects: true });
-        yield* game.app.dispatch(Menu.Catch, {});
+        yield* game.app.dispatch(Menu.Catch);
         yield* game.step();
         expect(game.sound.played.at(-1)).toEqual({
           cue: "coin",

@@ -77,13 +77,14 @@ const Add = Action.define("sv/Add", {
   payload: Schema.Struct({ by: Schema.Int }),
 });
 const Double = Action.define("sv/Double", {
+  // oxlint-disable-next-line arcadekit/no-empty-payload -- the tests enqueue it by name with {}, and expect {} in a save.
   payload: Schema.Struct({}),
   error: TooBig,
 });
 const Scatter = Action.define("sv/Scatter", {
   payload: Schema.Struct({ count: Schema.Int }),
 });
-const Pulse = Action.define("sv/Pulse", { payload: Schema.Struct({}) });
+const Pulse = Action.define("sv/Pulse");
 
 const add = Action.handler(Add, function* ({ by }) {
   (yield* Query.View(Tallies)).each((tally) => {
@@ -176,7 +177,7 @@ let setups = 0;
 /** Fires a pulse every fifth tick: what it does follows from the time. */
 const Pulsing = System.tick("Pulsing", function* () {
   if ((yield* Time).tick % 5 === 0) {
-    (yield* Action.Actions).enqueue(Pulse, {});
+    (yield* Action.Actions).enqueue(Pulse);
   }
 });
 
@@ -598,7 +599,7 @@ describe("a game that cannot be saved as it stands", () => {
 
   it.effect("says which field holds what cannot be saved", () =>
     Effect.gen(function* () {
-      const Mend = Action.define("sv/Mend", { payload: Schema.Struct({}) });
+      const Mend = Action.define("sv/Mend");
       const mend = Action.handler(Mend, function* () {
         const world = yield* World.writes(Blob);
         for (const entity of (yield* Query.View(Query.all(Blob))).entities()) {
@@ -620,7 +621,7 @@ describe("a game that cannot be saved as it stands", () => {
             expect(
               refusal(yield* Effect.exit(Save.make(app))).message
             ).toContain('"sv/Blob.v"');
-            yield* app.dispatch(Mend, {});
+            yield* app.dispatch(Mend);
             expect(Exit.isSuccess(yield* Effect.exit(Save.make(app)))).toBe(
               true
             );
@@ -904,7 +905,7 @@ describe("a save loaded in place", () => {
     () =>
       Effect.gen(function* () {
         const Phase = State.define("sv/Phase", ["menu", "playing"]);
-        const Begin = Action.define("sv/Begin", { payload: Schema.Struct({}) });
+        const Begin = Action.define("sv/Begin");
         // Nothing but the handler names the state: the app that loads the
         // save has never met it.
         const Phased = App.define({
@@ -917,7 +918,7 @@ describe("a save loaded in place", () => {
         // Saved with the move to "playing" asked for, and not made yet.
         const save = yield* withApp(App.make(Phased), (app) =>
           Effect.gen(function* () {
-            yield* app.dispatch(Begin, {});
+            yield* app.dispatch(Begin);
             return unwrap(yield* Effect.exit(Save.make(app)));
           })
         );
@@ -1241,8 +1242,8 @@ describe("a game saved to a slot", () => {
 // --- a save the rules ask for --------------------------------------------------------
 
 const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
-const Grab = Action.define("sv/Grab", { payload: Schema.Struct({}) });
-const Finish = Action.define("sv/Finish", { payload: Schema.Struct({}) });
+const Grab = Action.define("sv/Grab");
+const Finish = Action.define("sv/Finish");
 const finish = Action.handler(Finish, function* () {
   (yield* Event.Emitter(Save.Asked)).emit({ slot: "finished" });
 });
@@ -1274,7 +1275,7 @@ const Small = Singleton.define(
   { tiles: Grid.tiles(2, 2) },
   { tiles: Grid.fill(2, 2) }
 );
-const Spoil = Action.define("sv/Spoil", { payload: Schema.Struct({}) });
+const Spoil = Action.define("sv/Spoil");
 const Told = App.define({
   plugins: [View.plugin],
   systems: [
@@ -1303,7 +1304,7 @@ describe("a save the rules ask for", () => {
         yield* Save.autosave(app);
         const hashes: number[] = [];
         for (let i = 0; i < 3; i++) {
-          yield* app.enqueue(Grab, {});
+          yield* app.enqueue(Grab);
           yield* app.tick(1 / 60);
           hashes.push(world.hash());
           expect(yield* slots.slots).toEqual(i < 2 ? [] : ["level"]);
@@ -1314,7 +1315,7 @@ describe("a save the rules ask for", () => {
         expect((yield* loaded.read(World)).hash()).toBe(hashes[2]);
         // A handler that a dispatch runs asks as well, and the save is of
         // the game as the dispatch left it.
-        yield* app.dispatch(Finish, {});
+        yield* app.dispatch(Finish);
         const finished = world.hash();
         yield* app.tick(1 / 60);
         yield* Save.load(app, Option.getOrThrow(yield* Save.read("finished")));
@@ -1392,7 +1393,7 @@ describe("a save the rules ask for", () => {
         yield* Effect.gen(function* () {
           const app = yield* App.make(Levels);
           yield* Save.autosave(app);
-          yield* app.dispatch(Finish, {});
+          yield* app.dispatch(Finish);
           yield* app.tick(1 / 60);
           expect(app.time.tick).toBe(1);
         }).pipe(
@@ -1425,16 +1426,16 @@ describe("a save the rules ask for", () => {
               ? Effect.andThen(keep, autosave)
               : Effect.andThen(autosave, keep);
             for (let i = 0; i < 3; i++) {
-              yield* app.enqueue(Grab, {});
+              yield* app.enqueue(Grab);
               yield* app.tick(1 / 60);
             }
             const level = world.hash();
-            yield* app.enqueue(Grab, {});
+            yield* app.enqueue(Grab);
             yield* app.tick(1 / 60);
             expect(yield* Timeline.undo(app)).toBe(true);
             expect(world.hash()).toBe(level);
             const kept = Option.getOrThrow(yield* Save.read("level"));
-            yield* app.enqueue(Grab, {});
+            yield* app.enqueue(Grab);
             yield* app.tick(1 / 60);
             const replayed = yield* Replay.verify(
               yield* Replay.record(app, kept),
@@ -1470,10 +1471,10 @@ describe("a save the rules ask for", () => {
           Effect.gen(function* () {
             yield* Save.autosave(game.app);
             yield* game.step();
-            yield* game.app.dispatch(Finish, {});
+            yield* game.app.dispatch(Finish);
             yield* game.step();
             full = false;
-            yield* game.app.dispatch(Finish, {});
+            yield* game.app.dispatch(Finish);
             yield* game.step();
           })
         );
@@ -1508,7 +1509,7 @@ describe("a save the rules ask for", () => {
         told.push(status);
       });
       yield* Save.autosave(game.app);
-      yield* game.app.dispatch(Spoil, {});
+      yield* game.app.dispatch(Spoil);
       yield* game.step();
       expect(told.at(-1)).toEqual({
         _tag: "Failed",
@@ -1533,7 +1534,7 @@ describe("a save the rules ask for", () => {
           told.push(status);
         });
         yield* Save.autosave(game.app);
-        yield* game.app.dispatch(Finish, {});
+        yield* game.app.dispatch(Finish);
         yield* game.step();
         expect(told.at(-1)).toEqual({
           _tag: "Failed",

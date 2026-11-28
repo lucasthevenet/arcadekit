@@ -579,7 +579,6 @@ const EndTurn = Action.define("sg/EndTurn", {
   error: NotYourTurn,
 });
 const Cheat = Action.define("sg/Cheat", {
-  payload: Schema.Struct({}),
   error: Caught,
 });
 
@@ -659,17 +658,17 @@ describe("a singleton in an app", () => {
       const app = yield* App.make(game, { hashEvery: 1 });
       const world = yield* app.read(World);
       const before = world.hash();
-      expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Cheat, {})))).toBe(
+      expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Cheat)))).toBe(
         true
       );
       // Never written, so never there.
       expect(world.hash()).toBe(before);
       for (let move = 0; move < 12; move++) {
         yield* app.dispatch(EndTurn, { player: (move % 2) + 1 });
-        expect(yield* Effect.exit(app.dispatch(Cheat, {}))).toEqual(
+        expect(yield* Effect.exit(app.dispatch(Cheat))).toEqual(
           Exit.fail(Caught.make({}))
         );
-        yield* app.enqueue(Cheat, {});
+        yield* app.enqueue(Cheat);
         yield* app.tick(1);
       }
       expect({ ...world.singleton(Turn) }).toEqual({

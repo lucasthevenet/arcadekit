@@ -42,13 +42,15 @@ const Score = Singleton.define(
 const Phase = State.define("in/Phase", ["title", "playing"]);
 
 const Hit = Event.define("in/Hit", Schema.Struct({ by: Schema.Int }));
+// oxlint-disable-next-line arcadekit/no-empty-payload -- the events the test expects of app.inspect hold its payload as {}.
 const Spawned = Event.define("in/Spawned", Schema.Struct({}));
 const Strike = Action.define("in/Strike", {
   payload: Schema.Struct({ by: Schema.Int }),
 });
-const Begin = Action.define("in/Begin", { payload: Schema.Struct({}) });
+const Begin = Action.define("in/Begin");
 class NotNow extends Schema.TaggedError<NotNow>()("in/NotNow", {}) {}
 const Refuse = Action.define("in/Refuse", {
+  // oxlint-disable-next-line arcadekit/no-empty-payload -- the refusals the test expects hold its payload as {}.
   payload: Schema.Struct({}),
   error: NotNow,
 });
@@ -260,7 +262,7 @@ describe("app.inspect", () => {
           expect(Number.isFinite(ms)).toBe(true);
         }
 
-        yield* app.enqueue(Begin, {});
+        yield* app.enqueue(Begin);
         yield* app.tick(1 / 60);
         const opening = (yield* app.inspect()).systems.find(
           (system) => system.name === "in/Opening"
@@ -316,7 +318,7 @@ describe("app.inspect", () => {
       Effect.gen(function* () {
         const app = yield* game;
         yield* app.enqueue(Strike, { by: 2 });
-        yield* app.enqueue(Begin, {});
+        yield* app.enqueue(Begin);
         yield* app.enqueue(Strike, { by: 3 });
         yield* app.tick(1 / 60);
         expect((yield* app.inspect()).events).toEqual({

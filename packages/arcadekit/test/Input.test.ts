@@ -114,7 +114,7 @@ const Docked = Plugin.make("in/Docked", {
   }),
 });
 /** A point, given from outside the game. */
-const Award = Action.define("in/Award", { payload: Schema.Struct({}) });
+const Award = Action.define("in/Award");
 const award = Action.handler(Award, function* () {
   (yield* Singleton.Write(Score)).points += 1;
 });
@@ -161,7 +161,7 @@ describe("the input stage", () => {
         const Sometimes = note("Sometimes", "input").pipe(
           System.runIf(State.is(Phase, "paused"))
         );
-        const Pause = Action.define("in/Pause", { payload: Schema.Struct({}) });
+        const Pause = Action.define("in/Pause");
         const pause = Action.handler(Pause, function* () {
           (yield* State.Setter(Phase)).set("paused");
         });
@@ -192,7 +192,7 @@ describe("the input stage", () => {
         yield* app.tick(1);
         expect(ran).toEqual(["First", "Second", "Tick", "Tick"]);
         // A condition is asked there as anywhere.
-        yield* app.dispatch(Pause, {});
+        yield* app.dispatch(Pause);
         yield* app.tick(1);
         ran.length = 0;
         expect(Exit.isSuccess(yield* Effect.exit(app.input()))).toBe(true);
@@ -318,7 +318,7 @@ describe("the input stage", () => {
     "cannot change the game: whatever would throws, and names what did",
     () =>
       Effect.gen(function* () {
-        const Bump = Action.define("in/Bump", { payload: Schema.Struct({}) });
+        const Bump = Action.define("in/Bump");
         const bump = Action.handler(Bump, function* () {
           (yield* Singleton.Write(Score)).points += 1;
         });
@@ -353,7 +353,7 @@ describe("the input stage", () => {
           );
           // And the app is not left frozen, or in the middle of the stage.
           expect(
-            Exit.isSuccess(yield* Effect.exit(app.dispatch(Bump, {}))),
+            Exit.isSuccess(yield* Effect.exit(app.dispatch(Bump))),
             what
           ).toBe(true);
           expect(yield* pointsOf(app), what).toBe(1);
@@ -373,7 +373,7 @@ describe("the input stage", () => {
             App.define({ handlers: [bump], systems: [Reach] })
           );
           const made = app;
-          reach = Effect.orDie(made.dispatch(Bump, {}));
+          reach = Effect.orDie(made.dispatch(Bump));
           expect(yield* thrown(made.input())).toThrow(
             /dispatch\("in\/Bump"\) was called during the input stage/
           );
@@ -781,9 +781,7 @@ describe("the input stage", () => {
     () =>
       Effect.gen(function* () {
         const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
-        const Emit = Action.define("in/EmitOnce", {
-          payload: Schema.Struct({}),
-        });
+        const Emit = Action.define("in/EmitOnce");
         const emit = Action.handler(Emit, function* () {
           (yield* Event.Emitter(Done)).emit({ at: (yield* Time).tick + 1 });
         });
@@ -817,7 +815,7 @@ describe("the input stage", () => {
           for (let tick = 1; tick <= 6; tick++) {
             listening = tick === 6;
             yield* app.input();
-            yield* app.enqueue(Emit, {});
+            yield* app.enqueue(Emit);
             yield* app.tick(1);
             yield* app.frame();
           }
@@ -833,10 +831,10 @@ describe("the input stage", () => {
     "keeps events for a stage that is late, and stops for one that is never run, as a replay never runs it",
     () =>
       Effect.gen(function* () {
-        const Done = Event.define("in/Kept", Schema.Struct({}));
-        const Emit = Action.define("in/Emit", { payload: Schema.Struct({}) });
+        const Done = Event.define("in/Kept");
+        const Emit = Action.define("in/Emit");
         const emit = Action.handler(Emit, function* () {
-          (yield* Event.Emitter(Done)).emit({});
+          (yield* Event.Emitter(Done)).emit();
         });
         let heard = 0;
         const Hear = System.input("Hear", function* () {
@@ -847,7 +845,7 @@ describe("the input stage", () => {
             App.define({ handlers: [emit], systems: [Hear] })
           );
           for (let i = 0; i < ticks; i++) {
-            yield* app.enqueue(Emit, {});
+            yield* app.enqueue(Emit);
             yield* app.tick(1);
           }
           return app;
@@ -864,7 +862,7 @@ describe("the input stage", () => {
         expect(heard).toBe(0);
         // Run again, it hears again from then on.
         for (let i = 0; i < 3; i++) {
-          yield* gone.enqueue(Emit, {});
+          yield* gone.enqueue(Emit);
           yield* gone.tick(1);
           yield* gone.input();
         }
@@ -1004,9 +1002,9 @@ describe("the input stage", () => {
         ).toEqual(new NoKeyboard());
         expect(yield* thrown(app.input())).toThrow(NoKeyboard);
         // The world is not left frozen: a point can still be given.
-        expect(
-          Exit.isSuccess(yield* Effect.exit(app.dispatch(Award, {})))
-        ).toBe(true);
+        expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Award)))).toBe(
+          true
+        );
         expect(yield* pointsOf(app)).toBe(1);
         // A system that waits has not finished within the stage.
         const Wait = System.input("Wait", function* () {
@@ -1019,7 +1017,7 @@ describe("the input stage", () => {
           /System "Wait" did not finish within the input stage/
         );
         expect(
-          Exit.isSuccess(yield* Effect.exit(waiting.dispatch(Award, {})))
+          Exit.isSuccess(yield* Effect.exit(waiting.dispatch(Award)))
         ).toBe(true);
         expect(yield* pointsOf(waiting)).toBe(1);
       })
@@ -1054,7 +1052,7 @@ describe("the input stage", () => {
 
 describe("the picture of the devices in the world", () => {
   it("is what Input.plugin provides: a game that reads it and leaves the plugin out does not compile", () => {
-    const Press = Action.define("in/Press", { payload: Schema.Struct({}) });
+    const Press = Action.define("in/Press");
     const reads = [
       System.tick("in/Keys", function* () {
         (yield* Input.Keyboard).down("Space");
@@ -1719,7 +1717,7 @@ describe("the picture of the devices in the world", () => {
     () =>
       Effect.gen(function* () {
         const seen: string[] = [];
-        const Probe = Action.define("in/Probe", { payload: Schema.Struct({}) });
+        const Probe = Action.define("in/Probe");
         const probe = Action.handler(Probe, function* () {
           const keys = yield* Input.Keyboard;
           seen.push(
@@ -1739,7 +1737,7 @@ describe("the picture of the devices in the world", () => {
         const Probing = System.input("in/Probing", function* () {
           const key = yield* Input.Read(Key);
           if (key.pressed || key.released) {
-            (yield* Action.Actions).enqueue(Probe, {});
+            (yield* Action.Actions).enqueue(Probe);
           }
         });
         const source = Input.makeManualSource();
@@ -1758,7 +1756,7 @@ describe("the picture of the devices in the world", () => {
           source.press("Space");
           yield* step();
           // Held, and an action that comes a tick later: the press is past.
-          yield* app.enqueue(Probe, {});
+          yield* app.enqueue(Probe);
           yield* step();
           source.release("Space");
           yield* step();
@@ -1774,9 +1772,9 @@ describe("the picture of the devices in the world", () => {
           // come as well.
           seen.length = 0;
           yield* app.dispatch(Input.Report, { down: ["Space"] });
-          yield* app.dispatch(Probe, {});
+          yield* app.dispatch(Probe);
           yield* app.tick(1);
-          yield* app.dispatch(Probe, {});
+          yield* app.dispatch(Probe);
           expect(seen).toEqual([
             "handler 4: down pressed",
             "system 4: down pressed",
@@ -1814,7 +1812,6 @@ describe("the picture of the devices in the world", () => {
       Effect.gen(function* () {
         class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {}) {}
         const Shoot = Action.define("in/Shoot", {
-          payload: Schema.Struct({}),
           error: NotHeld,
         });
         const shoot = Action.handler(Shoot, function* () {
@@ -1837,9 +1834,9 @@ describe("the picture of the devices in the world", () => {
               systems: [Draw],
             })
           );
-          expect(
-            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
-          ).toBe(true);
+          expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot)))).toBe(
+            true
+          );
           source.press("Space");
           source.move(Input.pointerX, 3);
           source.press(Input.pointerButton());
@@ -1849,18 +1846,18 @@ describe("the picture of the devices in the world", () => {
           yield* app.frame();
           expect(drawn).toEqual(["3,0 true"]);
           expect(yield* hashOf(app)).toBe(before);
-          expect(
-            Exit.isSuccess(yield* Effect.exit(app.dispatch(Shoot, {})))
-          ).toBe(true);
+          expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Shoot)))).toBe(
+            true
+          );
           expect(yield* pointsOf(app)).toBe(1);
           // A refused action leaves the picture as it was.
           source.release("Space");
           yield* app.input();
           yield* app.tick(1);
           const held = yield* hashOf(app);
-          expect(
-            Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot, {})))
-          ).toBe(true);
+          expect(Exit.isFailure(yield* Effect.exit(app.dispatch(Shoot)))).toBe(
+            true
+          );
           expect(yield* hashOf(app)).toBe(held);
         }).pipe(withSource(source));
       })
@@ -2164,7 +2161,7 @@ describe("controls", () => {
         App.make(App.define({ plugins: [Controls], systems: [system] }))
       ).toExtend<Effect.Effect<unknown, never>>();
     }
-    const Probe = Action.define("in/ProbeJump", { payload: Schema.Struct({}) });
+    const Probe = Action.define("in/ProbeJump");
     const probe = Action.handler(Probe, function* () {
       void (yield* Input.Read(Jump)).pressed;
     });

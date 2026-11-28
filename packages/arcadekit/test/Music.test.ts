@@ -667,7 +667,7 @@ describe("Sound.Player.music", () => {
         (yield* Sound.Player).music("mu/Loud", Sound.clip("theme"));
       }
     );
-    const Bang = Action.define("mu/Bang", { payload: Schema.Struct({}) });
+    const Bang = Action.define("mu/Bang");
     Action.handler(
       Bang,
       // @ts-expect-error sound is the frame's

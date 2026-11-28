@@ -304,12 +304,12 @@ describe("a map in the world", () => {
         { tiles: Grid.tiles(2, 2) },
         { tiles: Grid.fill(2, 2) }
       );
-      const Wrong = Action.define("gr/Wrong", { payload: Schema.Struct({}) });
+      const Wrong = Action.define("gr/Wrong");
       const wrong = Action.handler(Wrong, function* () {
         (yield* Singleton.Write(Small)).tiles = Grid.fill(3, 3);
       });
       const app = yield* App.make(App.define({ handlers: [wrong] }));
-      yield* app.dispatch(Wrong, {});
+      yield* app.dispatch(Wrong);
       expect(yield* Effect.exit(Save.make(app))).toEqual(
         Exit.fail(
           new Save.Refused({

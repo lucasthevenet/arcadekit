@@ -957,6 +957,7 @@ const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
 
 class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
 const Double = Action.define("rp/Double", {
+  // oxlint-disable-next-line arcadekit/no-empty-payload -- the test enqueues it by name with {}, and expects {} in the log.
   payload: Schema.Struct({}),
   error: TooBig,
 });

@@ -2569,7 +2569,7 @@ describe("an entity drawn between two ticks", () => {
     () =>
       Effect.gen(function* () {
         // A piece that goes ten along x when it is told to, and not otherwise.
-        const Go = Action.define("th/Go", { payload: Schema.Struct({}) });
+        const Go = Action.define("th/Go");
         const renderer = makeRenderer();
         const made = yield* start(
           App.make(
@@ -2603,7 +2603,7 @@ describe("an entity drawn between two ticks", () => {
         expect(app.time.tick).toBe(1);
         expect(xAt(mesh(), 1)).toBe(0);
         // Told to go: the tick runs in that frame, and it is on its way.
-        yield* app.enqueue(Go, {});
+        yield* app.enqueue(Go);
         yield* advance(1 / 120);
         expect(app.time.tick).toBe(2);
         expect(xAt(mesh(), 1)).toBe(0);

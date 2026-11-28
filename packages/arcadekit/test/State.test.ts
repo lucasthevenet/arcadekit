@@ -219,7 +219,7 @@ describe("a run condition", () => {
           { on: Field.u8 },
           { on: 1 }
         );
-        const Flip = Action.define("st/Flip", { payload: Schema.Struct({}) });
+        const Flip = Action.define("st/Flip");
         const flip = Action.handler(Flip, function* () {
           const held = yield* Singleton.Write(Switch);
           held.on = held.on === 1 ? 0 : 1;
@@ -252,7 +252,7 @@ describe("a run condition", () => {
         // The second condition is asked only when the first held; the
         // other system asks every tick.
         expect(asked).toBe(3 + 6);
-        yield* app.dispatch(Flip, {});
+        yield* app.dispatch(Flip);
         yield* app.tick(1);
         yield* app.tick(1);
         expect(ran).toEqual([2, 4, 6]);
@@ -907,7 +907,7 @@ describe("hooks", () => {
 
 describe("a state in a save", () => {
   const Level = State.define("st/Level", ["one", "two", "three"]);
-  const Next = Action.define("st/Next", { payload: Schema.Struct({}) });
+  const Next = Action.define("st/Next");
   const next = Action.handler(Next, function* () {
     const level = yield* State.Setter(Level);
     level.set(level.value === "one" ? "two" : "three");
@@ -959,7 +959,7 @@ describe("a state in a save", () => {
         expect(yield* built(app)).toEqual(["one"]);
         expect(world.hash()).not.toBe((yield* fresh.read(World)).hash());
         // Saved with a move asked for and not made yet.
-        yield* app.dispatch(Next, {});
+        yield* app.dispatch(Next);
         const save = yield* Effect.exit(Save.make(app));
         if (Exit.isFailure(save)) {
           throw new Error("the save was refused");
@@ -977,7 +977,7 @@ describe("a state in a save", () => {
         for (const each of [app, loaded]) {
           yield* each.tick(1);
           yield* each.tick(1);
-          yield* each.dispatch(Next, {});
+          yield* each.dispatch(Next);
           yield* each.tick(1);
         }
         // Level one was not built again; two and three were built once.
@@ -1006,12 +1006,12 @@ describe("a state in a save", () => {
       Effect.gen(function* () {
         const Before = State.define("st/Door", ["open", "shut", "ajar"]);
         const After = State.define("st/Door", ["open", "shut"]);
-        const Prop = Action.define("st/Prop", { payload: Schema.Struct({}) });
+        const Prop = Action.define("st/Prop");
         const prop = Action.handler(Prop, function* () {
           (yield* State.Setter(Before)).set("ajar");
         });
         const app = yield* App.make(App.define({ handlers: [prop] }));
-        expect(yield* Effect.exit(app.dispatch(Prop, {}))).toEqual(Exit.void);
+        expect(yield* Effect.exit(app.dispatch(Prop))).toEqual(Exit.void);
         yield* app.tick(1);
         const save = yield* Effect.exit(Save.make(app));
         assert(Exit.isSuccess(save));
@@ -1032,7 +1032,7 @@ describe("a state in a save", () => {
       Effect.gen(function* () {
         const app = yield* App.make(App.define({ plugins: [Rules] }));
         yield* app.tick(1);
-        expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Next, {})))).toBe(
+        expect(Exit.isSuccess(yield* Effect.exit(app.dispatch(Next)))).toBe(
           true
         );
         const save = yield* Effect.exit(Save.make(app));
@@ -1054,7 +1054,7 @@ describe("a state in a save", () => {
 });
 
 describe("an entity scoped to a state", () => {
-  const Dry = Action.define("st/Dry", { payload: Schema.Struct({}) });
+  const Dry = Action.define("st/Dry");
   const dry = Action.handler(Dry, function* () {
     (yield* State.Setter(Weather)).set("dry");
   });
@@ -1335,12 +1335,12 @@ describe("an entity scoped to a state", () => {
       Effect.gen(function* () {
         const Before = State.define("st/Lever", ["up", "down", "gone"]);
         const gone = State.scoped(Before, "gone");
-        const Pull = Action.define("st/Pull", { payload: Schema.Struct({}) });
+        const Pull = Action.define("st/Pull");
         const pull = Action.handler(Pull, function* () {
           (yield* Commands.spawns(gone)).spawn(gone);
         });
         const app = yield* App.make(App.define({ handlers: [pull] }));
-        expect(yield* Effect.exit(app.dispatch(Pull, {}))).toEqual(Exit.void);
+        expect(yield* Effect.exit(app.dispatch(Pull))).toEqual(Exit.void);
         const save = yield* Effect.exit(Save.make(app));
         assert(Exit.isSuccess(save));
         const After = State.define("st/Lever", ["up", "down"]);
@@ -1373,7 +1373,7 @@ describe("an entity scoped to a state", () => {
         );
         yield* app.dispatch(Go, { to: "playing", refuse: false });
         yield* app.tick(1);
-        yield* app.dispatch(Dry, {});
+        yield* app.dispatch(Dry);
         yield* app.tick(1);
         expect(yield* walls(app)).toEqual([2]);
       })

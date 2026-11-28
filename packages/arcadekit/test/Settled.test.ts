@@ -35,12 +35,12 @@ const Seen = Query.all(Piece);
 const Score = Singleton.define("st/Score", { moves: Field.i32 }, { moves: 0 });
 const Phase = State.define("st/Phase", ["title", "playing"]);
 
-const Begin = Action.define("st/Begin", { payload: Schema.Struct({}) });
+const Begin = Action.define("st/Begin");
 const Move = Action.define("st/Move", {
   payload: Schema.Struct({ by: Schema.Int }),
 });
 const Moved = Event.define("st/Moved", Schema.Struct({ by: Schema.Int }));
-const Landed = Event.define("st/Landed", Schema.Struct({}));
+const Landed = Event.define("st/Landed");
 
 /** Counts the moves it hears of. It is listed before the system that says so. */
 const Tally = System.tick("st/Tally", function* () {
@@ -52,7 +52,7 @@ const Tally = System.tick("st/Tally", function* () {
 /** Says that a piece has landed, a tick after it was moved. */
 const Land = System.tick("st/Land", function* () {
   if ((yield* Event.Reader(Moved)).read().length > 0) {
-    (yield* Event.Emitter(Landed)).emit({});
+    (yield* Event.Emitter(Landed)).emit();
   }
 });
 const entered: string[] = [];
@@ -67,7 +67,7 @@ const Declare = Action.define("st/Declare", {
 });
 const declare = Action.handler(Declare, function* ({ landed }) {
   if (landed) {
-    (yield* Event.Emitter(Landed)).emit({});
+    (yield* Event.Emitter(Landed)).emit();
   } else {
     (yield* Event.Emitter(Moved)).emit({ by: 1 });
   }
@@ -123,7 +123,7 @@ describe("app.settled", () => {
         expect(app.settled).toBe(false);
         yield* app.tick(1);
         expect(app.settled).toBe(true);
-        yield* app.dispatch(Begin, {});
+        yield* app.dispatch(Begin);
         expect(app.settled).toBe(false);
         expect(entered).toEqual([]);
         yield* app.tick(1);
@@ -140,7 +140,7 @@ describe("app.settled", () => {
       expect(app.settled).toBe(false);
       yield* app.tick(1);
       entered.length = 0;
-      yield* app.enqueue(Begin, {});
+      yield* app.enqueue(Begin);
       expect(app.settled).toBe(false);
       // Applied at the start of the tick, and the state it asked for is
       // entered by the same tick: nothing is left waiting, and the tick after
@@ -160,7 +160,7 @@ describe("app.settled", () => {
         const app = yield* App.make(App.define({ plugins: [Rules] }));
         const world = yield* worldOf(app);
         expect(app.settled).toBe(false);
-        yield* app.dispatch(Begin, {});
+        yield* app.dispatch(Begin);
         yield* app.tick(1);
         yield* app.tick(1);
         expect(app.settled).toBe(true);
@@ -211,7 +211,7 @@ describe("app.settled", () => {
           App.define({ plugins: [Rules], systems: [Watch] })
         );
         expect(app.settled).toBe(false);
-        yield* app.dispatch(Begin, {});
+        yield* app.dispatch(Begin);
         yield* app.tick(1);
         yield* app.enqueue(Move, { by: 1 });
         yield* app.tick(1);
@@ -356,7 +356,7 @@ describe("a game that ticks when its player moves", () => {
         const { app, frame, source, ui } = yield* play();
         yield* frame(10);
         // A button: the tick that applies it enters the state it asked for.
-        ui.send(Begin, {});
+        ui.send(Begin);
         expect(ui.get(Shown).phase).toBe("title");
         expect(yield* frame()).toBe(1);
         expect(ui.get(Shown).phase).toBe("playing");
@@ -392,7 +392,7 @@ describe("a game that ticks when its player moves", () => {
       Effect.gen(function* () {
         const { app, frame, source, ui } = yield* play();
         yield* frame(30);
-        ui.send(Begin, {});
+        ui.send(Begin);
         yield* frame(45);
         source.tap("ArrowRight");
         yield* frame(7);
@@ -585,7 +585,7 @@ describe("a game that changes", () => {
       Effect.gen(function* () {
         const Game = App.define({ plugins: [Rules] });
         const game = yield* Test.make(Game);
-        yield* game.app.enqueue(Begin, {});
+        yield* game.app.enqueue(Begin);
         yield* game.rest();
         yield* game.app.enqueue(Move, { by: 2 });
         yield* game.rest();
@@ -595,7 +595,7 @@ describe("a game that changes", () => {
         // a game of its own, with a tick more than the saved one.
         const made = yield* Test.make(Game, { save });
         const loadedInto = yield* Test.make(Game);
-        yield* loadedInto.app.enqueue(Begin, {});
+        yield* loadedInto.app.enqueue(Begin);
         yield* loadedInto.rest();
         yield* loadedInto.app.enqueue(Move, { by: 5 });
         yield* loadedInto.rest();

@@ -82,7 +82,7 @@ describe("what an app is running", () => {
         ];
         for (const [name, call, busy] of calls) {
           let app: App.Any<never> | undefined;
-          const Call = Action.define("ph/Call", { payload: Schema.Struct({}) });
+          const Call = Action.define("ph/Call");
           const calling = Action.handler(Call, function* () {
             yield* Effect.orDie(call(app!));
           });
@@ -93,7 +93,7 @@ describe("what an app is running", () => {
                 app = made;
                 yield* made.tick(1);
                 const log = made.actionLog.length;
-                const exit = yield* Effect.exit(made.dispatch(Call, {}));
+                const exit = yield* Effect.exit(made.dispatch(Call));
                 expect(Exit.isFailure(exit), name).toBe(true);
                 expect(
                   String(Exit.isFailure(exit) ? exit.cause : ""),

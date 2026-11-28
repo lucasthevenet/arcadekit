@@ -466,7 +466,7 @@ describe("the built-in services", () => {
 describe("a fiber the game starts", () => {
   /** A fiber that never ends, left behind by whoever starts it. */
   const leave = Effect.forkDetach(Effect.never);
-  const Ping = Action.define("rt/Ping", { payload: Schema.Struct({}) });
+  const Ping = Action.define("rt/Ping");
 
   it.effect(
     "may be a child of the system that starts it, ended with the tick",
@@ -511,7 +511,7 @@ describe("a fiber the game starts", () => {
           App.make(App.define({ handlers: [ping] })),
           (app, world) =>
             Effect.gen(function* () {
-              expect(yield* thrown(app.dispatch(Ping, {}))).toThrow(
+              expect(yield* thrown(app.dispatch(Ping))).toThrow(
                 /The handler for "rt\/Ping" left a fiber running/
               );
               // Its writes are undone, as a refusal's are.

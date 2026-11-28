@@ -1161,7 +1161,7 @@ describe("an action that is accepted", () => {
     "cannot dispatch another action from its handler, and is told what to do instead",
     () =>
       Effect.gen(function* () {
-        const Outer = Action.define("tx/Outer", { payload: Schema.Struct({}) });
+        const Outer = Action.define("tx/Outer");
         let app: App.App | undefined;
         const outer = Action.handler(Outer, function* () {
           (yield* Query.View(Bodies)).each((body) => {
@@ -1178,7 +1178,7 @@ describe("an action that is accepted", () => {
         const [id] = ids;
         assert(id !== undefined);
         const entity = placedIn(world, id);
-        const exit = yield* Effect.exit(made.dispatch(Outer, {}));
+        const exit = yield* Effect.exit(made.dispatch(Outer));
         expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toMatch(
           /dispatch\("tx\/Echo"\) was called from the handler of "tx\/Outer".*Actions\.enqueue/
         );

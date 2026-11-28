@@ -1,15 +1,5 @@
 import { afterEach, assert, describe, expect, it, vi } from "@effect/vitest";
-import {
-  Cause,
-  Data,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Result,
-  Schema,
-  Scope,
-} from "effect";
+import { Cause, Data, Effect, Exit, Fiber, Layer, Result, Scope } from "effect";
 import { TestClock } from "effect/testing";
 
 import {
@@ -732,7 +722,7 @@ describe("ticking when needed", () => {
           { left: Field.u8 },
           { left: 0 }
         );
-        const Light = Action.define("dr/Light", { payload: Schema.Struct({}) });
+        const Light = Action.define("dr/Light");
         const light = Action.handler(Light, function* () {
           (yield* Singleton.Write(Fuse)).left = 6;
         });
@@ -766,7 +756,7 @@ describe("ticking when needed", () => {
         expect(display.watching).toBe(1);
         // A fuse lit from outside: the six ticks it burns, and the one that
         // finds it out and changes nothing.
-        yield* app.enqueue(Light, {});
+        yield* app.enqueue(Light);
         now = turn(display, 60, now);
         expect(app.time.tick).toBe(8);
         // Hidden, it asks for nothing; shown, it is at rest as it was.

@@ -1313,6 +1313,7 @@ const Push = Action.define("ch/Push", {
   payload: Schema.Struct({ slot: Schema.Int, refuse: Schema.Boolean }),
   error: Refused,
 });
+// oxlint-disable-next-line arcadekit/no-empty-payload -- the test enqueues it by name, with its payload as {}.
 const Spawn = Action.define("ch/Spawn", { payload: Schema.Struct({}) });
 const Cull = Action.define("ch/Cull", {
   payload: Schema.Struct({ slot: Schema.Int }),
@@ -1481,9 +1482,7 @@ describe("change queries in an app", () => {
 
   it.effect("give a handler a place of its own, apart from the systems'", () =>
     Effect.gen(function* () {
-      const Inspect = Action.define("ch/Inspect", {
-        payload: Schema.Struct({}),
-      });
+      const Inspect = Action.define("ch/Inspect");
       const inspect = Action.handler(Inspect, function* () {
         return (yield* Query.View(Moved)).entities().length;
       });
@@ -1505,15 +1504,15 @@ describe("change queries in an app", () => {
           handlers: [inspect, push],
         })
       );
-      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+      expect(yield* Effect.exit(app.dispatch(Inspect))).toEqual(
         Exit.succeed(3)
       );
-      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+      expect(yield* Effect.exit(app.dispatch(Inspect))).toEqual(
         Exit.succeed(0)
       );
       yield* app.dispatch(Push, { slot: 1, refuse: false });
       yield* app.tick(1);
-      expect(yield* Effect.exit(app.dispatch(Inspect, {}))).toEqual(
+      expect(yield* Effect.exit(app.dispatch(Inspect))).toEqual(
         Exit.succeed(1)
       );
       yield* app.tick(1);
@@ -1591,7 +1590,7 @@ describe("change queries in an app", () => {
         );
         const Arrived = Query.all(Position).pipe(Query.added(Position));
         const Landed = Query.all(Place).pipe(Query.added(Place));
-        const Look = Action.define("ch/Look", { payload: Schema.Struct({}) });
+        const Look = Action.define("ch/Look");
         const before = Action.handler(Look, function* () {
           const counts = [
             (yield* Query.View(Moved)).count(),
@@ -1637,7 +1636,7 @@ describe("change queries in an app", () => {
         );
         const [, second] = made;
         assert(second !== undefined);
-        expect(yield* Effect.exit(app.dispatch(Look, {}))).toEqual(
+        expect(yield* Effect.exit(app.dispatch(Look))).toEqual(
           Exit.succeed([4, 4, 4])
         );
         yield* app.dispatch(Hit, {
@@ -1664,7 +1663,7 @@ describe("change queries in an app", () => {
         );
         // Only the entity hit since the last look counts as changed, and
         // none as added.
-        expect(yield* Effect.exit(loaded.dispatch(Look, {}))).toEqual(
+        expect(yield* Effect.exit(loaded.dispatch(Look))).toEqual(
           Exit.succeed([1, 1, 0])
         );
       })

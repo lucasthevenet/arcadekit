@@ -467,7 +467,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
       }
     });
   });
-  const Halt = Action.define("rd/Halt", { payload: Schema.Struct({}) });
+  const Halt = Action.define("rd/Halt");
   const halt = Action.handler(Halt, function* () {
     (yield* Query.View(Moving)).eachChunk((start, end, _, vel) => {
       for (let i = start; i < end; i++) {
@@ -524,7 +524,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
           { verifyFrames: true }
         );
         const unhalted = yield* bodies(handled);
-        const exit = yield* Effect.exit(handled.dispatch(Halt, {}));
+        const exit = yield* Effect.exit(handled.dispatch(Halt));
         expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(
           refusal("y")
         );
@@ -558,7 +558,7 @@ describe("an id Commands.spawn returns", () => {
     onTargetDespawn: "remove",
   });
   const Fired = Event.define("rd/Fired", Schema.Struct({ shot: EntityId }));
-  const Fire = Action.define("rd/Fire", { payload: Schema.Struct({}) });
+  const Fire = Action.define("rd/Fire");
 
   it.effect("is not read before its entity is placed, and is once it is", () =>
     Effect.gen(function* () {
@@ -586,7 +586,7 @@ describe("an id Commands.spawn returns", () => {
         App.define({ handlers: [fire], systems: [Hear] })
       );
       const world = yield* app.read(World);
-      const exit = yield* Effect.exit(app.dispatch(Fire, {}));
+      const exit = yield* Effect.exit(app.dispatch(Fire));
       // dispatch gives it back as an entity, once the handler has ended.
       const shot = Exit.isSuccess(exit) ? exit.value : undefined;
       expect(shot).toBeDefined();
