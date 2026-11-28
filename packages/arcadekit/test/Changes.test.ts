@@ -1467,10 +1467,8 @@ describe("change queries in an app", () => {
       yield* quiet.tick(1);
       expect((yield* tallyOf(quiet)).moved).toBe(1);
       expect(
-        Exit.isFailure(
-          yield* Effect.exit(quiet.dispatch(Push, { slot: 0, refuse: true }))
-        )
-      ).toBe(true);
+        yield* Effect.exit(quiet.dispatch(Push, { slot: 0, refuse: true }))
+      ).toEqual(Exit.fail(Refused.make({})));
       yield* quiet.tick(1);
       expect((yield* tallyOf(quiet)).moved).toBe(1);
       yield* quiet.dispatch(Push, { slot: 0, refuse: false });

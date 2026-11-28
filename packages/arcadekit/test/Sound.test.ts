@@ -295,9 +295,9 @@ describe("Sound.cues", () => {
     Effect.gen(function* () {
       const sound = Sound.makeRecorder();
       const app = yield* play(sound);
-      expect(
-        Exit.isFailure(yield* Effect.exit(app.dispatch(Drop, { height: 500 })))
-      ).toBe(true);
+      expect(yield* Effect.exit(app.dispatch(Drop, { height: 500 }))).toEqual(
+        Exit.fail(TooHigh.make({}))
+      );
       yield* app.enqueue(Drop, { height: 500 });
       yield* app.tick(0.1);
       yield* app.frame();
