@@ -1,4 +1,4 @@
-import { assert, describe, expect, expectTypeOf, it } from "@effect/vitest";
+import { assert, describe, expect, expectTypeOf, it, vi } from "@effect/vitest";
 import {
   Cause,
   Context,
@@ -481,6 +481,11 @@ describe("Driver.run", () => {
 
   it.effect("runs where there is no page, on a timer", () =>
     Effect.gen(function* () {
+      // The timer runs on the test's clock: its timeouts, and the time it
+      // gives each frame.
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "performance"],
+      });
       const { Game, log } = makeGame();
       let made: App.Any | undefined;
       const fiber = yield* Effect.forkChild(
@@ -493,17 +498,13 @@ describe("Driver.run", () => {
         }),
         { startImmediately: true }
       );
-      yield* Effect.promise(
-        () => new Promise((resolve) => setTimeout(resolve, 120))
-      );
+      vi.advanceTimersByTime(120);
       yield* Fiber.interrupt(fiber);
       expect(made!.time.tick).toBeGreaterThan(3);
       expect(log.includes("sound closed")).toBe(true);
       const ticks = made!.time.tick;
-      yield* Effect.promise(
-        () => new Promise((resolve) => setTimeout(resolve, 50))
-      );
+      vi.advanceTimersByTime(50);
       expect(made!.time.tick).toBe(ticks);
-    })
+    }).pipe(Effect.ensuring(Effect.sync(() => vi.useRealTimers())))
   );
 });

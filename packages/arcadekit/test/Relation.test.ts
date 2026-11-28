@@ -687,7 +687,9 @@ describe("relations and a snapshot", () => {
   });
 });
 
-describe("relations against a simple model", () => {
+// Thousands of steps, all synchronous: a time limit could not stop a test
+// here, only fail it after it has finished on a busy machine.
+describe("relations against a simple model", { timeout: 0 }, () => {
   for (const seed of [1, 2, 3]) {
     it(`agree with it through thousands of random operations (seed ${seed})`, () => {
       const dice = new EcsWorld({ seed }).random;

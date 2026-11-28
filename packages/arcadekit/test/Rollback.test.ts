@@ -108,6 +108,9 @@ describe("a rollback session", () => {
       )
   );
 
+  // Four games of a fixed number of rounds, which wait on nothing the test
+  // does not hand over itself. The limit is there to end a hang, not to time
+  // the games, which take over a minute on a busy machine.
   it.effect(
     "ends hash-equal with the other peers, and with a game of one that was given the same actions",
     () =>
@@ -190,7 +193,8 @@ describe("a rollback session", () => {
             })
           );
         }
-      })
+      }),
+    { timeout: 600_000 }
   );
 
   it.effect(

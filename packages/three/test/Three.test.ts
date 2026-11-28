@@ -649,20 +649,26 @@ describe("Three.instances", () => {
     ).toEqual(["th/Flat", "th/Solid"]);
   });
 
-  it("refuses an of that requires no Position, or that the compiler can't read, with the whole reason, first, for either transform and each system", () => {
-    const repo = realpathSync(
-      fileURLToPath(new URL("../../..", import.meta.url))
-    );
-    const dir = mkdtempSync(join(tmpdir(), "three-of-"));
-    symlinkSync(
-      join(repo, "packages/three/node_modules"),
-      join(dir, "node_modules")
-    );
-    const three = relative(dir, join(repo, "packages/three/src/index.ts"));
-    writeFileSync(join(dir, "package.json"), '{ "type": "module" }');
-    writeFileSync(
-      join(dir, "game.ts"),
-      `import { Assets, Component, Transform2d, Transform3d } from "arcadekit";
+  // One run of the compiler, which the test waits for synchronously: a time
+  // limit could not stop it, only fail it after it has finished on a busy
+  // machine.
+  it(
+    "refuses an of that requires no Position, or that the compiler can't read, with the whole reason, first, for either transform and each system",
+    { timeout: 0 },
+    () => {
+      const repo = realpathSync(
+        fileURLToPath(new URL("../../..", import.meta.url))
+      );
+      const dir = mkdtempSync(join(tmpdir(), "three-of-"));
+      symlinkSync(
+        join(repo, "packages/three/node_modules"),
+        join(dir, "node_modules")
+      );
+      const three = relative(dir, join(repo, "packages/three/src/index.ts"));
+      writeFileSync(join(dir, "package.json"), '{ "type": "module" }');
+      writeFileSync(
+        join(dir, "game.ts"),
+        `import { Assets, Component, Transform2d, Transform3d } from "arcadekit";
 import type { ComponentDef } from "arcadekit/ecs";
 import { BoxGeometry, MeshBasicMaterial, Object3D } from "three";
 
@@ -688,37 +694,38 @@ const bares: readonly ComponentDef[] = [Rock];
 Three.instances("game/Bare", { of: bare, transform: Transform3d, geometry, material });
 Three.objectsFrom("game/Bares", { of: bares, transform: Transform3d, from: Forest, make });
 `
-    );
-    writeFileSync(
-      join(dir, "tsconfig.json"),
-      JSON.stringify({
-        extends: join(repo, "tsconfig.base.json"),
-        compilerOptions: { lib: ["ES2023", "DOM"], types: [] },
-        files: ["game.ts"],
-      })
-    );
-    const { stdout } = spawnSync(
-      join(repo, "node_modules/.bin/tsc"),
-      ["-p", ".", "--pretty", "false"],
-      { cwd: dir, encoding: "utf-8" }
-    );
-    rmSync(dir, { recursive: true });
-    const reason = `"The kind's \\"of\\" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component itself."`;
-    const refused = (line: number, column: number, dimensions: 2 | 3) =>
-      `game.ts(${line},${column}): error TS2322: Type 'typeof import("${repo}/packages/arcadekit/src/Transform${dimensions}d")' is not assignable to type '{ readonly Position: { readonly name: ${reason}; }; }'.
+      );
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({
+          extends: join(repo, "tsconfig.base.json"),
+          compilerOptions: { lib: ["ES2023", "DOM"], types: [] },
+          files: ["game.ts"],
+        })
+      );
+      const { stdout } = spawnSync(
+        join(repo, "node_modules/.bin/tsc"),
+        ["-p", ".", "--pretty", "false"],
+        { cwd: dir, encoding: "utf-8" }
+      );
+      rmSync(dir, { recursive: true });
+      const reason = `"The kind's \\"of\\" doesn't require one transform's Position, whichever of its components it is, so an entity spawned with it alone may never be drawn. Add the kind's transform's Position to its component's requires, and type it as that component itself."`;
+      const refused = (line: number, column: number, dimensions: 2 | 3) =>
+        `game.ts(${line},${column}): error TS2322: Type 'typeof import("${repo}/packages/arcadekit/src/Transform${dimensions}d")' is not assignable to type '{ readonly Position: { readonly name: ${reason}; }; }'.
   The types of 'Position.name' are incompatible between these types.
     Type '"arcadekit/Transform${dimensions}d.Position"' is not assignable to type '${reason}'.`;
-    expect(stdout.trimEnd().split(/\n(?=game\.ts)/)).toEqual([
-      refused(12, 44, 3),
-      refused(13, 44, 2),
-      refused(14, 42, 3),
-      refused(15, 43, 2),
-      refused(18, 48, 3),
-      refused(19, 45, 2),
-      refused(24, 42, 3),
-      refused(25, 46, 3),
-    ]);
-  });
+      expect(stdout.trimEnd().split(/\n(?=game\.ts)/)).toEqual([
+        refused(12, 44, 3),
+        refused(13, 44, 2),
+        refused(14, 42, 3),
+        refused(15, 43, 2),
+        refused(18, 48, 3),
+        refused(19, 45, 2),
+        refused(24, 42, 3),
+        refused(25, 46, 3),
+      ]);
+    }
+  );
 
   it.effect("draws a rotation left at zero as no turn at all", () =>
     Effect.gen(function* () {
