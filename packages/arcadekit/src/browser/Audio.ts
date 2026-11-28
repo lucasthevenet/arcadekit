@@ -16,6 +16,7 @@
 import type { Layer } from "effect";
 
 import type * as Assets from "../Assets.ts";
+import { playing } from "../internal/sheet.ts";
 import type * as Sound from "../Sound.ts";
 import type { Options } from "./Browser.ts";
 import * as audio from "./internal/audio.ts";
@@ -89,8 +90,8 @@ export interface MediaLike {
  *
  * - It isn't an asset and belongs to no bundle. Nothing is fetched until it
  *   plays, so there is nothing to load or release, and it doesn't go through
- *   `Assets.Loader`. In a sheet, it plays whether or not the page was given
- *   the sheet. A recorder records it by its name.
+ *   `Assets.Loader`. A page given its sheet fetches nothing of it when its
+ *   audio starts. A recorder records it by its name.
  * - It is for a channel's track. Played as a cue, it is logged once through
  *   Effect's logger and not played, since a cue must sound immediately.
  * - It starts, fades and stops like any track, and with `once` plays to its
@@ -105,7 +106,8 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
 /**
  * Returns a layer that plays a page's sound with Web Audio: the files of the
  * cue sheets it is given, for the page's whole lifetime, and the clips in a
- * level's bundle.
+ * level's bundle. It provides the `Sound.Plays` of each sheet it is given, so
+ * a game that plays from another doesn't compile under it.
  *
  *   Audio.layerSound([Sfx, Tracks])
  *
@@ -139,8 +141,9 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  *   starts as soon as it can. It loops, or plays once to its end if
  *   requested, and a change of track or volume fades over the requested
  *   duration.
- * - A sound of a sheet it wasn't given, or whose file couldn't be fetched or
- *   decoded, is logged once through Effect's logger, and plays nothing.
+ * - A sound whose file couldn't be fetched or decoded is logged once through
+ *   Effect's logger, and plays nothing. So is a clip of a sheet it wasn't
+ *   given, which only a clip yielded under another layer, or a cast, can be.
  * - It plays each cue and track at the volume `Sound.Player` gives it, its
  *   bus's volume included, times `volume`, the page's own.
  * - While its display, `Driver.Display`, reports the page as hidden, the
@@ -151,13 +154,16 @@ export const stream = (url: string): Sound.Clip => audio.stream(url);
  *
  * @category Layers
  */
-export const layerSound = (
-  sheets: readonly Sound.Sheet[] = [],
+export const layerSound = <
+  const S extends readonly Sound.Sheet[] = readonly [],
+>(
+  sheets?: S,
   options: Pick<
     Options,
     "audio" | "decode" | "media" | "volume" | "window"
   > = {}
-): Layer.Layer<never> => audio.layerSound(sheets, options);
+): Layer.Layer<Sound.PlaysOf<S[number]>> =>
+  playing(audio.layerSound(sheets ?? [], options));
 
 /**
  * Makes a sound asset, a `Sound.Clip` decoded and ready to play, which a

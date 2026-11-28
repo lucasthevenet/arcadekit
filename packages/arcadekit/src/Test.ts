@@ -118,7 +118,8 @@ export interface Test<E = never, HU = never, U = undefined> {
  * **Details**
  *
  * - It fails as `App.make` does, and requires what the game needs from
- *   outside beside the stand-ins, such as `Three.Renderer`.
+ *   outside beside the stand-ins, such as `Three.Renderer`. Its recorder has
+ *   every cue sheet, so a game's sheets are no part of that.
  * - The app has a scope of its own, as any app, which `game.app.close` closes.
  *   The stand-ins hold nothing, so a test need not close it.
  *
@@ -135,7 +136,7 @@ export const make = <
 ): Effect.Effect<
   Test<App.TickError<S, P>, App.AllHandlers<H, P>, UiOf<H, P>>,
   Plugin.ErrorOf<P[number]> | (SV extends Save.Save ? Save.LoadRefused : never),
-  App.External<S, H, P>
+  Exclude<App.External<S, H, P>, Sound.Plays<string>>
 > =>
   // Each run makes stand-ins of its own, so two apps never share a device.
   Effect.suspend(() => {

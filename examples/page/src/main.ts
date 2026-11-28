@@ -53,7 +53,8 @@ Browser.runMain(
     target: document.querySelector("#game")!,
     preventDefault: ["ArrowLeft", "ArrowRight", "Space"],
     // The sheet's files, fetched and decoded for as long as the page lasts,
-    // and played once it has been touched.
+    // and played once it has been touched. The game plays from it, so
+    // without it this does not compile.
     sounds: [Sounds],
   }
 );

@@ -54,7 +54,7 @@ const Rules = Plugin.make("mu/Rules", {
 
 // --- what it sounds like -------------------------------------------------------------
 /** The game's tracks and cues, by the names a recorder records them by. */
-const T = Sound.sheet("mu/Tracks", {
+const Tracks = Sound.sheet("mu/Tracks", {
   a: "/a.ogg",
   b: "/b.ogg",
   breeze: "/breeze.ogg",
@@ -70,6 +70,8 @@ const T = Sound.sheet("mu/Tracks", {
   theme: "/theme.ogg",
   wind: "/wind.ogg",
 });
+/** The sheet's sounds, for a test that tells a system which to play. */
+const sounds = Effect.provide(Sound.Clips(Tracks), Sound.layerNowhere);
 /** How often the score was asked what should be playing. */
 let asked = 0;
 const Score = Sound.music(
@@ -80,13 +82,12 @@ const Score = Sound.music(
     if (level === "menu") {
       return undefined;
     }
+    const { drip, theme } = yield* Sound.Clips(Tracks);
     if ((yield* Singleton.Read(Hush)).on === 1) {
-      return { track: T.theme, volume: 0.2 };
+      return { track: theme, volume: 0.2 };
     }
     // The cave has a track of its own, quieter and slower to come.
-    return level === "forest"
-      ? T.theme
-      : { track: T.drip, volume: 0.5, fade: 2 };
+    return level === "forest" ? theme : { track: drip, volume: 0.5, fade: 2 };
   },
   { fade: 1 }
 );
@@ -95,12 +96,12 @@ const Score = Sound.music(
 const start = Effect.fnUntraced(function* <
   A extends { readonly close: Effect.Effect<void> },
   E,
->(make: Effect.Effect<A, E>, output?: Sound.Speaker) {
-  const provided =
-    output === undefined
-      ? make
-      : make.pipe(Effect.provide(Sound.layer(output)));
-  const app = yield* provided;
+>(make: Effect.Effect<A, E, Sound.Plays<string>>, output?: Sound.Speaker) {
+  const app = yield* make.pipe(
+    Effect.provide(
+      output === undefined ? Sound.layerNowhere : Sound.layer(output)
+    )
+  );
   return { app, close: app.close };
 });
 
@@ -109,7 +110,10 @@ const plugins = [Rules, Sound.plugin, Assets.plugin] as const;
 
 /** A game of levels, with systems of its own. */
 type Levels = App.Game<
-  readonly System.System<never, BuiltIn | Sound.Player | Assets.Store>[],
+  readonly System.System<
+    never,
+    BuiltIn | Sound.Player | Assets.Store | Sound.Plays<"mu/Tracks">
+  >[],
   readonly [],
   typeof plugins
 >;
@@ -193,6 +197,7 @@ describe("Sound.music", () => {
     "takes half a second over a change unless told otherwise, and is never below silence or back in time",
     () =>
       Effect.gen(function* () {
+        const T = yield* sounds;
         const sound = Sound.makeRecorder();
         let wanted: Sound.TrackOf = T.a;
         const Plain = Sound.music("mu/Plain", function* () {
@@ -233,9 +238,10 @@ describe("Sound.music", () => {
           if ((yield* State.Reader(Level)).value !== "cave") {
             return undefined;
           }
+          const { fanfare } = yield* Sound.Clips(Tracks);
           return (yield* Singleton.Read(Hush)).on === 1
-            ? { track: T.fanfare, volume: 0.5 }
-            : { track: T.fanfare, once: true };
+            ? { track: fanfare, volume: 0.5 }
+            : { track: fanfare, once: true };
         });
         const { app, step } = yield* play(
           App.define({ plugins, systems: [Fanfare] }),
@@ -264,9 +270,10 @@ describe("Sound.music", () => {
         ]);
         // Once again, at the same volume, is told too.
         const Twice = Sound.music("mu/Twice", function* () {
+          const { fanfare } = yield* Sound.Clips(Tracks);
           return (yield* Singleton.Read(Hush)).on === 1
-            ? { track: T.fanfare, once: true }
-            : T.fanfare;
+            ? { track: fanfare, once: true }
+            : fanfare;
         });
         const other = Sound.makeRecorder();
         const second = yield* play(
@@ -360,12 +367,11 @@ describe("Sound.music", () => {
         // while the game is there: two that are meant as one score.
         const MenuScore = Sound.music("mu/MenuScore", function* () {
           yield* State.Reader(Level);
-          return T.theme;
+          return (yield* Sound.Clips(Tracks)).theme;
         }).pipe(System.runIf(State.is(Level, "menu")));
         const LevelScore = Sound.music("mu/LevelScore", function* () {
-          return (yield* State.Reader(Level)).value === "forest"
-            ? T.theme
-            : T.drip;
+          const { drip, theme } = yield* Sound.Clips(Tracks);
+          return (yield* State.Reader(Level)).value === "forest" ? theme : drip;
         }).pipe(System.runIf(State.is(Level, "forest", "cave")));
         // Whichever of the two is listed first: silence gives way to a track.
         for (const game of [
@@ -397,10 +403,12 @@ describe("Sound.music", () => {
     "is a bug when two systems of one channel say two things in one frame, which the frame says",
     () =>
       Effect.gen(function* () {
+        const T = yield* sounds;
         const sound = Sound.makeRecorder();
         // The first to speak says another thing when the game is hushed.
         const One = Sound.music("mu/One", function* () {
-          return (yield* Singleton.Read(Hush)).on === 1 ? T.calm : T.theme;
+          const { calm, theme } = yield* Sound.Clips(Tracks);
+          return (yield* Singleton.Read(Hush)).on === 1 ? calm : theme;
         });
         let other: Sound.TrackOf = T.wind;
         const Two = Sound.music("mu/Two", function* () {
@@ -455,7 +463,7 @@ describe("Sound.music", () => {
           function* () {
             return (yield* State.Reader(Level)).value === "menu"
               ? undefined
-              : { track: T.wind, volume: 0.3 };
+              : { track: (yield* Sound.Clips(Tracks)).wind, volume: 0.3 };
           },
           { channel: "wind" }
         );
@@ -464,7 +472,7 @@ describe("Sound.music", () => {
           "mu/Breeze",
           function* () {
             return (yield* State.Reader(Level)).value === "menu"
-              ? T.breeze
+              ? (yield* Sound.Clips(Tracks)).breeze
               : undefined;
           },
           { channel: "wind", fade: 4 }
@@ -498,7 +506,7 @@ describe("Sound.music", () => {
         function* () {
           return (yield* State.Reader(Level)).value === "menu"
             ? undefined
-            : { track: T.wind, volume: 0.3 };
+            : { track: (yield* Sound.Clips(Tracks)).wind, volume: 0.3 };
         },
         { channel: "mu/Wind" }
       );
@@ -605,7 +613,7 @@ describe("Sound.music", () => {
           function* () {
             return (yield* State.Reader(Level)).value === "cave"
               ? undefined
-              : T.wind;
+              : (yield* Sound.Clips(Tracks)).wind;
           },
           { channel: "wind" }
         );
@@ -640,8 +648,11 @@ describe("Sound.music", () => {
       return 3;
     });
     const made = App.make(App.define({ plugins: [Rules], systems: [Score] }));
-    // The app still needs the player, which Sound.plugin gives.
-    expectTypeOf<Effect.Services<typeof made>>().toEqualTypeOf<Sound.Player>();
+    // The app still needs the player, which Sound.plugin gives, and the
+    // sheet it plays from, which only where its sound goes has.
+    expectTypeOf<Effect.Services<typeof made>>().toEqualTypeOf<
+      Sound.Player | Sound.Plays<"mu/Tracks">
+    >();
     expect(Score.name).toBe("mu/Score");
     expect(Score.stage).toBe("frame");
   });
@@ -653,7 +664,7 @@ describe("Sound.Player.music", () => {
       "mu/Loud",
       // @ts-expect-error sound is the frame's
       function* () {
-        (yield* Sound.Player).music("mu/Loud", T.theme);
+        (yield* Sound.Player).music("mu/Loud", Sound.clip("theme"));
       }
     );
     const Bang = Action.define("mu/Bang", { payload: Schema.Struct({}) });
@@ -674,10 +685,11 @@ describe("Sound.Player.music", () => {
         const sound = Sound.makeRecorder();
         let says: (readonly [
           string,
-          keyof typeof T | undefined,
+          keyof Effect.Success<typeof sounds> | undefined,
           Sound.MusicOptions?,
         ])[] = [];
         const Say = System.frame("mu/Say", function* () {
+          const T = yield* Sound.Clips(Tracks);
           const player = yield* Sound.Player;
           for (const [channel, track, options] of says) {
             player.music(
@@ -767,6 +779,7 @@ describe("Sound.Player.music", () => {
     "forgets what a frame said of a channel when another system failed it",
     () =>
       Effect.gen(function* () {
+        const T = yield* sounds;
         const sound = Sound.makeRecorder();
         let track = T.hum;
         let failing = true;
@@ -801,9 +814,10 @@ describe("Sound.Player.music", () => {
         const sound = Sound.makeRecorder();
         let on = false;
         const Both = System.frame("mu/Both", function* () {
+          const { click, hum } = yield* Sound.Clips(Tracks);
           const player = yield* Sound.Player;
-          player.play(T.click, { volume: 0.5 });
-          player.music("ui", on ? T.hum : undefined);
+          player.play(click, { volume: 0.5 });
+          player.music("ui", on ? hum : undefined);
         });
         const { app } = yield* start(
           App.make(App.define({ plugins: [Sound.plugin], systems: [Both] })),
@@ -829,16 +843,13 @@ describe("Sound.Player.music", () => {
     () =>
       Effect.gen(function* () {
         const sound = Sound.makeRecorder();
-        const said: (readonly [
-          keyof typeof T | undefined,
-          Sound.MusicOptions?,
-        ])[] = [];
-        let next:
-          | readonly [keyof typeof T | undefined, Sound.MusicOptions?]
-          | undefined;
+        type Named = keyof Effect.Success<typeof sounds>;
+        const said: (readonly [Named | undefined, Sound.MusicOptions?])[] = [];
+        let next: readonly [Named | undefined, Sound.MusicOptions?] | undefined;
         const Hum = System.frame("mu/Hum", function* () {
           if (next !== undefined) {
             said.push(next);
+            const T = yield* Sound.Clips(Tracks);
             (yield* Sound.Player).music(
               "ui",
               next[0] === undefined ? undefined : T[next[0]],
@@ -856,7 +867,7 @@ describe("Sound.Player.music", () => {
           sound
         );
         const say = Effect.fnUntraced(function* (
-          track: keyof typeof T | undefined,
+          track: Named | undefined,
           options?: Sound.MusicOptions
         ) {
           next = options === undefined ? [track] : [track, options];
@@ -933,14 +944,13 @@ describe("a clip", () => {
         const sound = Sound.makeRecorder();
         const creak = Sound.clip("creak");
         const other = Sound.clip("creak");
-        const Cues = Sound.cues(
-          "mu/Cues",
+        const Cues = Sound.cues("mu/Cues", Tracks, ({ tap }) => [
           Sound.on(Stepped, ({ hard }) =>
             hard ? { cue: creak, volume: 0.9, rate: 2 } : creak
           ),
           Sound.on(Stepped, ({ hard }) => (hard ? other : undefined)),
-          Sound.on(Stepped, T.tap)
-        );
+          Sound.on(Stepped, tap),
+        ]);
         const { app } = yield* play(
           App.define({ plugins, systems: [Cues] }),
           sound
@@ -1110,7 +1120,9 @@ describe("a level's cues", () => {
     () =>
       Effect.gen(function* () {
         const { Forest } = makeForest();
-        const Plain = Sound.cues("mu/Plain", Sound.on(Stepped, T.tap));
+        const Plain = Sound.cues("mu/Plain", Tracks, ({ tap }) => [
+          Sound.on(Stepped, tap),
+        ]);
         const From = Sound.cues("mu/From", Forest, ({ creak }) => [
           Sound.on(Stepped, creak),
         ]);
@@ -1220,42 +1232,47 @@ describe("a level's music", () => {
 });
 
 describe("Sound.makeRecorder", () => {
-  it("notes what each channel was told, oldest first, and what each is playing now", () => {
-    const sound = Sound.makeRecorder();
-    const wind = Sound.clip("wind", { samples: 3 });
-    sound.music("a", T.theme, { volume: 1, fade: 0.5, once: false });
-    sound.music("b", wind, { volume: 0.2, fade: 0, once: false });
-    expect(Object.fromEntries(sound.playing)).toEqual({
-      a: "theme",
-      b: "wind",
-    });
-    sound.music("a", undefined, { volume: 0, fade: 2, once: false });
-    sound.music("c", T.fanfare, { volume: 1, fade: 0, once: true });
-    sound.music("c", wind, { volume: 1, fade: 0, once: true });
-    sound.music("c", T.fanfare, { volume: 1, fade: 0, once: false });
-    sound.music("c", undefined, { volume: 0, fade: 0, once: true });
-    expect(sound.scored).toEqual([
-      { channel: "a", track: "theme", volume: 1, fade: 0.5 },
-      { channel: "b", track: "wind", volume: 0.2, fade: 0, clip: wind },
-      { channel: "a", track: undefined, volume: 0, fade: 2 },
-      { channel: "c", track: "fanfare", volume: 1, fade: 0, once: true },
-      {
-        channel: "c",
-        track: "wind",
-        volume: 1,
-        fade: 0,
-        clip: wind,
-        once: true,
-      },
-      { channel: "c", track: "fanfare", volume: 1, fade: 0 },
-      // Silence is not once or over and over.
-      { channel: "c", track: undefined, volume: 0, fade: 0 },
-    ]);
-    expect(sound.scored[1]!.clip).toBe(wind);
-    expect(wind.data).toEqual({ samples: 3 });
-    expect(Object.fromEntries(sound.playing)).toEqual({ b: "wind" });
-    // Its cues are apart from its music, and each recorder is its own.
-    expect(sound.played).toEqual([]);
-    expect(Sound.makeRecorder().scored).toEqual([]);
-  });
+  it.effect(
+    "notes what each channel was told, oldest first, and what each is playing now",
+    () =>
+      Effect.gen(function* () {
+        const T = yield* sounds;
+        const sound = Sound.makeRecorder();
+        const wind = Sound.clip("wind", { samples: 3 });
+        sound.music("a", T.theme, { volume: 1, fade: 0.5, once: false });
+        sound.music("b", wind, { volume: 0.2, fade: 0, once: false });
+        expect(Object.fromEntries(sound.playing)).toEqual({
+          a: "theme",
+          b: "wind",
+        });
+        sound.music("a", undefined, { volume: 0, fade: 2, once: false });
+        sound.music("c", T.fanfare, { volume: 1, fade: 0, once: true });
+        sound.music("c", wind, { volume: 1, fade: 0, once: true });
+        sound.music("c", T.fanfare, { volume: 1, fade: 0, once: false });
+        sound.music("c", undefined, { volume: 0, fade: 0, once: true });
+        expect(sound.scored).toEqual([
+          { channel: "a", track: "theme", volume: 1, fade: 0.5 },
+          { channel: "b", track: "wind", volume: 0.2, fade: 0, clip: wind },
+          { channel: "a", track: undefined, volume: 0, fade: 2 },
+          { channel: "c", track: "fanfare", volume: 1, fade: 0, once: true },
+          {
+            channel: "c",
+            track: "wind",
+            volume: 1,
+            fade: 0,
+            clip: wind,
+            once: true,
+          },
+          { channel: "c", track: "fanfare", volume: 1, fade: 0 },
+          // Silence is not once or over and over.
+          { channel: "c", track: undefined, volume: 0, fade: 0 },
+        ]);
+        expect(sound.scored[1]!.clip).toBe(wind);
+        expect(wind.data).toEqual({ samples: 3 });
+        expect(Object.fromEntries(sound.playing)).toEqual({ b: "wind" });
+        // Its cues are apart from its music, and each recorder is its own.
+        expect(sound.played).toEqual([]);
+        expect(Sound.makeRecorder().scored).toEqual([]);
+      })
+  );
 });

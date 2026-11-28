@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+  vi,
+} from "@effect/vitest";
 import {
   Cause,
   Data,
@@ -1513,24 +1520,33 @@ describe("a page's sound", () => {
     return media;
   };
   /** A sheet the pages of these tests are never given. */
-  const elsewhere = new Map<string, Sound.Clip>();
+  const Elsewhere = Sound.sheet("br/Elsewhere", {
+    hiss: "/hiss.wav",
+    laser: "/laser.wav",
+    nothing: "/nothing.wav",
+    toString: "/toString.wav",
+  });
   /**
-   * A speaker that takes the name of a sheet's sound, as a game names one
-   * with `Sheet.name`, or a clip.
+   * A speaker that takes the name of a sound of the page's sheet, or of the
+   * sheet it is never given, as a game names one, or a clip.
    */
-  const byName = (speaker: Sound.Speaker, sheet: Sound.Sheet) => {
+  const byName = (
+    speaker: Sound.Speaker,
+    given: Readonly<Record<string, Sound.Clip>>,
+    elsewhere: Readonly<Record<string, Sound.Clip>>
+  ) => {
     const clipOf = (sound: string | Sound.Clip): Sound.Clip => {
       if (typeof sound !== "string") {
         return sound;
       }
-      const found =
-        (Object.hasOwn(sheet, sound) ? sheet[sound] : undefined) ??
-        elsewhere.get(sound) ??
-        Sound.sheet("br/Elsewhere", { [sound]: `/${sound}.wav` })[sound];
+      const found = Object.hasOwn(given, sound)
+        ? given[sound]
+        : Object.hasOwn(elsewhere, sound)
+          ? elsewhere[sound]
+          : undefined;
       if (found === undefined) {
         throw new Error(`No sheet of these tests has "${sound}"`);
       }
-      elsewhere.set(sound, found);
       return found;
     };
     return {
@@ -1614,7 +1630,11 @@ describe("a page's sound", () => {
       )
     );
     yield* Effect.promise(() => settle());
-    const output = byName(opened, sheet);
+    const output = byName(
+      opened,
+      yield* Effect.provide(Sound.Clips(sheet), Sound.layerNowhere),
+      yield* Effect.provide(Sound.Clips(Elsewhere), Sound.layerNowhere)
+    );
     return {
       page,
       audio,
@@ -1765,10 +1785,14 @@ describe("a page's sound", () => {
           )
         );
         yield* Effect.promise(() => settle());
-        output.play(Sheet.coin, { volume: 1, rate: 1 });
-        output.music("score", Sheet.coin, { volume: 1, fade: 0, once: false });
+        const { coin } = yield* Effect.provide(
+          Sound.Clips(Sheet),
+          Sound.layerNowhere
+        );
+        output.play(coin, { volume: 1, rate: 1 });
+        output.music("score", coin, { volume: 1, fade: 0, once: false });
         page.send("pointerdown");
-        output.play(Sheet.coin, { volume: 1, rate: 1 });
+        output.play(coin, { volume: 1, rate: 1 });
         // No touch would have helped, so nothing is said of one.
         expect(logged).toEqual([]);
         yield* Scope.close(scope, Exit.void);
@@ -2577,10 +2601,9 @@ describe("a page's sound", () => {
             (yield* Event.Emitter(Scored)).emit({});
           }
         });
-        const Cues = Sound.cues(
-          "br/Cues",
-          Sound.on(Scored, { cue: Coins.coin, volume: 0.8 })
-        );
+        const Cues = Sound.cues("br/Cues", Coins, ({ coin }) => [
+          Sound.on(Scored, { cue: coin, volume: 0.8 }),
+        ]);
         const Game = Plugin.make("br/Noisy", {
           plugins: [Sound.plugin],
           systems: [Score, Cues],
@@ -2591,24 +2614,28 @@ describe("a page's sound", () => {
         const Ask = System.frame("br/Ask", function* () {
           audible.push((yield* Sound.Player).audible);
         });
-        const start = (options: Browser.Options) =>
-          Effect.forkChild(
-            Driver.run(App.define({ plugins: [Game], systems: [Ask] }), {
-              hz: 60,
-            }).pipe(
-              Effect.provide(
-                Browser.layer({ gamepads: () => [], ...options }).pipe(
-                  Layer.provideMerge(Assets.layer(Assets.makeMemory(sounds)))
-                )
-              )
-            ),
-            { startImmediately: true }
+        const Noisy = App.define({ plugins: [Game], systems: [Ask] });
+        const onPage = <
+          const S extends readonly Sound.Sheet[] | false = readonly [],
+        >(
+          options: Browser.Options & { readonly sounds?: S }
+        ) =>
+          Browser.layer({ gamepads: () => [], ...options }).pipe(
+            Layer.provideMerge(Assets.layer(Assets.makeMemory(sounds)))
           );
-        const fiber = yield* start({
-          sounds: [Coins],
-          audio: () => audio,
-          decode: decodeInto([]),
-        });
+        const start = <E>(game: Effect.Effect<void, E>) =>
+          Effect.forkChild(game, { startImmediately: true });
+        const fiber = yield* start(
+          Driver.run(Noisy, { hz: 60 }).pipe(
+            Effect.provide(
+              onPage({
+                sounds: [Coins],
+                audio: () => audio,
+                decode: decodeInto([]),
+              })
+            )
+          )
+        );
         yield* Effect.promise(() => settle());
         // The devices' seven listeners, and the two that wait for a touch.
         expect(page.window.total).toBe(9);
@@ -2639,10 +2666,14 @@ describe("a page's sound", () => {
         expect(page.window.total).toBe(0);
         expect(audio.closed).toBe(1);
 
-        // Given no files of its own the page has sound all the same: a
-        // level's sounds are clips of its bundle, and need no name here.
+        // Given no sheet the page has sound all the same, for a game whose
+        // sounds are its levels' clips, which need no name here.
         audible.length = 0;
-        const plain = yield* start({ audio: () => audio });
+        const plain = yield* start(
+          Driver.run(App.define({ plugins: [Sound.plugin], systems: [Ask] }), {
+            hz: 60,
+          }).pipe(Effect.provide(onPage({ audio: () => audio })))
+        );
         yield* Effect.promise(() => settle());
         expect(page.window.total).toBe(9);
         page.repaint(0);
@@ -2653,7 +2684,11 @@ describe("a page's sound", () => {
         // Told it has none, the page's sound goes nowhere, and no touch is
         // waited for.
         audible.length = 0;
-        const silent = yield* start({ sounds: false });
+        const silent = yield* start(
+          Driver.run(Noisy, { hz: 60 }).pipe(
+            Effect.provide(onPage({ sounds: false }))
+          )
+        );
         yield* Effect.promise(() => settle());
         expect(page.window.total).toBe(7);
         page.repaint(0);
@@ -2662,12 +2697,89 @@ describe("a page's sound", () => {
       })
   );
 
+  it("is given every sheet the game plays from, or the game doesn't compile", () => {
+    const Scored = Event.define("br/Scored", Schema.Struct({}));
+    const Tunes = Sound.sheet("br/Tunes", { theme: "/theme.ogg" });
+    const game = Driver.run(
+      App.define({
+        plugins: [Sound.plugin],
+        systems: [
+          Sound.cues("br/Cues", Coins, ({ coin }) => [Sound.on(Scored, coin)]),
+          Sound.music("br/Theme", function* () {
+            return (yield* Sound.Clips(Tunes)).theme;
+          }),
+        ],
+      }),
+      { hz: 60 }
+    );
+    // What it requires names each sheet, cues and music alike.
+    expectTypeOf<Effect.Services<typeof game>>().toEqualTypeOf<
+      Sound.Plays<"br/Coins"> | Sound.Plays<"br/Tunes">
+    >();
+    // Given each, in any order, it runs; and with no sound at all.
+    void (() => Browser.runMain(game, { sounds: [Tunes, Coins] }));
+    void (() => Browser.runMain(game, { sounds: false }));
+    // Run where it is made, as a page writes it, and so is a game of none.
+    void (() =>
+      Browser.runMain(
+        Driver.run(
+          App.define({
+            plugins: [Sound.plugin],
+            systems: [
+              Sound.cues("br/Cues", Coins, ({ coin }) => [
+                Sound.on(Scored, coin),
+              ]),
+            ],
+          }),
+          { hz: 60 }
+        ),
+        { sounds: [Coins] }
+      ));
+    void (() =>
+      Browser.runMain(Driver.run(App.define({ plugins: [] }), { hz: 60 })));
+    void (() =>
+      Browser.runMain(
+        game.pipe(Effect.provide(Browser.layer({ sounds: [Coins, Tunes] })))
+      ));
+    void (() =>
+      Browser.runMain(
+        game.pipe(Effect.provide(Audio.layerSound([Coins, Tunes])))
+      ));
+    // Not given one, it doesn't compile, and the error names the one:
+    // Plays<"br/Tunes"> is not assignable to Plays<"br/Coins">.
+    void (() =>
+      Browser.runMain(
+        // @ts-expect-error The page has no "br/Tunes".
+        game,
+        { sounds: [Coins] }
+      ));
+    // @ts-expect-error Nor any sheet.
+    void (() => Browser.runMain(game));
+    void (() =>
+      Browser.runMain(
+        // @ts-expect-error A list whose sheets' names are lost could be any.
+        game,
+        { sounds: [Coins, Tunes] as readonly Sound.Sheet[] }
+      ));
+    void (() =>
+      Browser.runMain(
+        // @ts-expect-error The page's layer has no "br/Coins".
+        game.pipe(Effect.provide(Browser.layer({ sounds: [Tunes] })))
+      ));
+    void (() =>
+      Browser.runMain(
+        // @ts-expect-error Nor has its sound's.
+        game.pipe(Effect.provide(Audio.layerSound([Tunes])))
+      ));
+    expect(Tunes.name).toBe("br/Tunes");
+  });
+
   /** A game that plays a coin in each frame. */
   const Clinking = App.define({
     plugins: [Sound.plugin],
     systems: [
       System.frame("br/Clink", function* () {
-        (yield* Sound.Player).play(Coins.coin);
+        (yield* Sound.Player).play((yield* Sound.Clips(Coins)).coin);
       }),
     ],
   });
@@ -2678,7 +2790,7 @@ describe("a page's sound", () => {
       Effect.gen(function* () {
         const Plink = System.frame("br/Plink", function* () {
           if ((yield* Input.Keyboard).down("Space")) {
-            (yield* Sound.Player).play(Coins.coin);
+            (yield* Sound.Player).play((yield* Sound.Clips(Coins)).coin);
           }
         });
         const Game = App.define({

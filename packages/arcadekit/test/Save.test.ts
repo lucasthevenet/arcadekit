@@ -1125,7 +1125,7 @@ const Rolled = Plugin.make("sv/Rolls", {
     }),
     Sound.music("sv/Theme", function* () {
       return (yield* State.Reader(Lit)).value === "lit"
-        ? Tunes.theme
+        ? (yield* Sound.Clips(Tunes)).theme
         : undefined;
     }),
   ],

@@ -8,18 +8,19 @@
  *   // The sounds, by name: a cue that isn't in the sheet doesn't compile.
  *   const Sfx = Sound.sheet("game/Sfx", { coin: "/coin.wav", thud: "/thud.wav" })
  *
- *   // What it sounds like: a frame-stage system.
- *   const Cues = Sound.cues("game/Cues",
- *     Sound.on(Scored, Sfx.coin),
- *     Sound.on(Collided, ({ speed }) => ({ cue: Sfx.thud, volume: Math.min(1, speed / 10) }))
- *   )
+ *   // What it sounds like: a frame-stage system, which plays from the sheet.
+ *   const Cues = Sound.cues("game/Cues", Sfx, ({ coin, thud }) => [
+ *     Sound.on(Scored, coin),
+ *     Sound.on(Collided, ({ speed }) => ({ cue: thud, volume: Math.min(1, speed / 10) })),
+ *   ])
  *
  *   const Game = Plugin.make("game/Game", {
  *     plugins: [Sound.plugin],
  *     systems: [Physics, Cues],
  *   })
  *
- *   // Where it plays: in a page, which fetches the sheet's files.
+ *   // Where it plays: in a page, which fetches the sheet's files. A page
+ *   // that isn't given a sheet the game plays from doesn't compile.
  *   Browser.runMain(Driver.run(App.define({ plugins: [Game] }), { hz: 60 }), {
  *     sounds: [Sfx],
  *   })
@@ -30,7 +31,8 @@
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* State.Reader(Level)
- *     return level.value === "menu" ? Tracks.menu : { track: Tracks.forest, volume: 0.6 }
+ *     const { forest, menu } = yield* Sound.Clips(Tracks)
+ *     return level.value === "menu" ? menu : { track: forest, volume: 0.6 }
  *   })
  *
  * Every sound plays on a bus, `Sound.EffectsBus` for a cue and
@@ -59,7 +61,9 @@ import type { Scope } from "effect";
 
 import * as Assets from "./Assets.ts";
 import * as Event from "./Event.ts";
-import { Entry } from "./internal/sheet.ts";
+import { lookup } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
+import { Entry, playing, soundsOf } from "./internal/sheet.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
 import type { Events } from "./Services.ts";
@@ -108,24 +112,94 @@ export const clip = (name: string, data?: unknown): Clip =>
 export type Playable = Clip;
 
 /**
+ * In a system's requirements, says that the system plays a sound of the cue
+ * sheet named `N`, because it asks for the sheet's clips. What a game's sound goes to
+ * provides it for each sheet it has: a page for each sheet of its `sounds`,
+ * and `Sound.layer(speaker)`, `Sound.layerNowhere` and `Test.make` for every
+ * sheet. So a game that plays from a sheet its page wasn't given doesn't
+ * compile. It stands for nothing at run time.
+ *
+ * @category Type-level
+ */
+export interface Plays<out N extends string> {
+  readonly "~arcadekit/Sound/Plays": N;
+}
+
+// Keeps the names of a sheet's sounds in its type, which nothing else of it says.
+declare const SoundsBrand: unique symbol;
+
+/**
  * A cue sheet: a game's sounds for its whole lifetime, each a clip under its
- * name, made by `Sound.sheet`.
+ * name, made by `Sound.sheet`. A frame-stage system asks for its sounds with
+ * `yield* Sound.Clips(sheet)`.
  *
  * @category Models
  */
-export type Sheet<K extends string = string> = { readonly [P in K]: Clip };
+export class Sheet<N extends string = string, K extends string = string> {
+  declare readonly [SoundsBrand]: K;
+
+  constructor(
+    /** What a log and a type error call it. */
+    readonly name: N,
+    sounds: { readonly [P in K]: Clip }
+  ) {
+    soundsOf.set(this, sounds);
+  }
+}
+
+const clipsOf = <K extends string>(
+  _given: Given,
+  sheet: Sheet<string, K>
+): { readonly [P in K]: Clip } =>
+  soundsOf.get(sheet) as { readonly [P in K]: Clip };
+
+/**
+ * Asks for a cue sheet's sounds, each a clip under its name. The system's
+ * type then says, with `Sound.Plays`, that it plays from the sheet, so a game
+ * whose page wasn't given the sheet doesn't compile.
+ *
+ *   const Click = System.frame("game/Click", function*() {
+ *     const { click } = yield* Sound.Clips(Sfx)
+ *     const player = yield* Sound.Player
+ *     player.play(click, { volume: 0.5 })
+ *   })
+ *
+ * A system of the tick that asks for them doesn't compile, since sound is
+ * the frame's.
+ *
+ * @category Capabilities
+ */
+export const Clips = <N extends string, K extends string>(
+  sheet: Sheet<N, K>
+): Effect.Effect<{ readonly [P in K]: Clip }, never, Plays<N>> =>
+  lookup(clipsOf, sheet);
+
+/**
+ * The `Sound.Plays` of each sheet of a union, and `never` for none: what a
+ * page given those sheets provides. A sheet whose type has lost its name, as
+ * one of a `readonly Sound.Sheet[]` has, could be any, so it gives nothing.
+ *
+ * @category Type-level
+ */
+export type PlaysOf<S> =
+  S extends Sheet<infer N, string>
+    ? string extends N
+      ? never
+      : Plays<N>
+    : never;
 
 /**
  * Makes a cue sheet: a clip for each sound a game plays by name, from the URL
- * of its file, or from a clip such as `Audio.stream(url)`. A cue or a track
- * names a sound as a property of the sheet, so a name that isn't in it doesn't
- * compile, and a page given the sheet fetches its files.
+ * of its file, or from a clip such as `Audio.stream(url)`. A system asks for
+ * its sounds with `Sound.Clips`, so a name that isn't in it doesn't compile,
+ * and a page given the sheet fetches its files.
  *
  *   const Sfx = Sound.sheet("game/Sfx", { coin: "/coin.wav", thud: "/thud.wav" })
  *
- *   Sound.on(Scored, Sfx.coin)
- *   Sound.on(Scored, Sfx.coni)                  // doesn't compile
+ *   Sound.cues("game/Cues", Sfx, ({ coin }) => [Sound.on(Scored, coin)])
+ *   Sound.cues("game/Cues", Sfx, ({ coni }) => [Sound.on(Scored, coni)])  // doesn't compile
  *   Browser.runMain(game, { sounds: [Sfx] })
+ *   Browser.runMain(game, {})                                             // doesn't compile
  *
  * **When to use**
  *
@@ -135,34 +209,40 @@ export type Sheet<K extends string = string> = { readonly [P in K]: Clip };
  *
  * **Details**
  *
- * - Each clip's name is its key, as a recorder records it: `Sfx.coin` plays
- *   as `"coin"`.
- * - A page plays a sheet's files once it is given the sheet, in the `sounds`
- *   of `Browser.runMain` or `Audio.layerSound`, which fetches them when its
- *   audio starts. A recorder records them whatever it was given.
- *
- * **Gotchas**
- *
- * - A sound of a sheet that the page wasn't given plays nothing, and is
- *   logged once through Effect's logger with the sheet's name.
+ * - Each clip's name is its key, as a recorder records it: `coin` plays as
+ *   `"coin"`.
+ * - Its sounds are reached only through `Sound.Clips`, so a system that plays one
+ *   has the sheet's `Sound.Plays` in its type, and so has the game. What
+ *   runs the game provides it: a page whose `sounds`, in `Browser.runMain`
+ *   or `Audio.layerSound`, lists the sheet, and which fetches its files when
+ *   its audio starts, or `Sound.layer(speaker)`, which has every sheet, as a
+ *   recorder records any.
+ * - A system of the tick that asks for its clips doesn't compile, since
+ *   sound is the frame's.
  *
  * @category Constructors
  */
-export const sheet = <const F extends Readonly<Record<string, string | Clip>>>(
-  name: string,
+export const sheet = <
+  const N extends string,
+  const F extends Readonly<Record<string, string | Clip>>,
+>(
+  name: N,
   files: F
-): Sheet<Extract<keyof F, string>> =>
-  Object.fromEntries(
-    Object.entries(files).map(([key, file]) => [
-      key,
-      new Clip(
+): Sheet<N, Extract<keyof F, string>> =>
+  new Sheet(
+    name,
+    Object.fromEntries(
+      Object.entries(files).map(([key, file]) => [
         key,
-        typeof file === "string"
-          ? new Entry(name, file, undefined)
-          : new Entry(name, undefined, file.data)
-      ),
-    ])
-  ) as Sheet<Extract<keyof F, string>>;
+        new Clip(
+          key,
+          typeof file === "string"
+            ? new Entry(name, file, undefined)
+            : new Entry(name, undefined, file.data)
+        ),
+      ])
+    ) as { readonly [P in Extract<keyof F, string>]: Clip }
+  );
 
 const nameOf = (sound: Playable): string => sound.name;
 
@@ -225,14 +305,17 @@ const silent: Speaker = { play() {}, music() {} };
 const nowhere: OutputShape = { open: Effect.succeed(silent) };
 
 /**
- * Where an app's sound goes. Nothing has to provide it. By default sound goes
- * nowhere, as a server, a replay and most tests need.
+ * Where an app's sound goes. By default sound goes nowhere, as a server, a
+ * replay and most tests need.
  *
  * **Details**
  *
- * A page provides its own output with `Audio.layerSound(files)`, or with the
+ * A page provides its own output with `Audio.layerSound(sheets)`, or with the
  * `sounds` option of `Browser.runMain`. A test provides a speaker that records
- * what it was asked, `Sound.layer(Sound.makeRecorder())`.
+ * what it was asked, `Sound.layer(Sound.makeRecorder())`. A game whose systems
+ * play from a cue sheet requires the sheet's `Sound.Plays`, which only a
+ * layer that says where its sound goes provides: one of these, or
+ * `Sound.layerNowhere`.
  *
  * An output opens nothing itself. `Sound.plugin` runs `open` in the app's own
  * scope, and lets go of the speaker when the app is closed. Wherever the
@@ -263,14 +346,35 @@ export const open: Effect.Effect<Speaker, never, Scope.Scope> = Effect.flatMap(
 
 /**
  * Returns a layer that provides a speaker made by hand, open already, such as
- * `Sound.makeRecorder()`.
+ * `Sound.makeRecorder()`. A speaker is given a sound's clip, and has every
+ * sheet, so the layer provides the `Sound.Plays` of each.
  *
  *   App.make(game).pipe(Effect.provide(Sound.layer(sound)))
  *
  * @category Layers
  */
-export const layer = (speaker: Speaker): Layer.Layer<never> =>
-  Layer.succeed(Output, { open: Effect.succeed(speaker) });
+export const layer = (speaker: Speaker): Layer.Layer<Plays<string>> =>
+  playing<Plays<string>>(
+    Layer.succeed(Output, { open: Effect.succeed(speaker) })
+  );
+
+/**
+ * A layer by which sound goes nowhere, as it does where nothing provides
+ * `Sound.Output`, and which has every sheet: it provides the `Sound.Plays` of
+ * each.
+ *
+ *   Replay.verify(recording, game).pipe(Effect.provide(Sound.layerNowhere))
+ *
+ * **When to use**
+ *
+ * Use where a game whose systems play from a sheet runs with no sound, as on
+ * a server or in a replay. A game with no sheet needs nothing.
+ *
+ * @category Layers
+ */
+export const layerNowhere: Layer.Layer<Plays<string>> = playing<Plays<string>>(
+  Layer.succeed(Output, nowhere)
+);
 
 /**
  * A played cue, as a recorder records it.
@@ -330,7 +434,7 @@ export interface Recorder extends Speaker {
  *   )
  *   yield* app.tick(1 / 60)
  *   yield* app.frame()
- *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }], for Sfx.coin
+ *   sound.played   // [{ cue: "coin", volume: 1, rate: 1 }], for a sheet's coin
  *
  * @category Testing
  */
@@ -396,13 +500,13 @@ export class Bus {
  * UI's clicks.
  *
  *   const UiBus = Sound.bus("ui")
- *   Sound.on(Clicked, { cue: Sfx.click, bus: UiBus })
+ *   Sound.on(Clicked, { cue: click, bus: UiBus })
  *   player.volume(UiBus, 0.5)
  *
  * **Gotchas**
  *
  * - Each call is a bus of its own: declare one once, at module level, and
- *   use that value everywhere, as a sheet's sounds are used.
+ *   use that value everywhere, as a sheet is used.
  *
  * @category Constructors
  */
@@ -527,7 +631,9 @@ export interface PlayerShape {
  *
  * Use in a frame-stage system to play a sound that no event stands for:
  *
- *   (yield* Sound.Player).play(Sfx.click, { volume: 0.5 })
+ *   const { click } = yield* Sound.Clips(Sfx)
+ *   const player = yield* Sound.Player
+ *   player.play(click, { volume: 0.5 })
  *
  * **Gotchas**
  *
@@ -812,10 +918,12 @@ export interface Binding {
 /**
  * Makes an entry of `Sound.cues` that plays a cue each time an event happens.
  *
- *   Sound.on(Scored, Sfx.coin)
- *   Sound.on(Collided, ({ speed }) => ({ cue: Sfx.thud, volume: Math.min(1, speed / 10) }))
- *   Sound.on(Landed, ({ hard }) => (hard ? Sfx.crash : undefined))
- *   Sound.on(Clicked, { cue: Sfx.click, bus: UiBus })
+ *   Sound.cues("game/Cues", Sfx, ({ click, coin, crash, thud }) => [
+ *     Sound.on(Scored, coin),
+ *     Sound.on(Collided, ({ speed }) => ({ cue: thud, volume: Math.min(1, speed / 10) })),
+ *     Sound.on(Landed, ({ hard }) => (hard ? crash : undefined)),
+ *     Sound.on(Clicked, { cue: click, bus: UiBus }),
+ *   ])
  *
  * The cue is a clip, such as a sound of a sheet, optionally with a volume, a
  * rate and a bus, or a function of the event's payload that returns one of
@@ -857,12 +965,17 @@ const byEvent = (lines: readonly Binding[]): Heard => {
 
 /**
  * Makes a frame-stage system from entries. Each frame, it plays what the events
- * since the last frame sound like.
+ * since the last frame sound like. Given a cue sheet, the entries are built
+ * from its sounds, once, and the system's type says that it plays from the
+ * sheet:
  *
- *   const Cues = Sound.cues("game/Cues",
- *     Sound.on(Scored, Sfx.coin),
- *     Sound.on(Collided, Sfx.thud)
- *   )
+ *   const Cues = Sound.cues("game/Cues", Sfx, ({ coin, thud }) => [
+ *     Sound.on(Scored, coin),
+ *     Sound.on(Collided, thud),
+ *   ])
+ *
+ * Given entries alone, it plays clips that are no sheet's, such as one made
+ * with `Sound.clip`: `Sound.cues("game/Cues", Sound.on(Scored, clip))`.
  *
  * **Details**
  *
@@ -889,6 +1002,11 @@ const byEvent = (lines: readonly Binding[]): Heard => {
  *
  * @category Systems
  */
+export function cues<N extends string, K extends string>(
+  name: string,
+  from: Sheet<N, K>,
+  lines: (sounds: { readonly [P in K]: Clip }) => readonly Binding[]
+): System.System<never, Player | Events | Plays<N>>;
 export function cues<B extends Entries>(
   name: string,
   from: Assets.Bundle<B>,
@@ -898,16 +1016,21 @@ export function cues(
   name: string,
   ...lines: readonly Binding[]
 ): System.System<never, Player | Events>;
-// One body for both: the system of lines that are there asks for no store of
-// assets, which the second signature says.
+// One body for all: the lines of a sheet, and lines that are there, ask for
+// no store of assets, which their signatures say.
 export function cues(
   name: string,
   ...rest: readonly unknown[]
-): System.System<never, Player | Events | Assets.Store> {
-  const from = rest[0] instanceof Assets.Bundle ? rest[0] : undefined;
+): System.System<never, Player | Events | Assets.Store | Plays<string>> {
+  const [first, second] = rest;
+  const make = second as (assets: unknown) => readonly Binding[];
+  const from = first instanceof Assets.Bundle ? first : undefined;
   const fixed =
-    from === undefined ? byEvent(rest as readonly Binding[]) : undefined;
-  const make = rest[1] as (assets: unknown) => readonly Binding[];
+    first instanceof Sheet
+      ? byEvent(make(soundsOf.get(first)))
+      : from === undefined
+        ? byEvent(rest as readonly Binding[])
+        : undefined;
   // The lines of a bundle, and the assets they were made of: per app, by
   // the app's player, since a system is made once and may be in several.
   const made = new WeakMap<
@@ -986,8 +1109,9 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *
  *   const Score = Sound.music("game/Score", function*() {
  *     const level = yield* State.Reader(Level)
- *     if ((yield* Singleton.Read(Paused)).on) return { track: Tracks.theme, volume: 0.2 }
- *     return level.value === "menu" ? undefined : Tracks.theme
+ *     const { theme } = yield* Sound.Clips(Tracks)
+ *     if ((yield* Singleton.Read(Paused)).on) return { track: theme, volume: 0.2 }
+ *     return level.value === "menu" ? undefined : theme
  *   }, { fade: 1 })
  *
  * **Details**
@@ -995,7 +1119,7 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * - A track loops until the body returns another, or nothing. It is a clip,
  *   such as a sound of a sheet, or one with its own `volume` and `fade`.
  * - With `once: true`, a track plays to its end and stops, such as a fanfare
- *   for as long as the game is won: `{ track: Tracks.fanfare, once: true }`. It
+ *   for as long as the game is won: `{ track: fanfare, once: true }`. It
  *   isn't restarted while the body keeps returning it. When the body returns
  *   something else before it ends, it fades like any other track.
  * - Music is computed from the game and stored nowhere in it. A game loaded

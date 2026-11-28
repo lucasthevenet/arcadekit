@@ -58,9 +58,9 @@ export const Game = App.define({
   plugins: [Rules, Sound.plugin],
   systems: [
     Volumes,
-    Sound.cues("vm/Cues", Sound.on(Caught, Sfx.coin)),
+    Sound.cues("vm/Cues", Sfx, ({ coin }) => [Sound.on(Caught, coin)]),
     Sound.music("vm/Score", function* () {
-      return Sfx.theme;
+      return (yield* Sound.Clips(Sfx)).theme;
     }),
   ],
 });
