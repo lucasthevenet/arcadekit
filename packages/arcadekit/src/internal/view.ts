@@ -1,7 +1,13 @@
 import { Context } from "effect";
 
 import type * as Action from "../Action.ts";
-import type { Bridge, Sent } from "../View.ts";
+import type { Bridge } from "../View.ts";
+
+/** @internal An action the UI requested, waiting for the input stage. */
+export interface Sent {
+  readonly action: Action.Any;
+  readonly payload: unknown;
+}
 
 /**
  * The actions a UI has sent, for the input stage. Publishing is `View.Port`,

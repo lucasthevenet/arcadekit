@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { Drift } from "../src/net/index.ts";
+import { makeComparison } from "../src/net/internal/drift.ts";
 
 /** Ada's side of a game of two, or of three, that begins at a tick. */
 const ada = (peers: readonly string[] = ["ada", "grace"], start = 0) =>
-  Drift.make({ peer: "ada", made: { game: 1, hz: 60, peers, start } });
+  makeComparison({ peer: "ada", made: { game: 1, hz: 60, peers, start } });
 
 describe("a peer's comparison of what the peers were made with", () => {
   const made = { game: 1, hz: 60, peers: ["ada", "grace"], start: 0 };

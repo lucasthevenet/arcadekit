@@ -51,6 +51,7 @@ import { Context, Effect, Equal, Layer } from "effect";
 import * as Action from "./Action.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import { Intake, Ui } from "./internal/view.ts";
+import type { Sent } from "./internal/view.ts";
 import * as Plugin from "./Plugin.ts";
 import type * as Singleton from "./Singleton.ts";
 import * as System from "./System.ts";
@@ -114,16 +115,6 @@ type Fresh<A> = [Held<A>] extends [never]
 type PayloadOf<D> = D extends Action.Action<string, infer P> ? P : never;
 /** The actions of a union of handlers. Distributive: none for no handler. */
 type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
-
-/**
- * An action the UI requested, waiting for the input stage.
- *
- * @category Models
- */
-export interface Sent {
-  readonly action: Action.Any;
-  readonly payload: unknown;
-}
 
 /**
  * What the UI receives: the game's views, and a way to request the actions

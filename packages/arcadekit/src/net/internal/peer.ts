@@ -9,6 +9,7 @@ import * as Timeline from "../../Timeline.ts";
 import * as Drift from "../Drift.ts";
 import type { Issued, Made, Message } from "../Message.ts";
 import type { Session } from "../Session.ts";
+import { makeComparison } from "./drift.ts";
 
 /**
  * What a peer is told of its game: what it simulates, as `Message.Made`'s
@@ -183,7 +184,7 @@ export const build = <E, A extends PeerApp<E>>(
   let resimulated = 0;
 
   // --- drift: the peers compare the hash checks their logs record ----------
-  const drift = Drift.make({ peer, made });
+  const drift = makeComparison({ peer, made });
   let begun = false;
 
   /**

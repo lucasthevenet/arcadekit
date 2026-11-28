@@ -2,7 +2,7 @@
 "arcadekit": minor
 ---
 
-A session is told this peer apart from the others: `Session.make(game, { seed, me: "ada", others: ["grace"], delta })`. A peer not among the peers of its own session can no longer be written, and a name given twice, as `me` and among `others` or twice among `others`, doesn't compile when the names are literals: the error says which name. `Session.Repeated<Me, Others>` is that message at the type level. Names the compiler knows only as `string` are still refused when the session is made.
+A session is told this peer apart from the others: `Session.make(game, { seed, me: "ada", others: ["grace"], delta })`. A peer not among the peers of its own session can no longer be written, and a name given twice, as `me` and among `others` or twice among `others`, doesn't compile when the names are literals: the error says which name. Names the compiler knows only as `string` are still refused when the session is made.
 
 **Breaking**
 
