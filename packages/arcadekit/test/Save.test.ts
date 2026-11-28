@@ -7,6 +7,7 @@ import {
   Layer,
   Logger,
   Option,
+  Scheduler,
   Schema,
 } from "effect";
 
@@ -1377,6 +1378,42 @@ describe("a save the rules ask for", () => {
         expect(made!.time.tick).toBe(120);
         expect((yield* made!.read(World)).hash()).toBe(keptHash);
       }).pipe(Effect.scoped)
+  );
+
+  it.effect(
+    "adds no step of Effect's to a tick in which the rules ask for none",
+    () =>
+      Effect.gen(function* () {
+        // The fiber asks its scheduler whether to yield once a step.
+        const outer = yield* Scheduler.Scheduler;
+        let steps = 0;
+        const counting: Scheduler.Scheduler = {
+          executionMode: outer.executionMode,
+          shouldYield: () => {
+            steps++;
+            return false;
+          },
+          makeDispatcher: () => outer.makeDispatcher(),
+        };
+        const stepsOf = <A, E>(effect: Effect.Effect<A, E>) =>
+          Effect.suspend(() => {
+            steps = 0;
+            return effect.pipe(
+              Effect.provideService(Scheduler.Scheduler, counting),
+              Effect.map(() => steps)
+            );
+          });
+        const plain = yield* App.make(Levels);
+        const saved = yield* App.make(Levels);
+        yield* Save.autosave(saved);
+        expect(yield* stepsOf(saved.tick(1 / 60))).toBe(
+          yield* stepsOf(plain.tick(1 / 60))
+        );
+        // A dispatch whose handler asks runs the save.
+        expect(yield* stepsOf(saved.dispatch(Finish, {}))).toBeGreaterThan(
+          yield* stepsOf(plain.dispatch(Finish, {}))
+        );
+      }).pipe(Effect.provide(Save.layer(Save.makeMemory())), Effect.scoped)
   );
 
   it.effect(
