@@ -103,8 +103,8 @@ import { Schema } from "effect";
 // What the player chose: a setting of the game, kept in its world.
 const Settings = Singleton.define(
   "game/Settings",
-  { music: Field.f32, effects: Field.u8 },
-  { music: 1, effects: 1 }
+  { music: Field.f32, effects: Field.bool },
+  { music: 1, effects: true }
 );
 const Choose = Action.define("game/Choose", {
   payload: Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean }),
@@ -114,7 +114,7 @@ const Volumes = System.frame("game/Volumes", function* () {
   const settings = yield* Singleton.Read(Settings);
   const player = yield* Sound.Player;
   player.volume(Sound.MusicBus, settings.music);
-  player.volume(Sound.EffectsBus, settings.effects === 1 ? 1 : 0);
+  player.volume(Sound.EffectsBus, settings.effects ? 1 : 0);
 });
 
 const Menu = Plugin.make("game/Menu", {
@@ -123,7 +123,7 @@ const Menu = Plugin.make("game/Menu", {
     Action.handler(Choose, function* ({ music, effects }) {
       const settings = yield* Singleton.Write(Settings);
       settings.music = music;
-      settings.effects = effects ? 1 : 0;
+      settings.effects = effects;
     }),
   ],
   systems: [Volumes],
