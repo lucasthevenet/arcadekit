@@ -30,19 +30,29 @@ it.effect("plays nothing before the first frame", () =>
 );
 ```
 
-Each service a program provides from outside an app has a layer, `X.layer(implementation)`, and a stand-in its module makes for a test. `Test.make` provides the first four:
+Each service a program provides from outside an app has a layer, `X.layer(implementation)`, and a stand-in its module makes for a test. The layer takes the contract in the last column, so a stand-in of your own implements it. `Test.make` provides the first four:
 
-| Service | Layer | Stand-in |
+| Service | Layer | Stand-in | Contract |
+| --- | --- | --- | --- |
+| `Input.Source` | `Input.layer` | `Input.makeManualSource()` | `Input.Listener` |
+| `Sound.Output` | `Sound.layer` | `Sound.makeRecorder()` | `Sound.Speaker` |
+| `Assets.Loader` | `Assets.layer` | `Assets.makeMemory(files)` | `Assets.LoaderShape` |
+| `View`'s UI | `View.mount(game, mount)` | the bridge it hands `mount` | `mount`, handed a `View.Bridge` |
+| `Driver.Display` | `Driver.layer` | `Driver.makeManualDisplay()` | `Driver.DisplayShape` |
+| `Transport.Transport` | `Transport.layer` | `Transport.makeHub().port(peer)` | `Transport.Listener` |
+| `Three.Renderer` | `Three.layer` | `Three.makeRecorder()` | `Three.RendererShape` |
+
+A driver takes contracts too. `Driver.fixedStep`, `interval`, `frames` and `run` step a `Driver.Tickable` or a `Driver.Paced`, and `Driver.run` closes a `Driver.Closes` when it ends. What must hold of the contracts of a page's devices and sound, and of a driver's, whoever implements them:
+
+| Contract | Given by | What must hold |
 | --- | --- | --- |
-| `Input.Source` | `Input.layer` | `Input.makeManualSource()` |
-| `Sound.Output` | `Sound.layer` | `Sound.makeRecorder()` |
-| `Assets.Loader` | `Assets.layer` | `Assets.makeMemory(files)` |
-| `View`'s UI | `View.mount(game, mount)` | the bridge it hands `mount` |
-| `Driver.Display` | `Driver.layer` | `Driver.makeManualDisplay()` |
-| `Transport.Transport` | `Transport.layer` | `Transport.makeHub().port(peer)` |
-| `Three.Renderer` | `Three.layer` | `Three.makeRecorder()` |
+| [`Input.Listener`](/reference/arcadekit/Input#listener) | `Browser.layer` and `Browser.runMain`, from the page's keyboard, pointer and gamepads | `sample()` returns the devices' state, and what changed since the previous call. A button that went down and up between two calls is in `pressed` and in `released`, and not in `down`. An app calls it at most once a run of its input stage, so every system of the stage reads one sample. |
+| [`Sound.Speaker`](/reference/arcadekit/Sound#speaker) | `Audio.layerSound`, `Browser.layer` and `Browser.runMain`, from the page's Web Audio | `play` starts a cue at once. `music` sets what a channel plays from then on, faded over `fade` seconds: a track that loops unless `once`, or silence for no track. `Sound.plugin` calls both in `"postFrame"`, and calls `music` only for a change. The apps under one layer share a speaker, so an app that closes tells each channel it plays on to play nothing, with no fade. |
+| [`Driver.Tickable`](/reference/arcadekit/Driver#tickable) | `App.make`: an app | `tick(delta)` advances the game by `delta` seconds. A driver runs `input()` before each tick, and `frame(alpha, delta)` after the ticks of each step, when each is present. It reads `settled` only with `ticks: "whenNeeded"`. A tickable has no `hz`. |
+| [`Driver.Paced`](/reference/arcadekit/Driver#paced) | `Session.make`, `Transport.connect` and `Replay.play` | It ticks at its own `hz`, so a driver takes no `hz` for it. `tick()` runs its input stage, then its next tick if that tick can run. While `lead` is 2 or more, a driver runs its ticks at half their rate. |
+| [`Driver.Closes`](/reference/arcadekit/Driver#closes) | `Session.make`, `Transport.connect` and `Replay.play` | `close` lets go of everything it opened. `Driver.run` runs it when the run ends, however it ends. |
 
-Provide one by hand to give an app one stand-in alone, or one of your own. To test slow loading, such as a loading screen, or a level left before its files arrived, provide a loader whose files arrive when the test decides:
+Provide a service's layer by hand to give an app one stand-in alone, or one of your own. To test slow loading, such as a loading screen, or a level left before its files arrived, provide a loader whose files arrive when the test decides:
 
 ```ts
 import { Assets } from "arcadekit";
