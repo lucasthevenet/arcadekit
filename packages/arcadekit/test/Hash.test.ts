@@ -706,7 +706,7 @@ describe("the hash of an app's world", () => {
   const Drift = System.tick("Drift", function* () {
     const random = yield* Random;
     const commands = yield* Commands.spawns(Body);
-    const bodies = yield* Query.all(Body).pipe(Query.writes(Body));
+    const bodies = yield* Query.View(Query.all(Body).pipe(Query.writes(Body)));
     bodies.each((body, entity) => {
       body.x += random.next();
       if (random.int(1, 20) === 1) {
@@ -758,12 +758,14 @@ describe("the hash of an app's world", () => {
           tick++;
           if (tick === 40) {
             let first = true;
-            (yield* Query.all(Body).pipe(Query.writes(Body))).each((body) => {
-              if (first) {
-                body.y = nudged("f32", body.y) as number;
-                first = false;
+            (yield* Query.View(Query.all(Body).pipe(Query.writes(Body)))).each(
+              (body) => {
+                if (first) {
+                  body.y = nudged("f32", body.y) as number;
+                  first = false;
+                }
               }
-            });
+            );
           }
         });
         const honest = yield* hashes(
@@ -868,11 +870,11 @@ describe("the hash of an app's world", () => {
     let ringing: number | undefined;
     const Ring = System.tick("hash/Ring", function* () {
       if (ringing !== undefined) {
-        (yield* Rang.emits).emit({ n: ringing });
+        (yield* Event.Emitter(Rang)).emit({ n: ringing });
       }
     });
     const Watch = System.frame("hash/Watch", function* () {
-      (yield* Rang).read();
+      (yield* Event.Reader(Rang)).read();
     });
     const make = () =>
       App.make(App.define({ systems: [Ring, Watch], handlers: [push] }), {
@@ -954,13 +956,13 @@ describe("the hash of an app's world", () => {
         let ringing = true;
         // Before the system that rings: it hears a ring on the tick after.
         const Hear = System.tick("hash/Hear", function* () {
-          for (const { n } of (yield* Rang).read()) {
+          for (const { n } of (yield* Event.Reader(Rang)).read()) {
             heard.push(n);
           }
         });
         const Ring = System.tick("hash/Ring2", function* () {
           if (ringing) {
-            (yield* Rang.emits).emit({ n: 1 });
+            (yield* Event.Emitter(Rang)).emit({ n: 1 });
           }
         });
         yield* withApp(

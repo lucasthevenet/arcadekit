@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ENOUGH } from "../bench/checkouts.ts";
 import {
   CHANCE,
   FLOOR,
@@ -10,6 +11,7 @@ import {
   onPurpose,
   pairChance,
   settled,
+  settledAll,
   table,
 } from "../bench/verdict.ts";
 import type { Line } from "../bench/verdict.ts";
@@ -383,6 +385,69 @@ describe("a variant that need not be run again", () => {
     expect(settled([100, 130], [100 / (1 + FLOOR / 2) + 0.1, 120])).toBe(true);
     expect(settled([], [80])).toBe(false);
     expect(settled([80], [])).toBe(false);
+  });
+
+  it("is, for the rule of every run, one whose medians are within half the floor", () => {
+    expect(settledAll([100, 101, 140], [102, 103, 90])).toBe(true);
+    expect(settled([100, 101, 140], [102, 103, 90])).toBe(false);
+    expect(settledAll([100, 101, 102], [104, 105, 106])).toBe(false);
+    expect(settledAll([100, 101, 102], [98, 99, 100])).toBe(true);
+    expect(settledAll([], [80])).toBe(false);
+    expect(settledAll([80], [])).toBe(false);
+  });
+});
+
+/**
+ * Runs of `inputIdle`, in µs, 25 a build, made as `bench:compare --suite
+ * app` makes them on a shared 4-core VM on 2026-11-26, at a load of 1.1 to
+ * 1.9. `planted` is main against main with a loop in the input stage that
+ * made the variant 9.5% slower over 448 rounds; `alike` is main against a
+ * second checkout of main.
+ */
+const recorded = {
+  planted: {
+    base: [
+      2.884, 2.776, 5.265, 2.787, 2.835, 2.936, 2.681, 2.772, 2.766, 2.862,
+      2.601, 2.68, 2.819, 2.664, 2.613, 3.221, 2.975, 2.829, 2.72, 2.674, 2.642,
+      2.642, 2.773, 2.621, 4.909,
+    ],
+    head: [
+      3.104, 3.157, 2.985, 2.835, 2.983, 3.239, 3.006, 3.133, 3.285, 3.295,
+      3.166, 3.062, 3.02, 2.869, 3.102, 3.076, 3.206, 2.879, 3.16, 2.952, 2.872,
+      3.007, 3, 3.058, 3.028,
+    ],
+  },
+  alike: {
+    base: [
+      2.735, 2.619, 2.764, 2.803, 2.757, 2.553, 2.69, 2.562, 3.007, 2.701,
+      2.804, 2.986, 2.845, 2.73, 2.785, 2.891, 2.978, 3.402, 2.996, 2.673,
+      2.874, 2.746, 2.755, 2.816, 2.804,
+    ],
+    head: [
+      2.546, 2.668, 2.647, 2.637, 2.685, 2.664, 2.727, 4.117, 2.844, 3.065,
+      2.718, 2.915, 3.215, 2.653, 2.766, 2.822, 3.023, 2.806, 2.991, 2.941,
+      3.052, 2.933, 2.943, 2.953, 2.706,
+    ],
+  },
+};
+
+describe("the verdict on an app's stage, on runs recorded", () => {
+  it("is slower by every run where the fastest runs of the first six let a slowdown of a tenth go", () => {
+    const { base, head } = recorded.planted;
+    expect(settled(base.slice(0, ENOUGH), head.slice(0, ENOUGH))).toBe(true);
+    for (let runs = ENOUGH; runs <= base.length; runs++) {
+      expect(
+        settledAll(base.slice(0, runs), head.slice(0, runs)),
+        `after ${runs} runs`
+      ).toBe(false);
+    }
+    expect(judgeAll(base, head).outcome).toBe("slower");
+  });
+
+  it("is the same by either rule for two checkouts of one source", () => {
+    const { base, head } = recorded.alike;
+    expect(judge(base, head).outcome).toBe("the same");
+    expect(judgeAll(base, head).outcome).toBe("the same");
   });
 });
 

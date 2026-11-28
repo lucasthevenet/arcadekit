@@ -57,11 +57,11 @@ describe("a game, from outside it", () => {
         const app = yield* App.make(Game);
         yield* app.tick(1 / 60);
         const world = yield* app.read(World);
-        const [rock] = (yield* app.read(Placed)).entities();
+        const [rock] = (yield* app.read(Query.View(Placed))).entities();
         expect(world.get(rock!, Position)).toEqual({ x: 4 });
         expect(world.entityCount).toBe(1);
-        expect(yield* app.read(Score)).toEqual({ points: 0 });
-        expect((yield* app.read(Phase)).value).toBe("menu");
+        expect(yield* app.read(Singleton.Read(Score))).toEqual({ points: 0 });
+        expect((yield* app.read(State.Reader(Phase))).value).toBe("menu");
         expect((yield* app.read(Time)).tick).toBe(1);
         expect(
           yield* app.read(
@@ -98,17 +98,17 @@ describe("a game, from outside it", () => {
           // @ts-expect-error World.writes changes it
           app.read(World.writes(Position)),
           // @ts-expect-error a query that writes changes it
-          app.read(Pushed),
+          app.read(Query.View(Pushed)),
           // @ts-expect-error what a change query has visited is the game's
-          app.read(Moved),
+          app.read(Query.View(Moved)),
           // @ts-expect-error and so is what a removal query has read
-          app.read(Query.removed(Position)),
+          app.read(Query.Removed(Position)),
           // @ts-expect-error an event is heard by the game's own code
-          app.read(Ping),
+          app.read(Event.Reader(Ping)),
           // @ts-expect-error setting a state changes it
-          app.read(Phase.sets),
+          app.read(State.Setter(Phase)),
           // @ts-expect-error writing a singleton changes it
-          app.read(Score.writes),
+          app.read(Singleton.Write(Score)),
         ];
         expect(reads).toHaveLength(8);
         expect(yield* Effect.exit(app.enqueue(Drop, { x: 1 }))).toEqual(
@@ -171,7 +171,7 @@ describe("the world a system is handed", () => {
         const Aimed = Query.all(Aim);
         const Look = System.tick("rd/Look", function* () {
           const world = yield* World;
-          (yield* Aimed).each((aim) => {
+          (yield* Query.View(Aimed)).each((aim) => {
             seen.push(world.live(aim.at));
           });
         });
@@ -187,8 +187,8 @@ describe("the world a system is handed", () => {
           const app = yield* App.make(App.define({ plugins: [Setup] }));
           yield* app.tick(1 / 60);
           const world = yield* app.read(World);
-          const [rock] = (yield* app.read(Placed)).entities();
-          const [aim] = (yield* app.read(Aimed)).entities();
+          const [rock] = (yield* app.read(Query.View(Placed))).entities();
+          const [aim] = (yield* app.read(Query.View(Aimed))).entities();
           const ref = world.get(aim!, Aim)!.at;
           expect(seen).toEqual([rock]);
           expect(world.live(ref)).toBe(rock);
@@ -237,8 +237,8 @@ describe("the player of a game", () => {
     Effect.gen(function* () {
       const seen: number[] = [];
       const Walk = System.tick("rd/Walk", function* () {
-        const [position] = (yield* Players.pipe(
-          Query.writes(Position)
+        const [position] = (yield* Query.View(
+          Players.pipe(Query.writes(Position))
         )).single();
         position.x += 1;
         seen.push(position.x);
@@ -248,7 +248,9 @@ describe("the player of a game", () => {
       );
       yield* game.step();
       yield* game.step();
-      const [position, player] = (yield* game.app.read(Players)).single();
+      const [position, player] = (yield* game.app.read(
+        Query.View(Players)
+      )).single();
       expect([seen, position.x]).toEqual([[3, 4], 4]);
       expect((yield* game.app.read(World)).has(player, Player)).toBe(true);
     })
@@ -277,8 +279,10 @@ describe("a plain function that takes what a system was handed", () => {
         const Strike = System.tick("rd/Strike", function* () {
           const world = yield* World.writes(Position, Health);
           const commands = yield* Commands.spawns(Position, Spark);
-          for (const target of (yield* Query.all(Health)).entities()) {
-            strike(world, commands, yield* Score.writes, target);
+          for (const target of (yield* Query.View(
+            Query.all(Health)
+          )).entities()) {
+            strike(world, commands, yield* Singleton.Write(Score), target);
             world.set(target, Position, { x: 9 });
           }
         });
@@ -295,44 +299,48 @@ describe("a plain function that takes what a system was handed", () => {
         );
         yield* game.step();
         const world = yield* game.app.read(World);
-        const [target] = (yield* game.app.read(Query.all(Health))).entities();
+        const [target] = (yield* game.app.read(
+          Query.View(Query.all(Health))
+        )).entities();
         expect(world.get(target!, Health)).toEqual({ hp: 2 });
         expect(
-          (yield* game.app.read(Query.all().pipe(Query.with(Spark)))).count()
+          (yield* game.app.read(
+            Query.View(Query.all().pipe(Query.with(Spark)))
+          )).count()
         ).toBe(1);
-        expect((yield* game.app.read(Score)).points).toBe(1);
+        expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(1);
       })
   );
 
   it("doesn't take a world or commands that write or spawn less than it does", () => {
     System.tick("rd/Less", function* () {
-      const target = (yield* Query.all(Health)).entities()[0]!;
+      const target = (yield* Query.View(Query.all(Health))).entities()[0]!;
       strike(
         // @ts-expect-error the world was not asked for health
         yield* World.writes(Position),
         yield* Commands.spawns(Spark),
-        yield* Score.writes,
+        yield* Singleton.Write(Score),
         target
       );
       strike(
         // @ts-expect-error a world that only reads sets nothing
         yield* World,
         yield* Commands.spawns(Spark),
-        yield* Score.writes,
+        yield* Singleton.Write(Score),
         target
       );
       strike(
         yield* World.writes(Health),
         // @ts-expect-error the commands were not asked for sparks
         yield* Commands.spawns(Position),
-        yield* Score.writes,
+        yield* Singleton.Write(Score),
         target
       );
       strike(
         yield* World.writes(Health),
         yield* Commands.spawns(Spark),
         // @ts-expect-error a singleton read is not a singleton written
-        yield* Score,
+        yield* Singleton.Read(Score),
         target
       );
     });

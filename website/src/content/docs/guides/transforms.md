@@ -26,7 +26,7 @@ const Placed = Query.all(Transform3d.Position).pipe(
 
 const Drift = System.tick("game/Drift", function* () {
   const { delta } = yield* Time;
-  (yield* Placed).eachChunk((start, end, position) => {
+  (yield* Query.View(Placed)).eachChunk((start, end, position) => {
     for (let i = start; i < end; i++) {
       position.x[i] = position.x[i]! + 2 * delta;
     }
@@ -121,7 +121,7 @@ const Ships = Query.all(Transform2d.Position, Transform2d.Teleports).pipe(
 
 // Off the right edge, and in at the left.
 const Wrap = System.tick("game/Wrap", function* () {
-  (yield* Ships).eachChunk((start, end, position, teleports) => {
+  (yield* Query.View(Ships)).eachChunk((start, end, position, teleports) => {
     for (let i = start; i < end; i++) {
       if (position.x[i]! > 400) {
         position.x[i] = position.x[i]! - 800;

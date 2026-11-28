@@ -816,11 +816,13 @@ const graft = Action.handler(Graft, function* ({ branch, onto }) {
 const Grow = System.tick("Grow", function* () {
   const world = yield* World;
   const commands = yield* Commands.spawns(Body, ChildOf);
-  (yield* Query.all(Body).pipe(Query.without(ChildOf))).each((_, tree) => {
-    if (world.sources(tree, ChildOf).length > 0) {
-      commands.spawn(Body, ChildOf.of({ target: tree }));
+  (yield* Query.View(Query.all(Body).pipe(Query.without(ChildOf)))).each(
+    (_, tree) => {
+      if (world.sources(tree, ChildOf).length > 0) {
+        commands.spawn(Body, ChildOf.of({ target: tree }));
+      }
     }
-  });
+  );
 });
 
 /** How the orchard begins: three trees, each with a first branch. */
@@ -845,7 +847,9 @@ const orchard = Effect.gen(function* () {
   const app = yield* App.make(Orchard, { hashEvery: 1 });
   const world = yield* app.read(World);
   // In the order planted.
-  const [first, second, third] = (yield* app.read(Trees)).entities();
+  const [first, second, third] = (yield* app.read(
+    Query.View(Trees)
+  )).entities();
   assert(first !== undefined && second !== undefined && third !== undefined);
   return { app, world, trees: [first, second, third] as const };
 });
@@ -858,7 +862,7 @@ describe("relations in an app", () => {
         const Accrue = System.tick("rl/Accrue", function* () {
           const world = yield* World.writes(Owes);
           const commands = yield* Commands.spawns(Body, Owes);
-          (yield* Query.all(Owes).pipe(Query.writes(Owes))).each(
+          (yield* Query.View(Query.all(Owes).pipe(Query.writes(Owes)))).each(
             (owes, debtor) => {
               owes.amount += 1;
               if (owes.amount < 0) {
@@ -896,7 +900,7 @@ describe("relations in an app", () => {
           yield* app.tick(1);
           yield* app.tick(1);
           const lenders = (yield* app.read(
-            Query.all(Body).pipe(Query.without(Owes))
+            Query.View(Query.all(Body).pipe(Query.without(Owes)))
           )).entities();
           expect(
             lenders.map((lender) => world.sources(lender, Owes).length)

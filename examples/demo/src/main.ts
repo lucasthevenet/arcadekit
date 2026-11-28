@@ -39,7 +39,7 @@ const Spray = Singleton.define(
 );
 const WAVES = 5;
 const Fountain = System.tick("Fountain", function* () {
-  const spray = yield* Spray.writes;
+  const spray = yield* Singleton.Write(Spray);
   if (spray.wave >= WAVES) {
     return;
   }
@@ -67,8 +67,8 @@ const Fountain = System.tick("Fountain", function* () {
 const Thaw = Action.define("demo/Thaw");
 const thaw = Action.handler(Thaw, function* () {
   const commands = yield* Commands;
-  for (const entity of (yield* Query.all().pipe(
-    Query.with(Frozen)
+  for (const entity of (yield* Query.View(
+    Query.all().pipe(Query.with(Frozen))
   )).entities()) {
     commands.remove(entity, Frozen);
   }
@@ -122,7 +122,7 @@ const program = Effect.gen(function* () {
 
         // Outside the game, it is read with app.read.
         const world = yield* app.read(World);
-        const named = yield* app.read(Named);
+        const named = yield* app.read(Query.View(Named));
         const rockY = (): string => {
           let y = Number.NaN;
           named.each((name, position) => {
@@ -146,7 +146,7 @@ const program = Effect.gen(function* () {
             yield* app.enqueue(Thaw);
           } // the rock starts falling
         }
-        const { wave } = yield* app.read(Spray);
+        const { wave } = yield* app.read(Singleton.Read(Spray));
         yield* Console.log(
           `180 ticks took ${(performance.now() - started).toFixed(1)} ms; fountain: ${wave} of ${WAVES} waves`
         );

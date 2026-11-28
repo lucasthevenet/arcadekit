@@ -39,7 +39,7 @@ const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* NotSeated.make({ from });
   }
-  (yield* Purse.writes)[from] += amount;
+  (yield* Singleton.Write(Purse))[from] += amount;
 });
 
 const wait = (ms: number) =>
@@ -111,7 +111,7 @@ const check = Effect.gen(function* () {
       ada.app.time.tick <= grace.app.time.tick ? ada : grace
     ).connected.tick();
   }
-  const purse = { ...(yield* ada.app.read(Purse)) };
+  const purse = { ...(yield* ada.app.read(Singleton.Read(Purse))) };
   const hashOf = (app: typeof ada.app) =>
     Effect.map(app.read(World), (world) => world.hash());
   if (

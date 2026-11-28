@@ -431,7 +431,7 @@ const outside = (def: Event<unknown>): Error =>
 /**
  * Where an app's events are emitted and read. Each app holds one, which the
  * `Events` service provides. A game's code reads and emits through the
- * handles that `yield* SomeEvent` and `SomeEvent.emits` give.
+ * handles that `yield* Event.Reader(SomeEvent)` and `Event.Emitter(SomeEvent)` give.
  *
  * @internal
  */

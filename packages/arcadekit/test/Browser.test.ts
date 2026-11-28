@@ -65,7 +65,7 @@ const told = (devices: Input.Sample) => ({
 const Steer = System.tick("Steer", function* () {
   const keys = yield* Input.Keyboard;
   const { delta } = yield* Time;
-  (yield* Ships).each((ship) => {
+  (yield* Query.View(Ships)).each((ship) => {
     if (keys.down("ArrowLeft")) {
       ship.x -= 10 * delta;
     }
@@ -86,7 +86,7 @@ const Flying = Plugin.make("Flying", {
 });
 const ship = Effect.fnUntraced(function* (app: App.Any) {
   let found = { x: Number.NaN, shots: Number.NaN };
-  (yield* app.read(Flown)).each((one) => {
+  (yield* app.read(Query.View(Flown))).each((one) => {
     found = { x: one.x, shots: one.shots };
   });
   return found;
@@ -1065,7 +1065,7 @@ describe("what a page keeps beyond a visit", () => {
             return {
               slots: yield* (yield* Save.Store).slots,
               save: yield* Save.read("slot2"),
-              volume: yield* Volume,
+              volume: yield* Setting.get(Volume),
             };
           })
         );
@@ -1081,7 +1081,7 @@ describe("what a page keeps beyond a visit", () => {
             Effect.gen(function* () {
               return {
                 slots: yield* (yield* Save.Store).slots,
-                volume: yield* Volume,
+                volume: yield* Setting.get(Volume),
               };
             }),
             Layer.merge(
@@ -1128,7 +1128,10 @@ describe("what a page keeps beyond a visit", () => {
           })
         );
         expect(
-          yield* Effect.provide(Volume, Setting.layer(Browser.settings("mine")))
+          yield* Effect.provide(
+            Setting.get(Volume),
+            Setting.layer(Browser.settings("mine"))
+          )
         ).toBe(1);
         // What isn't a save's text is refused as one.
         page.items.set("mine/save/bad", "%%%");
@@ -2571,7 +2574,7 @@ describe("a page's sound", () => {
         const Scored = Event.define("br/Scored", Schema.Struct({}));
         const Score = System.tick("br/Score", function* () {
           if ((yield* Time).tick === 2) {
-            (yield* Scored.emits).emit({});
+            (yield* Event.Emitter(Scored)).emit({});
           }
         });
         const Cues = Sound.cues(

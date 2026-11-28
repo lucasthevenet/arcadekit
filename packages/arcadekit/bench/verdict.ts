@@ -35,16 +35,18 @@
  * after the other; and what the two suites, the storage core's and an app's
  * stages', leave out, such as an action's dispatch or a tick over 100,000
  * entities, which `pnpm --filter arcadekit bench` reports and nothing
- * compares. An app's stages take a few microseconds, and a build's fastest
- * run of one is up to a fifth apart from one process to the next, so a
- * slowdown of one is found when it is about a third, in 25 runs a build.
- * Nor does it find a slowdown of most runs that leaves the fastest where it
- * was: issue #450 measured two builds of the loops that draw whose fastest
- * runs were within a tenth, and whose medians were up to 43% apart.
+ * compares. Nor does it find a slowdown of most runs that leaves the
+ * fastest where it was: issue #450 measured two builds of the loops that
+ * draw whose fastest runs were within a tenth, and whose medians were up to
+ * 43% apart.
  *
- * `judgeAll` reads every run, and `@arcadekit/three`'s `bench/compare.ts`
- * judges the loops that draw by it. The head is slower when both of these
- * hold:
+ * `judgeAll` reads every run. `@arcadekit/three`'s `bench/compare.ts`
+ * judges the loops that draw by it, and `bench/compare.ts` an app's stages,
+ * with `settledAll`. A process runs an app's stage up to a tenth faster or
+ * slower than the next process does, from its first pass to its last. A
+ * build's fastest run is then its luckiest process, and `settled` lets a
+ * slowdown go when one of the head's first six runs was lucky. The head is
+ * slower when both of these hold:
  *
  * - The base's runs beat the head's in so many of the pairs of one run of
  *   each that two builds alike would look so once in `1 / CHANCE`
@@ -306,6 +308,9 @@ export const judgeAll = (
   };
 };
 
+const within = (ratio: number): boolean =>
+  ratio < 1 + FLOOR / 2 && ratio > 1 / (1 + FLOOR / 2);
+
 /**
  * Whether a variant need not be run again: its fastest runs are within
  * half the floor of each other, so that more runs would not find the two
@@ -315,13 +320,20 @@ export const judgeAll = (
 export const settled = (
   base: readonly number[],
   head: readonly number[]
-): boolean => {
-  if (base.length === 0 || head.length === 0) {
-    return false;
-  }
-  const ratio = Math.min(...head) / Math.min(...base);
-  return ratio < 1 + FLOOR / 2 && ratio > 1 / (1 + FLOOR / 2);
-};
+): boolean =>
+  base.length > 0 &&
+  head.length > 0 &&
+  within(Math.min(...head) / Math.min(...base));
+
+/**
+ * `settled` for a variant judged by `judgeAll`: its median runs are within
+ * half the floor of each other.
+ */
+export const settledAll = (
+  base: readonly number[],
+  head: readonly number[]
+): boolean =>
+  base.length > 0 && head.length > 0 && within(median(head) / median(base));
 
 /**
  * The variants that the commits of a change say they slow on purpose. A

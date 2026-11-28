@@ -341,7 +341,7 @@ const placer = <O extends Object3D>(options: ObjectsShared<O> & Placing) => {
     Query.without(...(options.without ?? []))
   );
   return function* (held: Objects<O>) {
-    const placed = yield* Placed;
+    const placed = yield* Query.View(Placed);
     // Every entity that is one of these is found here, and its object made
     // if it is missing; whatever was not found is let go at the end.
     held.begin(smooth ? yield* storesOf(flat, false) : undefined);

@@ -93,11 +93,11 @@ describe("Color", () => {
     () =>
       Effect.gen(function* () {
         const Fade = System.tick("co/Fade", function* () {
-          (yield* Query.all(Color.Rgb).pipe(Query.writes(Color.Rgb))).each(
-            (color) => {
-              color.r = 1;
-            }
-          );
+          (yield* Query.View(
+            Query.all(Color.Rgb).pipe(Query.writes(Color.Rgb))
+          )).each((color) => {
+            color.r = 1;
+          });
         });
         const Dark = Plugin.make("co/Dark", {
           setup: Effect.gen(function* () {
@@ -109,7 +109,7 @@ describe("Color", () => {
         const drawn: number[] = [];
         const Draw = System.frame("co/Draw", function* () {
           const smooth = yield* Color.smooth;
-          (yield* Query.all(Color.Rgb)).each((color, entity) => {
+          (yield* Query.View(Query.all(Color.Rgb))).each((color, entity) => {
             drawn.push(smooth.color(entity, color).r);
           });
         });

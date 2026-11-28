@@ -73,7 +73,7 @@ export const Scale = Component.define(
  *
  *   commands.spawn(Ship, Transform2d.Position, Transform2d.Teleports)
  *
- *   ;(yield* Ships).each((position, teleports) => {
+ *   ;(yield* Query.View(Ships)).each((position, teleports) => {
  *     if (position.x > 400) {
  *       position.x -= 800
  *       teleports.count += 1
@@ -180,7 +180,7 @@ const row = new Row();
  *
  *   const Draw = System.frame("game/Draw", function* () {
  *     const smooth = yield* Transform2d.smooth
- *     ;(yield* Sprites).each((position, _sprite, entity) => {
+ *     ;(yield* Query.View(Sprites)).each((position, _sprite, entity) => {
  *       const at = smooth.position(entity, position)
  *       context.fillRect(at.x, at.y, 8, 8)
  *     })

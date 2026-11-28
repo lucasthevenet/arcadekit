@@ -148,7 +148,7 @@ export const camera2d: (
  *   const Click = Input.button("game/Click", [Input.pointerButton()])
  *
  *   const Aim = System.input("game/Aim", function* () {
- *     if ((yield* Click).pressed) {
+ *     if ((yield* Input.Read(Click)).pressed) {
  *       const at = yield* Three.toPlane(yield* Input.Pointer)
  *       ;(yield* Action.Actions).enqueue(Fire, at)  // at.x, at.y in the game's units
  *     }

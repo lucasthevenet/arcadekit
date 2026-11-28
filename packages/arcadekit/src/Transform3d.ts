@@ -82,7 +82,7 @@ export const Scale = Component.define(
  *
  *   commands.spawn(Player, Transform3d.Position, Transform3d.Teleports)
  *
- *   ;(yield* Fallen).each((position, teleports) => {
+ *   ;(yield* Query.View(Fallen)).each((position, teleports) => {
  *     position.y = 10
  *     teleports.count += 1
  *   })
@@ -248,7 +248,7 @@ const row = new Row();
  *
  *   const Follow = System.frame("game/Follow", function* () {
  *     const smooth = yield* Transform3d.smooth
- *     ;(yield* Players).each((position, _player, entity) => {
+ *     ;(yield* Query.View(Players)).each((position, _player, entity) => {
  *       const at = smooth.position(entity, position)
  *       camera.position.set(at.x, at.y + 10, at.z + 20)
  *     })

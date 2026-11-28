@@ -29,7 +29,7 @@
  * starts, fades and stops tracks to match:
  *
  *   const Score = Sound.music("game/Score", function*() {
- *     const level = yield* Level
+ *     const level = yield* State.Reader(Level)
  *     return level.value === "menu" ? Tracks.menu : { track: Tracks.forest, volume: 0.6 }
  *   })
  *
@@ -58,7 +58,7 @@ import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
 import * as Assets from "./Assets.ts";
-import type * as Event from "./Event.ts";
+import * as Event from "./Event.ts";
 import { Entry } from "./internal/sheet.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import * as Plugin from "./Plugin.ts";
@@ -504,7 +504,7 @@ export interface PlayerShape {
    * `Sound.MusicBus` unless they name another, declared with `Sound.bus`.
    *
    *   const Volumes = System.frame("game/Volumes", function*() {
-   *     const settings = yield* Settings
+   *     const settings = yield* Setting.get(Settings)
    *     const player = yield* Sound.Player
    *     player.volume(Sound.MusicBus, settings.music)
    *     player.volume(Sound.EffectsBus, settings.effects ? 1 : 0)
@@ -921,7 +921,7 @@ export function cues(
     }
     let lines = fixed;
     if (from !== undefined) {
-      const status = yield* from;
+      const status = yield* Assets.Status(from);
       if (status._tag !== "Ready") {
         // The lines hold the bundle's clips: let go, so that they can be.
         made.delete(player);
@@ -937,7 +937,7 @@ export function cues(
     for (const [event, picks] of lines!) {
       // Read once: a system is handed an event once, however many of its
       // lines are of it.
-      const heard = (yield* event).read();
+      const heard = (yield* Event.Reader(event)).read();
       for (const pick of picks) {
         for (const payload of heard) {
           // Of the line's event, which is the one it was read from.
@@ -985,8 +985,8 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  * the player starts, cross-fades or stops tracks when the result changes.
  *
  *   const Score = Sound.music("game/Score", function*() {
- *     const level = yield* Level
- *     if ((yield* Paused).on) return { track: Tracks.theme, volume: 0.2 }
+ *     const level = yield* State.Reader(Level)
+ *     if ((yield* Singleton.Read(Paused)).on) return { track: Tracks.theme, volume: 0.2 }
  *     return level.value === "menu" ? undefined : Tracks.theme
  *   }, { fade: 1 })
  *
@@ -1003,7 +1003,7 @@ const isTrack = (picked: Playable | Track): picked is Track =>
  *   from the first frame.
  * - The body can read whatever a frame-stage system can: singletons, states,
  *   queries, events and assets. A level's own music is a clip from its bundle,
- *   such as `forest.assets.theme` once `yield* Forest` is `Ready`.
+ *   such as `forest.assets.theme` once `yield* Assets.Status(Forest)` is `Ready`.
  * - Music systems share one score, on the `"music"` channel. Between a menu's
  *   system and a level's, the one with something to play is heard, and a track
  *   both play continues without a break from one to the other.

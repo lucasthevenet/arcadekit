@@ -26,7 +26,7 @@ const Dig = Action.define(
 );
 
 export const dig = Action.handler(Dig, function* ({ x, y }) {
-  const floor = yield* Floor.writes;
+  const floor = yield* Singleton.Write(Floor);
   if (floor.tiles.inside(x, y)) {
     floor.tiles = floor.tiles.with(x, y, FLOOR);
   }
@@ -76,9 +76,9 @@ const Step = Action.define(
 );
 
 export const step = Action.handler(Step, function* ({ dx, dy }) {
-  const { tiles } = yield* Floor;
-  const here = Grid.occupants(tiles, yield* Creatures);
-  const [pos] = (yield* Players).single();
+  const { tiles } = yield* Singleton.Read(Floor);
+  const here = Grid.occupants(tiles, yield* Query.View(Creatures));
+  const [pos] = (yield* Query.View(Players)).single();
   if (here.first(pos.x + dx, pos.y + dy) !== undefined) {
     return yield* Blocked.make({});
   }

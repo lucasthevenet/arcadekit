@@ -82,7 +82,7 @@ export interface MediaLike {
  *   // Or directly, where a level's music is chosen:
  *   const ForestTheme = Audio.stream("/forest.ogg")
  *   const Score = Sound.music("game/Score", function*() {
- *     return (yield* Level).value === "forest" ? ForestTheme : undefined
+ *     return (yield* State.Reader(Level)).value === "forest" ? ForestTheme : undefined
  *   })
  *
  * **Details**

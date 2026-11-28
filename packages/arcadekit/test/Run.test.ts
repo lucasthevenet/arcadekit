@@ -38,7 +38,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("run/Add", Schema.Struct({ by: Schema.Int }));
 const add = Action.handler(Add, function* ({ by }) {
-  (yield* Score.writes).points += by;
+  (yield* Singleton.Write(Score)).points += by;
 });
 
 /** A frame every 1/60 s, starting at `from` milliseconds. */
@@ -57,7 +57,7 @@ const makeGame = () => {
   const log: string[] = [];
   const Roll = System.tick("Roll", function* () {
     const { delta } = yield* Time;
-    (yield* Balls).each((ball) => {
+    (yield* Query.View(Balls)).each((ball) => {
       ball.x += ball.vx * delta;
     });
   });
@@ -85,7 +85,7 @@ const makeGame = () => {
 
 const position = Effect.fnUntraced(function* (app: App.Any) {
   let x = Number.NaN;
-  (yield* app.read(Rolling)).each((ball) => {
+  (yield* app.read(Query.View(Rolling))).each((ball) => {
     ({ x } = ball);
   });
   return x;
@@ -161,7 +161,9 @@ describe("Driver.run", () => {
                 yield* Effect.addFinalizer(() =>
                   Effect.sync(() => log.push("menu unwired"))
                 );
-                log.push(`score ${(yield* app.read(Score)).points}`);
+                log.push(
+                  `score ${(yield* app.read(Singleton.Read(Score))).points}`
+                );
               }),
           }).pipe(
             Effect.provideService(Driver.Display, display),
@@ -385,7 +387,7 @@ describe("Driver.run", () => {
         yield* ask(4);
         repaint(1);
         expect(made!.time.tick).toBe(2);
-        expect((yield* made!.read(Score)).points).toBe(4);
+        expect((yield* made!.read(Singleton.Read(Score))).points).toBe(4);
         repaint(60);
         expect(made!.time.tick).toBe(3);
         expect(frames).toBe(151);

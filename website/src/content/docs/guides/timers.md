@@ -36,9 +36,9 @@ const Guns = Query.all(Gun).pipe(Query.writes(Gun));
 
 const Fire = System.tick("game/Fire", function* () {
   const { delta } = yield* Time;
-  const trigger = yield* Trigger;
+  const trigger = yield* Singleton.Read(Trigger);
   const commands = yield* Commands.spawns(Bullet);
-  (yield* Guns).each((gun) => {
+  (yield* Query.View(Guns)).each((gun) => {
     gun.cooldown = Timer.tick(gun.cooldown, delta);
     if (trigger.held === 1 && Timer.ready(gun.cooldown)) {
       gun.cooldown = 0.2;
@@ -52,7 +52,7 @@ const Hold = Action.define(
   Schema.Struct({ held: Schema.Boolean })
 );
 const hold = Action.handler(Hold, function* ({ held }) {
-  (yield* Trigger.writes).held = held ? 1 : 0;
+  (yield* Singleton.Write(Trigger)).held = held ? 1 : 0;
 });
 
 export const Rules = Plugin.make("game/Rules", {
@@ -91,7 +91,8 @@ export const Sparks = Plugin.make("game/Sparks", {
 
 `Timer.lifetime(seconds)` is a `Timer.Lifetime` component, spawned or added with the entity. `Timer.plugin` counts every one down at the start of each tick, in `"preUpdate"`, and despawns the entity on the tick its time runs out, so the game's systems in `"update"` never see it.
 
-- List `Timer.plugin` among the game's plugins. Without it, nothing counts a lifetime down. A plugin that several others list is installed once.
+- List `Timer.plugin` among the game's plugins, or one of its plugins does. A game that spawns or adds a lifetime and leaves it out doesn't compile: `App.make` requires `Plugin.Installed<"arcadekit/Timer">`. A plugin that several others list is installed once.
+- A component that `requires` a lifetime doesn't carry that requirement. A game that spawns one without `Timer.plugin` compiles, and nothing counts its lifetime down.
 - Name `Timer.Lifetime` where the commands are asked for, `Commands.spawns(Spark, Timer.Lifetime)`, as any component a system spawns.
 - A lifetime is counted from the tick after the one it was spawned in.
 

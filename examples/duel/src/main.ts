@@ -94,7 +94,7 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   if (me === undefined || them === undefined) {
     return yield* NoSuchFighter.make({});
   }
-  const turn = yield* Turn;
+  const turn = yield* Singleton.Read(Turn);
   if (me.player !== turn.player) {
     return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
@@ -104,36 +104,36 @@ const strike = Action.handler(Strike, function* ({ attacker, target }) {
   // Every check has passed. Only now does anything change.
   world.set(attacker, Fighter, { energy: me.energy - STRIKE_COST });
   world.set(target, Fighter, { hp: them.hp - STRIKE_DAMAGE });
-  (yield* Struck.emits).emit({ target, name, amount: STRIKE_DAMAGE });
+  (yield* Event.Emitter(Struck)).emit({ target, name, amount: STRIKE_DAMAGE });
   return them.hp - STRIKE_DAMAGE;
 });
 
 const pass = Action.handler(Pass, function* ({ player }) {
-  const turn = yield* Turn.writes;
+  const turn = yield* Singleton.Write(Turn);
   if (player !== turn.player) {
     return yield* NotYourTurn.make({ waitingFor: turn.player });
   }
   const next = player === 1 ? 2 : 1;
   turn.player = next;
-  (yield* TurnEnded.emits).emit({ next });
+  (yield* Event.Emitter(TurnEnded)).emit({ next });
 });
 
 // --- how the world reacts --------------------------------------------------------
 const Casualties = System.tick("Casualties", function* () {
   const world = yield* World;
   const commands = yield* Commands;
-  for (const { target } of (yield* Struck).read()) {
+  for (const { target } of (yield* Event.Reader(Struck)).read()) {
     const fighter = world.get(target, Fighter);
     if (fighter !== undefined && fighter.hp <= 0) {
       commands.despawn(target);
-      (yield* Fell.emits).emit({ entity: target });
+      (yield* Event.Emitter(Fell)).emit({ entity: target });
     }
   }
 });
 
 const Rest = System.tick("Rest", function* () {
-  const fighters = yield* Fighters;
-  for (const { next } of (yield* TurnEnded).read()) {
+  const fighters = yield* Query.View(Fighters);
+  for (const { next } of (yield* Event.Reader(TurnEnded)).read()) {
     fighters.each((fighter) => {
       if (fighter.player === next) {
         fighter.energy += 2;
@@ -179,14 +179,14 @@ const Commentary = Plugin.make("Commentary", {
   systems: [
     System.frame("CallHits", function* () {
       const narrator = yield* Narrator;
-      for (const { amount, name } of (yield* Struck).read()) {
+      for (const { amount, name } of (yield* Event.Reader(Struck)).read()) {
         narrator.say(`${name} takes ${amount}!`);
       }
     }),
     System.frame("CallEnd", function* () {
       const narrator = yield* Narrator;
-      for (const _ of (yield* Fell).read()) {
-        (yield* Standing).each((name) => {
+      for (const _ of (yield* Event.Reader(Fell)).read()) {
+        (yield* Query.View(Standing)).each((name) => {
           narrator.say(`And that is the end of the fight: ${name.value} wins.`);
         });
       }
@@ -197,7 +197,7 @@ const Commentary = Plugin.make("Commentary", {
 // --- the game --------------------------------------------------------------------
 // Outside the game, it is read with app.read, and changed with actions alone.
 const standing = (app: App.Any): Effect.Effect<string> =>
-  Effect.map(app.read(Standing), (fighters) => {
+  Effect.map(app.read(Query.View(Standing)), (fighters) => {
     const out: string[] = [];
     fighters.each((name, fighter) => {
       out.push(`${name.value} hp=${fighter.hp} energy=${fighter.energy}`);
@@ -209,7 +209,7 @@ const standing = (app: App.Any): Effect.Effect<string> =>
 const fighter = (app: App.Any, name: string): Effect.Effect<Entity> =>
   Effect.gen(function* () {
     const world = yield* app.read(World);
-    const found = (yield* app.read(Standing))
+    const found = (yield* app.read(Query.View(Standing)))
       .entities()
       .find((entity) => world.get(entity, Name)?.value === name);
     if (found === undefined) {

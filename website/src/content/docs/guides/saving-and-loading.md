@@ -101,7 +101,16 @@ A **slot** is a name a save is kept under in `Save.Store`. `Save.write(slot, sav
 ## Save when the rules ask
 
 ```ts
-import { App, Driver, Field, Save, Singleton, System, Timer } from "arcadekit";
+import {
+  App,
+  Driver,
+  Event,
+  Field,
+  Save,
+  Singleton,
+  System,
+  Timer,
+} from "arcadekit";
 import { Browser } from "arcadekit/browser";
 import { Effect } from "effect";
 
@@ -109,12 +118,12 @@ const Level = Singleton.define("game/Level", { won: Field.u8 }, { won: 0 });
 
 // The rules say when: once the level is won, and every minute of play.
 const LevelEnd = System.tick("game/LevelEnd", function* () {
-  if ((yield* Level).won === 1) {
-    (yield* Save.Asked.emits).emit({ slot: "level" });
+  if ((yield* Singleton.Read(Level)).won === 1) {
+    (yield* Event.Emitter(Save.Asked)).emit({ slot: "level" });
   }
 });
 const Autosave = System.tick("game/Autosave", function* () {
-  (yield* Save.Asked.emits).emit({ slot: "auto" });
+  (yield* Event.Emitter(Save.Asked)).emit({ slot: "auto" });
 }).pipe(Timer.every(60));
 const Game = App.define({ systems: [LevelEnd, Autosave] });
 
@@ -130,9 +139,42 @@ The rules ask for a save with the event `Save.Asked`, which names a slot. `Save.
 
 - The save is of the game as the tick that asked left it, and is written before the next tick runs. A handler that `app.dispatch` runs can ask too, and its save is taken once the dispatch has run.
 - `Timer.every` keeps the interval in the world, so a replay asks at the same ticks, and a game loaded from the save goes on counting from where it was.
-- A save that can't be taken, or a slot the store can't keep, is logged as an error, and the game goes on. The next ask tries again.
+- A save that can't be taken, or a slot the store can't keep, is logged as an error, and the game goes on. The next ask tries again, and [the slot's status](#tell-the-player-whether-the-game-is-saved) says so meanwhile.
 - A game that nothing autosaves, as a replay or a server, asks and nothing happens.
 - It keeps saves for as long as the scope it runs in lasts: with `ready`, for as long as the game runs.
+
+## Tell the player whether the game is saved
+
+```ts
+import { Save, View } from "arcadekit";
+
+// The rules ask with `{ slot: Auto.name }`.
+export const Auto = Save.slot("auto");
+
+const Saved = View.define("game/Saved", { label: "" });
+
+export const ShowSaved = View.publish(Saved, function* () {
+  return {
+    label: Save.match(yield* Save.Status(Auto), {
+      Off: () => "",
+      Unasked: () => "",
+      Saved: () => "Saved",
+      Failed: ({ error }) => `Not saved: ${error.message}`,
+    }),
+  };
+});
+```
+
+`Save.slot(name)` names a slot. In a frame or input system, `yield*` of it returns what `Save.autosave` last did with the slot, and `Save.match` gives a case for each status, so a [view](ui.md) of it tells the player whether the game is saved:
+
+| Status | The slot |
+| --- | --- |
+| `Off` | Nothing autosaves the app, so an ask keeps nothing. |
+| `Unasked` | The rules haven't asked for it since `Save.autosave` began. |
+| `Saved` | It holds the save the rules last asked for. |
+| `Failed` | It doesn't hold the save the rules last asked for. `error` is `Save.Refused` when the save couldn't be taken, and `Save.StoreFailed` when the store couldn't keep it. |
+
+A slot that `Save.write` keeps has no status. Like a [setting](settings.md), the status is outside the world: the hash, the log and a save don't hold it, and the tick can't read it.
 
 ## Start a game from a save
 

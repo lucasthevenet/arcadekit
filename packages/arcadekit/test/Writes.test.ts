@@ -356,7 +356,7 @@ const Survey = Action.define(
 /** Looks at every body, changes one field of each, and may then refuse. */
 const survey = Action.handler(Survey, function* ({ limit }) {
   let fastest = 0;
-  (yield* Moving).eachChunk((start, end, pos, vel) => {
+  (yield* Query.View(Moving)).eachChunk((start, end, pos, vel) => {
     for (let i = start; i < end; i++) {
       fastest = Math.max(fastest, vel.x[i]!);
       pos.y[i] = pos.y[i]! + 1;
@@ -375,14 +375,14 @@ describe("a query, which writes only what it names, in an app", () => {
       Effect.gen(function* () {
         const turned: number[] = [];
         const Move = System.tick("Move", function* () {
-          (yield* Moving).eachChunk((start, end, pos, vel) => {
+          (yield* Query.View(Moving)).eachChunk((start, end, pos, vel) => {
             for (let i = start; i < end; i++) {
               pos.x[i] = pos.x[i]! + vel.x[i]!;
             }
           });
         });
         const Watch = System.tick("Watch", function* () {
-          turned.push((yield* Turned).entities().length);
+          turned.push((yield* Query.View(Turned)).entities().length);
         });
         const Seed = Plugin.make("rd/Seed", {
           setup: Effect.gen(function* () {
@@ -444,14 +444,14 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
     }),
   });
   const Move = System.tick("Move", function* () {
-    (yield* Moving).eachChunk((start, end, pos, vel) => {
+    (yield* Query.View(Moving)).eachChunk((start, end, pos, vel) => {
       for (let i = start; i < end; i++) {
         pos.x[i] = pos.x[i]! + vel.x[i]!;
       }
     });
   });
   const Brake = System.tick("Brake", function* () {
-    (yield* Moving).eachChunk((start, end, _, vel) => {
+    (yield* Query.View(Moving)).eachChunk((start, end, _, vel) => {
       for (let i = start; i < end; i++) {
         // @ts-expect-error Velocity is only read by this query
         vel.x[i] = 0;
@@ -459,18 +459,18 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
     });
   });
   const Turn = System.tick("Turn", function* () {
-    (yield* Query.all(Pointing).pipe(Query.writes(Pointing))).eachChunk(
-      (start, end, pointing) => {
-        for (let i = start; i < end; i++) {
-          // @ts-expect-error a relation's target is the world's to change
-          pointing.target[i] = 99;
-        }
+    (yield* Query.View(
+      Query.all(Pointing).pipe(Query.writes(Pointing))
+    )).eachChunk((start, end, pointing) => {
+      for (let i = start; i < end; i++) {
+        // @ts-expect-error a relation's target is the world's to change
+        pointing.target[i] = 99;
       }
-    );
+    });
   });
   const Halt = Action.define("rd/Halt", Schema.Struct({}));
   const halt = Action.handler(Halt, function* () {
-    (yield* Moving).eachChunk((start, end, _, vel) => {
+    (yield* Query.View(Moving)).eachChunk((start, end, _, vel) => {
       for (let i = start; i < end; i++) {
         // @ts-expect-error Velocity is only read by this query
         vel.y[i] = 0;
@@ -480,13 +480,16 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
   /** Every field of every body, as a query that only reads finds them. */
   const bodies = (app: App.Any) =>
     app.read(
-      Effect.map(Query.all(Position, Velocity, Pointing), (query) => {
-        const values: number[] = [];
-        query.each((pos, vel, pointing) => {
-          values.push(pos.x, pos.y, vel.x, vel.y, idOf(pointing.target));
-        });
-        return values;
-      })
+      Effect.map(
+        Query.View(Query.all(Position, Velocity, Pointing)),
+        (query) => {
+          const values: number[] = [];
+          query.each((pos, vel, pointing) => {
+            values.push(pos.x, pos.y, vel.x, vel.y, idOf(pointing.target));
+          });
+          return values;
+        }
+      )
     );
   const refusal = (field: string): Error =>
     new Error(
@@ -571,12 +574,12 @@ describe("an id Commands.spawn returns", () => {
         // Commands, a component's value and an event's payload take it.
         commands.add(shot, Position.of({ x: 2, y: 0 }));
         commands.spawn(Position, Target.of({ target: shot }));
-        (yield* Fired.emits).emit({ shot });
+        (yield* Event.Emitter(Fired)).emit({ shot });
         seen.push(world.placed(shot));
         return shot;
       });
       const Hear = System.tick("rd/Hear", function* () {
-        for (const { shot } of (yield* Fired).read()) {
+        for (const { shot } of (yield* Event.Reader(Fired)).read()) {
           heard.push(shot);
         }
       });

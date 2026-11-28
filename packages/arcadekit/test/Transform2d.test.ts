@@ -56,7 +56,7 @@ describe("Transform2d", () => {
         });
         const app = yield* App.make(App.define({ plugins: [Bare] }));
         const world = yield* app.read(World);
-        const bare = (yield* app.read(Query.all(Position, Scale)))
+        const bare = (yield* app.read(Query.View(Query.all(Position, Scale))))
           .entities()
           .map((entity) => ({
             scale: world.get(entity, Scale),
@@ -97,17 +97,17 @@ describe("Transform2d", () => {
           Schema.Struct({ x: Schema.Number, y: Schema.Number })
         );
         const slide = Action.handler(Slide, function* (to) {
-          (yield* Query.all(Position).pipe(Query.writes(Position))).each(
-            (position) => {
-              position.x = to.x;
-              position.y = to.y;
-            }
-          );
+          (yield* Query.View(
+            Query.all(Position).pipe(Query.writes(Position))
+          )).each((position) => {
+            position.x = to.x;
+            position.y = to.y;
+          });
         });
         const Lift = Action.define("t2/Lift", Schema.Struct({}));
         const lift = Action.handler(Lift, function* () {
           const commands = yield* Commands;
-          (yield* Query.all(Position)).each((_, entity) => {
+          (yield* Query.View(Query.all(Position))).each((_, entity) => {
             commands.remove(entity, Position);
           });
         });
@@ -116,7 +116,7 @@ describe("Transform2d", () => {
         );
         const world = yield* app.read(World);
         const placed = spawned.map((id) => placedIn(world, id));
-        const flat = yield* app.read(Query.all(Position));
+        const flat = yield* app.read(Query.View(Query.all(Position)));
         yield* app.dispatch(Slide, { x: 3, y: 4 });
         expect(
           placed.map((both) => [
@@ -147,13 +147,15 @@ describe("Transform2d", () => {
         );
         const Drift = System.tick("t2/Drift", function* () {
           const { delta } = yield* Time;
-          (yield* Moving).eachChunk((start, end, position, rotation) => {
-            for (let i = start; i < end; i++) {
-              position.x[i] = position.x[i]! + 4 * delta;
-              position.y[i] = position.y[i]! - 2 * delta;
-              rotation.angle[i] = rotation.angle[i]! + delta;
+          (yield* Query.View(Moving)).eachChunk(
+            (start, end, position, rotation) => {
+              for (let i = start; i < end; i++) {
+                position.x[i] = position.x[i]! + 4 * delta;
+                position.y[i] = position.y[i]! - 2 * delta;
+                rotation.angle[i] = rotation.angle[i]! + delta;
+              }
             }
-          });
+          );
         });
         const spawned: Spawned[] = [];
         const Deal = Plugin.make("t2/Deal", {
@@ -254,14 +256,18 @@ describe("Transform2d.smooth", () => {
     Schema.Struct({ x: Schema.Number })
   );
   const teleport = Action.handler(Teleport, function* ({ x }) {
-    (yield* Players.pipe(Query.writes(Position))).each((position) => {
-      position.x = x;
-    });
+    (yield* Query.View(Players.pipe(Query.writes(Position)))).each(
+      (position) => {
+        position.x = x;
+      }
+    );
   });
   const Run = System.tick("t2/Run", function* () {
-    (yield* Players.pipe(Query.writes(Position))).each((position) => {
-      position.x += 10;
-    });
+    (yield* Query.View(Players.pipe(Query.writes(Position)))).each(
+      (position) => {
+        position.x += 10;
+      }
+    );
   });
   const Start = Plugin.make("t2/Start", {
     setup: Effect.gen(function* () {
@@ -274,13 +280,13 @@ describe("Transform2d.smooth", () => {
     const camera: number[] = [];
     const Draw = System.frame("t2/Draw", function* () {
       const smooth = yield* Transform2d.smooth;
-      (yield* Players).each((position, entity) => {
+      (yield* Query.View(Players)).each((position, entity) => {
         drawn.push(smooth.position(entity, position, 50).x);
       });
     });
     const Camera = System.frame("t2/Camera", function* () {
       const smooth = yield* Transform2d.smooth;
-      (yield* Players).each((position, entity) => {
+      (yield* Query.View(Players)).each((position, entity) => {
         camera.push(smooth.position(entity, position, 50).x);
       });
     });
@@ -364,8 +370,8 @@ describe("Transform2d.smooth", () => {
     () =>
       Effect.gen(function* () {
         const Spin = System.tick("t2/Spin", function* () {
-          (yield* Query.all(Rotation, Scale).pipe(
-            Query.writes(Rotation, Scale)
+          (yield* Query.View(
+            Query.all(Rotation, Scale).pipe(Query.writes(Rotation, Scale))
           )).each((rotation, scale) => {
             rotation.angle = -3;
             scale.x = 3;
@@ -382,7 +388,7 @@ describe("Transform2d.smooth", () => {
         const seen: { angle: number; x: number }[] = [];
         const Draw = System.frame("t2/DrawSpun", function* () {
           const smooth = yield* Transform2d.smooth;
-          (yield* Query.all(Rotation, Scale)).each(
+          (yield* Query.View(Query.all(Rotation, Scale))).each(
             (rotation, scale, entity) => {
               seen.push({
                 angle: smooth.rotation(entity, rotation),
@@ -413,15 +419,14 @@ describe("Transform2d.smooth", () => {
     );
     const Hop = Action.define("t2/Hop", Schema.Struct({ x: Schema.Number }));
     const hop = Action.handler(Hop, function* ({ x }) {
-      (yield* Hoppers).each((position, teleports) => {
+      (yield* Query.View(Hoppers)).each((position, teleports) => {
         position.x = x;
         teleports.count += 1;
       });
     });
     const Walk = System.tick("t2/Walk", function* () {
-      (yield* Query.all(Position).pipe(
-        Query.with(Hopper),
-        Query.writes(Position)
+      (yield* Query.View(
+        Query.all(Position).pipe(Query.with(Hopper), Query.writes(Position))
       )).each((position) => {
         position.x += 10;
       });
@@ -442,14 +447,14 @@ describe("Transform2d.smooth", () => {
       const Hopping = Query.all(Position).pipe(Query.with(Hopper));
       const Draw = System.frame("t2/DrawHopper", function* () {
         const smooth = yield* Transform2d.smooth;
-        (yield* Hopping).each((position, entity) => {
+        (yield* Query.View(Hopping)).each((position, entity) => {
           drawn.push(smooth.position(entity, position).x);
           is.push(position.x);
         });
       });
       const Camera = System.frame("t2/CameraOnHopper", function* () {
         const smooth = yield* Transform2d.smooth;
-        (yield* Hopping).each((position, entity) => {
+        (yield* Query.View(Hopping)).each((position, entity) => {
           camera.push(smooth.position(entity, position).x);
         });
       });
@@ -520,13 +525,16 @@ describe("Transform2d.smooth", () => {
           );
           const Hold = Action.define("t2/Hold", Schema.Struct({}));
           const hold = Action.handler(Hold, function* () {
-            (yield* Held.writes).on = 1;
+            (yield* Singleton.Write(Held)).on = 1;
           });
           const Back = System.tick("t2/Back", function* () {
-            if ((yield* Time).tick !== 3 || (yield* Held).on === 1) {
+            if (
+              (yield* Time).tick !== 3 ||
+              (yield* Singleton.Read(Held)).on === 1
+            ) {
               return;
             }
-            (yield* Hoppers).each((position, teleports) => {
+            (yield* Query.View(Hoppers)).each((position, teleports) => {
               position.x = 500;
               teleports.count += 1;
             });
