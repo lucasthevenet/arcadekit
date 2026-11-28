@@ -415,7 +415,9 @@ describe("Transform2d.smooth", () => {
       Query.with(Hopper),
       Query.writes(Position, Teleports)
     );
-    const Hop = Action.define("t2/Hop", Schema.Struct({ x: Schema.Number }));
+    const Hop = Action.define("t2/Hop", {
+      payload: Schema.Struct({ x: Schema.Number }),
+    });
     const hop = Action.handler(Hop, function* ({ x }) {
       (yield* Query.View(Hoppers)).each((position, teleports) => {
         position.x = x;
@@ -521,7 +523,7 @@ describe("Transform2d.smooth", () => {
             { on: Field.i32 },
             { on: 0 }
           );
-          const Hold = Action.define("t2/Hold", Schema.Struct({}));
+          const Hold = Action.define("t2/Hold", { payload: Schema.Struct({}) });
           const hold = Action.handler(Hold, function* () {
             (yield* Singleton.Write(Held)).on = 1;
           });
