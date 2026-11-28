@@ -1575,6 +1575,50 @@ describe("the turns of a game kept by Timeline.keep", () => {
       )
   );
 
+  it.effect("count no move that the rules refuse as a turn", () => {
+    class Wall extends Schema.TaggedError<Wall>()("Wall", {}) {}
+    /** A push the rules refuse past the cell at x 1, the edge of the board. */
+    const Push = Action.define("vr/Push", {
+      payload: Schema.Struct({ dx: Schema.Int }),
+      error: Wall,
+    });
+    const Walled = App.define({
+      plugins: [
+        Plugin.make("vr/Walled", {
+          plugins: [Timeline.plugin],
+          handlers: [
+            Action.handler(Push, function* ({ dx }) {
+              const cell = yield* Singleton.Write(Cell);
+              if (cell.x + dx > 1) {
+                return yield* Wall.make({});
+              }
+              cell.x += dx;
+            }),
+          ],
+        }),
+      ],
+    });
+    return withApp(App.make(Walled), (app, world) =>
+      Effect.gen(function* () {
+        yield* Timeline.keep(app);
+        const start = world.hash();
+        yield* app.enqueue(Push, { dx: 1 });
+        yield* app.tick(1 / 60);
+        yield* app.enqueue(Push, { dx: 1 });
+        yield* app.tick(1 / 60);
+        expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({ x: 1 });
+        expect(yield* Timeline.undo(app)).toBe(true);
+        expect(world.hash()).toBe(start);
+        expect(yield* Timeline.undo(app)).toBe(false);
+        // A refused move gives up no turn ahead either.
+        yield* app.enqueue(Push, { dx: 2 });
+        yield* app.tick(1 / 60);
+        expect(yield* Timeline.redo(app)).toBe(true);
+        expect(yield* app.read(Singleton.Read(Cell))).toMatchObject({ x: 1 });
+      }).pipe(Effect.scoped)
+    );
+  });
+
   it.effect(
     "go forward again a turn the rules went back, and stay there",
     () => {

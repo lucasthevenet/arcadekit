@@ -356,13 +356,15 @@ class Turns {
       this.back.length = 0;
       this.ahead.length = 0;
     } else if (
-      // A move arrived from outside, which captured the game before it.
+      // A move from outside that the rules took, which captured the game
+      // before it when it arrived.
       this.standing !== undefined &&
       log.entries
         .slice(this.logLength)
         .some(
           (entry) =>
             !Action.isHashCheck(entry) &&
+            entry.refused === undefined &&
             entry.name !== Undo.name &&
             entry.name !== Redo.name
         )
@@ -397,7 +399,8 @@ const turnsOf = (app: Game, call: string): Turns => {
  * Keeps the turns of a game, for an undo: the game as it was before each
  * turn, for as long as the scope it runs in lasts. A turn is what a tick or a
  * dispatched action did with what came from outside: a move of the player's,
- * by a key, a UI or `app.enqueue`.
+ * by a key, a UI or `app.enqueue`. A move the rules refuse changes nothing,
+ * and is no turn.
  *
  *   Driver.run(Puzzle, { hz: 60, ticks: "whenNeeded", ready: (app) => Timeline.keep(app) })
  *   yield* Timeline.undo(app)          // or, from the game's keys and UI, Timeline.Undo
