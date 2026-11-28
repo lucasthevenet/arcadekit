@@ -97,10 +97,11 @@ export const mount = (root: Element, ui: View.Bridge<typeof NewGame>) => {
 - `ui.get(view)` returns the last published value. It returns the same object until the value changes, so `===` tells a UI library whether anything changed. A view that the UI doesn't listen to is computed in the frame after `get` reads it, so `get` returns it a frame late.
 - `ui.subscribe(view, listener)` calls the listener with the current value at once, then each time the value changes, and returns a function that unsubscribes. So a UI that subscribes shows the game as it is, and needs no `get` beside it. A listener that throws when the value changes fails the frame, like any bug in the frame stage, once every other listener has been notified.
 - `ui.send(action, payload)` requests an action. An action with no payload, such as `NewGame`, is sent with none: `ui.send(NewGame)`. `View.plugin` issues it in the input stage, before the next tick. The app logs it, and its handler applies or refuses it, exactly as for one an input system issues for a key. A replay therefore needs no UI, and a button counts the same as a key.
+- `send` returns an `Exit`. It fails with `Action.InvalidPayload` for a payload that the action's schema doesn't take, such as `1.5` where the schema wants an integer, as `app.enqueue` does. Nothing is then issued or logged, and the game plays on. A UI that ignores the `Exit` loses only the refusal.
 
 A bridge sends the actions of its type and no other. The app of a game hands out a bridge that sends every action the game has a handler for. A UI that takes a `View.Bridge<typeof NewGame>` can be handed the bridge only if the game handles `NewGame`. A `View.Bridge` with no actions reads views and sends nothing. An action that the game has no handler for doesn't compile, in `send` or where the bridge is handed to the UI.
 
-The UI isn't told the outcome of an action it sent. A refusal is an event, which a frame system reads with `Action.rejected(action)`, typed, and publishes as a view. See [read the refusals of an action](events-and-actions.md#read-the-refusals-of-an-action).
+Once `send` has taken an action, the UI isn't told its outcome. A refusal by the handler is an event, which a frame system reads with `Action.rejected(action)`, typed, and publishes as a view. See [read the refusals of an action](events-and-actions.md#read-the-refusals-of-an-action).
 
 A bridge refuses two different views with the same name.
 

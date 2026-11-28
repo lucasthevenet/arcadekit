@@ -19,7 +19,7 @@ import type { CommandBuffer } from "../ecs/commands.ts";
 import type { Spawned } from "../ecs/spawned.ts";
 import type { World } from "../ecs/world.ts";
 import type { EventBus } from "./eventBus.ts";
-import { Intake, jsonOf, said } from "./intake.ts";
+import { Intake, jsonFormOf, jsonOf, said } from "./intake.ts";
 import type { Log } from "./log.ts";
 import type { Runner } from "./runner.ts";
 import { GameTime } from "./stage.ts";
@@ -155,14 +155,9 @@ export class Inbox {
     // Input from outside. The log holds the JSON form, and the other
     // peers are sent it. A payload that has none is refused here, in a
     // game of one too: queued, it would be refused on this machine alone.
-    const json = Schema.encodeUnknownExit(codec)(payload);
+    const json = jsonFormOf(handler.action, payload);
     if (Exit.isFailure(json)) {
-      return Exit.fail(
-        Action.InvalidPayload.make({
-          action: name,
-          message: said(Cause.squash(json.cause)),
-        })
-      );
+      return json;
     }
     if (this.diverted !== undefined) {
       this.diverted(name, json.value);
