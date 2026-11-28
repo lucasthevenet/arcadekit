@@ -1,6 +1,7 @@
 // The Oxlint plugin `arcadekit`: the rules of what a file of a published package may import,
 // contain or export. oxlint.config.ts turns them on for packages/*/src, no-outside-state and
-// no-empty-payload for the benchmarks and examples/ too, and no-run-in-tests for the tests of both.
+// no-empty-payload for the benchmarks and examples/ too, and no-run-in-tests and no-dropped-exit
+// for the tests of both.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 
@@ -244,6 +245,42 @@ const noRunInTests: Rule = {
         context.report({
           node,
           message: `Effect.${node.property.name} runs an Effect by hand. A test is an Effect itself: write it with it.effect from @effect/vitest, or it.live where it waits in real time, and yield* the effect in it. A helper of a test returns the effect for the test to yield*.`,
+        });
+      }
+    },
+  }),
+};
+
+/** Whether an expression is `yield* Effect.exit(...)`. */
+const yieldsExit = (
+  node: NodeOf<"ExpressionStatement">["expression"]
+): boolean =>
+  node.type === "YieldExpression" &&
+  node.delegate &&
+  node.argument?.type === "CallExpression" &&
+  dottedName(node.argument.callee) === "Effect.exit";
+
+const noDroppedExit: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "A test does not drop what yield* Effect.exit(...) gives, alone or under void: it asserts it.",
+    },
+  },
+  create: (context) => ({
+    ExpressionStatement: (node) => {
+      const { expression } = node;
+      if (
+        yieldsExit(expression) ||
+        (expression.type === "UnaryExpression" &&
+          expression.operator === "void" &&
+          yieldsExit(expression.argument))
+      ) {
+        context.report({
+          node,
+          message:
+            "This drops the exit of Effect.exit, so the test passes whether the effect succeeded, failed or died. Assert it, as expect(yield* Effect.exit(app.dispatch(Go))).toEqual(Exit.fail(Refused.make({}))) does, or yield* the effect alone where it must succeed.",
         });
       }
     },
@@ -1491,6 +1528,7 @@ export default {
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
     "no-run-in-tests": noRunInTests,
+    "no-dropped-exit": noDroppedExit,
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,
     "id-casts": idCasts,

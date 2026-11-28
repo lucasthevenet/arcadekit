@@ -247,6 +247,33 @@ new RuleTester().run("no-run-in-tests", plugin.rules["no-run-in-tests"], {
   })),
 });
 
+const inTest = (body: string) =>
+  `it.effect("refuses", () => Effect.gen(function* () {\n${body}\n}));`;
+
+new RuleTester().run("no-dropped-exit", plugin.rules["no-dropped-exit"], {
+  valid: [
+    "expect(yield* Effect.exit(app.dispatch(Go))).toEqual(Exit.fail(Refused.make({})));",
+    "const exit = yield* Effect.exit(app.dispatch(Go));",
+    "refused.push(yield* Effect.exit(app.dispatch(Go)));",
+    "yield* app.dispatch(Go);",
+    "yield* Effect.ignore(app.dispatch(Go));",
+  ].map((body) => ({ name: body, code: inTest(body) })),
+  invalid: [
+    "yield* Effect.exit(app.dispatch(Go));",
+    "void (yield* Effect.exit(app.dispatch(Go)));",
+    "for (const go of goes) {\n  yield* Effect.exit(app.dispatch(go));\n}",
+  ].map((body) => ({
+    name: body,
+    code: inTest(body),
+    errors: [
+      {
+        message:
+          /^This drops the exit of Effect\.exit, so the test passes whether the effect succeeded, failed or died\./u,
+      },
+    ],
+  })),
+});
+
 const arcadekit = (file: string) => `packages/arcadekit/src/${file}`;
 
 new RuleTester().run("entry-imports", plugin.rules["entry-imports"], {
