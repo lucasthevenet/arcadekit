@@ -68,11 +68,14 @@ export const u8 = Field.u8;
  *
  * - `eachChunk` hands out its column as it is, a `Uint8Array` of 0 and 1,
  *   which a loop reads and writes as numbers. Any number but 0 written there
- *   reads as `true`.
+ *   reads as `true`, and a snapshot refuses any number but 0 and 1 with
+ *   `"cannot be saved"`.
  * - A snapshot and the hash take it for a `Field.u8`. A save written while
- *   the field was a `Field.u8` loads with no migration, 0 as `false` and any
- *   other number as `true`, and a field changed from `Field.bool` to
- *   `Field.u8` loads as 0 and 1.
+ *   the field was a `Field.u8` of 0 and 1 loads with no migration, as `false`
+ *   and `true`, and a field changed from `Field.bool` to `Field.u8` loads as
+ *   0 and 1. A save that holds another number there was of a count, and is
+ *   refused with `"component changed"`: a migration's `mapField` turns the
+ *   count into `true` or `false`.
  *
  * @category Fields
  */

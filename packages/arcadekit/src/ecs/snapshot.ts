@@ -25,7 +25,8 @@ import type { FieldKind, RefCodec } from "./component.ts";
  * - `"unknown component"`: the snapshot holds a component this program
  *   doesn't define.
  * - `"component changed"`: a component's storage or fields differ from when
- *   the snapshot was taken, or a `ref` field's codec refuses a value.
+ *   the snapshot was taken, a `ref` field's codec refuses a value, or a
+ *   `Field.bool` is given a number other than 0 or 1.
  * - `"unknown store"`: the snapshot holds a store that the world doesn't have.
  * - `"store changed"`: a store refuses what the snapshot holds of it.
  * - `"world not empty"`: `World.load` was given a world that isn't empty.

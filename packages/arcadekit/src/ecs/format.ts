@@ -35,8 +35,9 @@ type Columns = Record<string, Column>;
 /**
  * A component as the format needs it: its name and its fields, each with its
  * kind and, where the program defines the component, the codec of a `ref`
- * field. A `ComponentDef` is one. Without a codec, a `ref` field is read and
- * written in its encoded form.
+ * field and the names of its `Field.bool` fields. A `ComponentDef` is one.
+ * Without a codec, a `ref` field is read and written in its encoded form.
+ * Without `bools`, a `Field.bool` is a `u8` that may hold any number.
  *
  * @internal
  */
@@ -45,7 +46,29 @@ export interface Shape {
   readonly fields: readonly string[];
   readonly kinds: readonly FieldKind[];
   readonly codecs?: readonly (RefCodec<unknown> | undefined)[];
+  readonly bools?: readonly string[];
 }
+
+/**
+ * The first `Field.bool` of a component whose rows `[0, count)` hold a number
+ * other than 0 or 1, and that number. A snapshot holds a bool as a `u8`, so
+ * only its values tell a flag from a count.
+ */
+const notFlag = (
+  shape: Shape,
+  columns: Columns,
+  count: number
+): { readonly field: string; readonly held: number } | undefined => {
+  for (const field of shape.bools ?? []) {
+    const values = columns[field] as Uint8Array;
+    for (let row = 0; row < count; row++) {
+      if (values[row]! > 1) {
+        return { field, held: values[row]! };
+      }
+    }
+  }
+  return undefined;
+};
 
 /**
  * What one store of a world held, as a snapshot keeps it. A store is state
@@ -129,7 +152,10 @@ export interface Target<C extends Shape> {
   end(): void;
 }
 
-/** Reads a component's fields into its columns, naming the field a codec refuses. */
+/**
+ * Reads a component's fields into its columns, naming the field a codec
+ * refuses, or the `Field.bool` given a number other than 0 or 1.
+ */
 const readFields = (
   reader: Reader,
   shape: Shape,
@@ -165,6 +191,14 @@ const readFields = (
         shape.name
       );
     }
+  }
+  const flag = notFlag(shape, columns, count);
+  if (flag !== undefined) {
+    throw new SnapshotError(
+      "component changed",
+      `"${shape.name}.${flag.field}" is a Field.bool, and the snapshot holds ${flag.held} there, which is neither false nor true: the field was a number when the snapshot was taken. A migration's mapField turns its numbers into true and false.`,
+      shape.name
+    );
   }
 };
 
@@ -451,6 +485,21 @@ export const write = <C extends Shape, T extends TableSource<C>>(
     writer.u32(index);
   }
 
+  // Not in `writeFields`, which a moment checks itself with: a moment keeps
+  // any number in a bool, and never meets a load that would take it for a
+  // count.
+  const fieldsOf = (component: C, columns: Columns, count: number): void => {
+    const flag = notFlag(component, columns, count);
+    if (flag !== undefined) {
+      throw new SnapshotError(
+        "cannot be saved",
+        `"${component.name}.${flag.field}" is a Field.bool, and holds ${flag.held}, which a snapshot takes for neither false nor true: write 0 or 1 to its column.`,
+        component.name
+      );
+    }
+    writeFields(writer, component, columns, count);
+  };
+
   const { components } = source;
   const indexOf = new Map<C, number>();
   writer.u32(components.length);
@@ -471,7 +520,7 @@ export const write = <C extends Shape, T extends TableSource<C>>(
   writer.u32(source.singletons.length);
   for (const single of source.singletons) {
     writer.u32(indexOf.get(single.component)!);
-    writeFields(writer, single.component, single.columns, 1);
+    fieldsOf(single.component, single.columns, 1);
   }
   writer.u32(source.stores.length);
   for (const store of source.stores) {
@@ -496,7 +545,7 @@ export const write = <C extends Shape, T extends TableSource<C>>(
     writer.u32(count);
     writer.numbers(table.entities, count, 8);
     for (const component of table.components) {
-      writeFields(writer, component, source.columns(table, component), count);
+      fieldsOf(component, source.columns(table, component), count);
     }
   }
 
@@ -505,7 +554,7 @@ export const write = <C extends Shape, T extends TableSource<C>>(
     writer.u32(indexOf.get(set.component)!);
     writer.u32(set.count);
     writer.numbers(set.members, set.count, 4);
-    writeFields(writer, set.component, set.columns, set.count);
+    fieldsOf(set.component, set.columns, set.count);
   }
   writer.u32(END);
   return writer.finish();
