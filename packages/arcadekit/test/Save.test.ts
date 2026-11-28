@@ -1413,6 +1413,38 @@ describe("a save the rules ask for", () => {
       }).pipe(Effect.scoped)
   );
 
+  for (const first of ["Timeline.keep", "Save.autosave"] as const) {
+    it.effect(
+      `is recorded from, read from its slot, once the turn after it is undone, with ${first} asked first`,
+      () =>
+        withApp(App.make(Levels), (app, world) =>
+          Effect.gen(function* () {
+            const keep = Timeline.keep(app);
+            const autosave = Save.autosave(app);
+            yield* first === "Timeline.keep"
+              ? Effect.andThen(keep, autosave)
+              : Effect.andThen(autosave, keep);
+            for (let i = 0; i < 3; i++) {
+              yield* app.enqueue(Grab, {});
+              yield* app.tick(1 / 60);
+            }
+            const level = world.hash();
+            yield* app.enqueue(Grab, {});
+            yield* app.tick(1 / 60);
+            expect(yield* Timeline.undo(app)).toBe(true);
+            expect(world.hash()).toBe(level);
+            const kept = Option.getOrThrow(yield* Save.read("level"));
+            yield* app.enqueue(Grab, {});
+            yield* app.tick(1 / 60);
+            const replayed = yield* Replay.verify(
+              yield* Replay.record(app, kept),
+              Levels
+            );
+            expect((yield* replayed.read(World)).hash()).toBe(world.hash());
+          }).pipe(Effect.provide(Save.layer(Save.makeMemory())), Effect.scoped)
+        )
+    );
+  }
   it.effect(
     "has its slot's status told to the game's UI: off, unasked, failed until a later ask keeps it, and off once nothing keeps the saves",
     () => {

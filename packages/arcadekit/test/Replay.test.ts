@@ -3,7 +3,12 @@ import { Cause, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { SchemaBinary } from "effect/encoding";
 
 import { entityOf } from "../src/ecs/component.ts";
-import { World as EcsWorld } from "../src/ecs/index.ts";
+import { finish, add as fold } from "../src/ecs/hash.ts";
+import {
+  World as EcsWorld,
+  readSnapshot,
+  writeSnapshot,
+} from "../src/ecs/index.ts";
 import {
   Action,
   App,
@@ -1462,6 +1467,64 @@ describe("a game whose simulation issues actions itself", () => {
   );
 });
 
+// --- bytes of a save changed so that they hash the same ------------------------------
+
+const wordsOf = (bytes: Uint8Array): number[] => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Array.from({ length: bytes.length >>> 2 }, (_, i) =>
+    view.getInt32(i * 4, true)
+  );
+};
+
+/** A save's bytes hashed a 32-bit word at a time, as the app tells saves apart. */
+const hashOf = (bytes: Uint8Array): number =>
+  finish(
+    bytes
+      .subarray(bytes.length & ~3)
+      .reduce(fold, wordsOf(bytes).reduce(fold, 0))
+  );
+
+/** What `fold` makes of a word before it folds it in. */
+const scramble = (word: number): number => {
+  const k = Math.imul(word, 0xcc9e2d51);
+  return Math.imul((k << 15) | (k >>> 17), 0x1b873593);
+};
+
+/** The number whose product with `odd` is 1, in 32 bits. */
+const inverse = (odd: number): number => {
+  let x = odd;
+  for (let i = 0; i < 4; i++) {
+    x = Math.imul(x, 2 - Math.imul(odd, x));
+  }
+  return x;
+};
+
+const unscramble = (k: number): number => {
+  const r = Math.imul(k, inverse(0x1b873593));
+  return Math.imul((r >>> 15) | (r << 17), inverse(0xcc9e2d51));
+};
+
+/**
+ * A copy of a save whose world says another tick, with its last word changed
+ * so that `fold` gives the same state from its words as from the save's.
+ */
+const sayingTick = (save: Save.Save, tick: number): Save.Save => {
+  const contents = readSnapshot(save.world);
+  const time = contents.singletons.find(
+    ({ component }) => component === "arcadekit/Time"
+  );
+  time!.columns["tick"]![0] = tick;
+  const world = writeSnapshot(contents);
+  const was = wordsOf(save.world);
+  const last = was.length - 1;
+  const before = (words: number[]) => words.slice(0, last).reduce(fold, 0);
+  const word = unscramble(
+    before(wordsOf(world)) ^ before(was) ^ scramble(was[last]!)
+  );
+  new DataView(world.buffer, world.byteOffset).setInt32(last * 4, word, true);
+  return { version: save.version, world };
+};
+
 describe("a recording", () => {
   // A walker whose stride is the tick's delta: a tick of another length
   // leaves it somewhere else.
@@ -1587,6 +1650,148 @@ describe("a recording", () => {
         );
       })
     )
+  );
+
+  it.effect(
+    "begins at a copy of a save read back from its bytes, as one from a slot is",
+    () =>
+      withApp(walking, (app, world) =>
+        Effect.gen(function* () {
+          yield* app.tick(1 / 60);
+          yield* app.dispatch(Drop, { value: 1 });
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          const copy = yield* Save.decode(Save.encode(save));
+          expect(copy).not.toBe(save);
+          yield* app.tick(1 / 30);
+          yield* app.dispatch(Drop, { value: 2 });
+          yield* app.tick(1 / 60);
+          const tail = yield* Replay.record(app, copy);
+          expect(tail.save).toBe(copy);
+          expect(tail).toMatchObject({ start: 1, end: 3 });
+          expect(moves(tail.log).map((entry) => entry.payload)).toEqual([
+            { value: 2 },
+          ]);
+          const present = yield* withApp(replayWalking(tail), (_, replayed) =>
+            Effect.succeed(replayed.hash())
+          );
+          expect(present).toBe(world.hash());
+        })
+      )
+  );
+
+  it.effect(
+    "records no save its log no longer reaches: one of a future a rewind gave up, or from before a load",
+    () =>
+      withApp(App.make(Walking, { hashEvery: 0 }), (app) =>
+        Effect.gen(function* () {
+          // Two coins dropped at tick 1, then a tick: whichever coins they
+          // are, the log is as long, and its ticks the same.
+          const play = Effect.fnUntraced(function* (first: number) {
+            yield* app.dispatch(Drop, { value: first });
+            yield* app.dispatch(Drop, { value: first + 1 });
+            yield* app.tick(1 / 60);
+          });
+          const unreached =
+            /Replay\.record\(\) was given a save that this app didn't make, or that its log no longer reaches/;
+          yield* app.tick(1 / 60);
+          const before = unwrap(yield* Effect.exit(Save.make(app)));
+          const moment = unwrap(yield* Effect.exit(Timeline.capture(app)));
+          yield* play(1);
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          const ahead = unwrap(yield* Effect.exit(Timeline.capture(app)));
+
+          yield* Timeline.rewind(app, moment);
+          yield* play(3);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+          yield* Timeline.rewind(app, ahead);
+          expect((yield* Replay.record(app, save)).start).toBe(2);
+
+          yield* Save.load(app, before);
+          yield* play(5);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+          expect((yield* Replay.record(app, before)).start).toBe(1);
+        })
+      )
+  );
+
+  it.effect(
+    "begins at a save taken where a moment was captured, once the game is rewound to the moment",
+    () =>
+      withApp(walking, (app, world) =>
+        Effect.gen(function* () {
+          yield* app.dispatch(Drop, { value: 1 });
+          yield* app.tick(1 / 60);
+          const moment = unwrap(yield* Effect.exit(Timeline.capture(app)));
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          yield* app.dispatch(Drop, { value: 2 });
+          yield* app.tick(1 / 60);
+          yield* Timeline.rewind(app, moment);
+          yield* app.dispatch(Drop, { value: 3 });
+          yield* app.tick(1 / 60);
+          const tail = yield* Replay.record(app, save);
+          expect(tail).toMatchObject({ start: 1, end: 2 });
+          expect(moves(tail.log).map((entry) => entry.payload)).toEqual([
+            { value: 3 },
+          ]);
+          const present = yield* withApp(replayWalking(tail), (_, replayed) =>
+            Effect.succeed(replayed.hash())
+          );
+          expect(present).toBe(world.hash());
+        })
+      )
+  );
+
+  it.effect(
+    "begins at a save again once a game rewound to before it comes to its tick, with nothing logged on the way",
+    () =>
+      withApp(App.make(Walking, { hashEvery: 0 }), (app, world) =>
+        Effect.gen(function* () {
+          const unreached = /its log no longer reaches/;
+          yield* app.tick(1 / 60);
+          const moment = unwrap(yield* Effect.exit(Timeline.capture(app)));
+          yield* app.tick(1 / 60);
+          yield* app.tick(1 / 60);
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+
+          // Ticks of another length: the walker is elsewhere at tick 3.
+          yield* Timeline.rewind(app, moment);
+          yield* app.tick(1 / 30);
+          yield* app.tick(1 / 30);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+
+          yield* Timeline.rewind(app, moment);
+          yield* app.tick(1 / 60);
+          expect(yield* thrown(Replay.record(app, save))).toThrow(unreached);
+          yield* app.tick(1 / 60);
+          yield* app.dispatch(Drop, { value: 1 });
+          yield* app.tick(1 / 60);
+          const tail = yield* Replay.record(app, save);
+          expect(tail).toMatchObject({ start: 3, end: 4 });
+          const present = yield* withApp(replayWalking(tail), (_, replayed) =>
+            Effect.succeed(replayed.hash())
+          );
+          expect(present).toBe(world.hash());
+        })
+      )
+  );
+
+  it.effect(
+    "records no save whose bytes were changed to say another tick, though they hash the same",
+    () =>
+      withApp(walking, (app) =>
+        Effect.gen(function* () {
+          yield* app.tick(1 / 60);
+          yield* app.tick(1 / 60);
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          yield* app.tick(1 / 60);
+          const forged = sayingTick(save, 1000);
+          expect(forged.world).not.toEqual(save.world);
+          expect(hashOf(forged.world)).toBe(hashOf(save.world));
+          expect(yield* thrown(Replay.record(app, forged))).toThrow(
+            /Replay\.record\(\) was given a save that this app didn't make/
+          );
+        })
+      )
   );
 });
 

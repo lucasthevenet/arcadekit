@@ -612,17 +612,28 @@ export const verify = <
  * watch with `Replay.play`: how it began, the action log, the delta of every
  * tick, the ticks it begins and ends at, and the world's hash where it ends.
  * The recording begins where the app began, from its seed or from the save it
- * was made or last loaded from. With `since`, a save the app made, it begins
- * at that save and holds it, and replaying it returns to the present from
- * that save. Run it only between ticks, since it dies anywhere else.
+ * was made or last loaded from. With `since`, a save the app made or began
+ * from, it begins at that save and holds it, and replaying it returns to the
+ * present from that save. The app knows a save by what it holds, so a copy
+ * read back from its bytes, as `Save.read` gives one, is the same save. Run
+ * it only between ticks, since it dies anywhere else.
  *
  *   const recording = yield* Replay.record(app)
  *   const tail = yield* Replay.record(app, save)
  *
  * **Gotchas**
  *
- * - It dies for a save the app didn't make, or one its log no longer reaches,
- *   since the game went back to before it.
+ * - It dies for a save the app didn't make, and for one its log no longer
+ *   reaches: one taken before the app last loaded a save, or one the game
+ *   went back to before, with `Timeline.rewind` or `Timeline.undo`, and
+ *   came to again past a move or a tick of another length. The same moves
+ *   played again are moves of their own, and the save dies all the same. A
+ *   game that goes back to the save itself, or to before it and ticks on
+ *   alike with nothing logged, records since it.
+ * - In a session that runs ahead, a save of a tick that wasn't final dies
+ *   once a late move rolls the game back past it, even when the game comes
+ *   to the same save again. Record since a save taken at a tick no later
+ *   than `session.confirmed`, or record all of it.
  * - An app made from a save keeps that save for as long as it lives, to
  *   record from.
  *

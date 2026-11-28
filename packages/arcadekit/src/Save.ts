@@ -88,8 +88,9 @@ export interface Save {
  *
  * **Details**
  *
- * The app knows where in its log each save it made was taken, so that
- * `Replay.record(app, save)` records what it played since.
+ * The app knows where in its log each save it made was taken, by what the
+ * save holds, so that `Replay.record(app, save)` records what it played
+ * since, given the save or a copy read back from its bytes.
  *
  * @category Constructors
  */

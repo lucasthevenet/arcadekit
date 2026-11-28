@@ -19,7 +19,7 @@ import {
 } from "../src/index.ts";
 import type { Entity, JsonValue } from "../src/index.ts";
 import { Drift, Session } from "../src/net/index.ts";
-import { thrown } from "./checks.ts";
+import { thrown, unwrap } from "./checks.ts";
 import {
   Coin,
   CoinGame,
@@ -27,6 +27,7 @@ import {
   HZ,
   Purse,
   Take,
+  Whisper,
   catchUp,
   coinsOf,
   moves,
@@ -190,6 +191,66 @@ describe("a rollback session", () => {
           );
         }
       })
+  );
+
+  it.effect(
+    "records since a save of a final tick after it went back, and not since a save a rollback went back past",
+    () =>
+      withPeers(["ada", "grace"], { ahead: 8 }, ([ada, grace]) =>
+        Effect.gen(function* () {
+          const net = network(3, { min: 3, max: 3 });
+          const act = players(4);
+          const play = Effect.fnUntraced(function* (rounds: number) {
+            for (let i = 0; i < rounds; i++) {
+              yield* act(grace!);
+              yield* round([ada!, grace!], net);
+            }
+          });
+          // A whisper changes nothing in the game. It comes to ada after a
+          // save of a tick past it: ada goes back, runs the ticks again to
+          // the same game, and the save dies all the same.
+          for (let i = 0; i < 16; i++) {
+            if (i === 14) {
+              yield* grace!.app.enqueue(Whisper, { to: "ada" });
+            }
+            yield* round([ada!, grace!], net);
+          }
+          expect(ada!.session.confirmed).toBeLessThan(ada!.app.time.tick);
+          const guessed = unwrap(yield* Effect.exit(Save.make(ada!.app)));
+          const rewinds = ada!.session.stats.rewinds;
+          yield* settle([ada!, grace!], net, 3);
+          expect(ada!.session.stats.rewinds).toBe(rewinds + 1);
+          expect(yield* thrown(Replay.record(ada!.app, guessed))).toThrow(
+            /its log no longer reaches/
+          );
+
+          // Grace runs ahead while ada waits, and ada then hears all she
+          // said up to its own next tick: every tick ada has run is final.
+          for (let i = 0; i < 6; i++) {
+            yield* round([ada!, grace!], net, [grace!]);
+          }
+          yield* round([ada!, grace!], net, [ada!]);
+          expect(ada!.session.confirmed).toBe(ada!.app.time.tick);
+          const final = unwrap(yield* Effect.exit(Save.make(ada!.app)));
+          // Ada runs ahead in turn, and grace's moves come to it late.
+          for (let i = 0; i < 12; i++) {
+            yield* round([ada!, grace!], net, [ada!]);
+          }
+          const after = ada!.session.stats.rewinds;
+          yield* play(20);
+          yield* settle([ada!, grace!], net, 3);
+          expect(ada!.session.stats.rewinds).toBeGreaterThan(after);
+          yield* withApp(
+            Replay.verify(yield* Replay.record(ada!.app, final), CoinGame, {
+              hashEvery: 1,
+            }),
+            (_, alone) =>
+              Effect.sync(() => {
+                expect(alone.hash()).toBe(ada!.world.hash());
+              })
+          );
+        })
+      )
   );
 
   it.effect("keeps three peers the same game", () =>

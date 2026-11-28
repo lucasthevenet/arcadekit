@@ -1489,6 +1489,29 @@ describe("the turns of a game kept by Timeline.keep", () => {
   );
 
   it.effect(
+    "go back to a turn a save was taken after, and the game records since that save read back from its bytes",
+    () =>
+      withApp(App.make(Puzzle), (app, world) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          yield* app.dispatch(Step, { dx: 1, dy: 0 });
+          const save = unwrap(yield* Effect.exit(Save.make(app)));
+          const saved = world.hash();
+          yield* app.dispatch(Step, { dx: 0, dy: 1 });
+          expect(yield* Timeline.undo(app)).toBe(true);
+          expect(world.hash()).toBe(saved);
+          yield* app.dispatch(Step, { dx: 1, dy: 0 });
+          const copy = unwrap(Save.decode(Save.encode(save)));
+          const replayed = yield* Replay.verify(
+            yield* Replay.record(app, copy),
+            Puzzle
+          );
+          expect((yield* replayed.read(World)).hash()).toBe(world.hash());
+        }).pipe(Effect.scoped)
+      )
+  );
+
+  it.effect(
     "keep a turn to go forward to across the ticks a game runs at rest, until the next move",
     () =>
       withApp(App.make(Puzzle), (app, world) =>
