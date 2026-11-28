@@ -20,7 +20,13 @@
  */
 import { pathToFileURL } from "node:url";
 
-import { Component, Field, World, entityIndex } from "../src/ecs/index.ts";
+import {
+  CommandBuffer,
+  Component,
+  Field,
+  World,
+  entityIndex,
+} from "../src/ecs/index.ts";
 import type { Entity, Terms } from "../src/ecs/index.ts";
 import { Query } from "../src/Query.ts";
 
@@ -127,6 +133,75 @@ const Player = Component.tag("bench/Player");
 const Players = query([Position], { withDefs: [Player] });
 /** The entities of `spread`'s last table, and no others: 1 table in 100. */
 const OneTable = query([Position, Velocity], { withDefs: spreadTags });
+
+/** A component of eight fields, as a body of a physics game has. */
+const Body = Component.define("bench/Body", {
+  x: Field.f32,
+  y: Field.f32,
+  vx: Field.f32,
+  vy: Field.f32,
+  angle: Field.f32,
+  spin: Field.f32,
+  mass: Field.f32,
+  drag: Field.f32,
+});
+/** Ten entities among the 100,000, which a loop between changes visits. */
+const Few = Component.tag("bench/Few");
+const Fews = query([Position, Velocity], { withDefs: [Few] });
+
+/**
+ * Median milliseconds of a round, of `perSample` a sample: a change of the
+ * world's entities, then `visit`'s loops. The change gives a sparse tag to
+ * one of the 100,000, or takes it back. Like every change of the entities,
+ * it retracts each accessor a loop handed out, and the loop binds its own
+ * again on its next visit. Also the rounds it ran.
+ */
+const changing = (
+  world: World,
+  visit: () => void,
+  perSample = 1000
+): { readonly ms: number; readonly rounds: number } => {
+  const bystander = world.view(Moving).entities()[N >> 1]!;
+  const runs = 2000;
+  const warmup = 500;
+  let rounds = 0;
+  const ms = measure(
+    () => {
+      for (let i = 0; i < perSample; i++) {
+        if ((rounds & 1) === 0) {
+          world.add(bystander, Frozen);
+        } else {
+          world.remove(bystander, Frozen);
+        }
+        rounds++;
+        visit();
+      }
+    },
+    runs,
+    warmup
+  );
+  // An even number of changes leaves the entity as it was.
+  if (rounds !== (runs + warmup) * perSample || world.has(bystander, Frozen)) {
+    throw new Error(
+      `After ${rounds} changes, the entity has the tag: ${world.has(bystander, Frozen)}.`
+    );
+  }
+  return { ms: ms / perSample, rounds };
+};
+
+/** Throws unless each of `values` is `expected`. */
+const expectEach = (
+  what: string,
+  values: readonly number[],
+  expected: number
+): void => {
+  const wrong = values.filter((value) => value !== expected);
+  if (wrong.length > 0 || values.length === 0) {
+    throw new Error(
+      `${what}: ${wrong.length} of ${values.length} are not ${expected}.`
+    );
+  }
+};
 
 /** pos += vel * dt over what a query matches, written as a system would. */
 const step = (world: World, spec: typeof Moving): void => {
@@ -867,6 +942,144 @@ export const variants: Record<string, Variant> = {
       return ms / 1000;
     },
   },
+
+  // Loops between changes of the world's entities, as a game's systems run
+  // between the commands the systems before them applied. A visit is one
+  // change and the loops after it, over ten entities of the 100,000.
+  eachAfterChange: {
+    unit: "visit",
+    label: "each: ten entities, after a change of the entities",
+    run: () => {
+      const world = new World();
+      populate(world);
+      for (let i = 0; i < 10; i++) {
+        world.spawn(
+          Position.of({ x: 0, y: 0 }),
+          Velocity.of({ x: 1, y: 2 }),
+          Few
+        );
+      }
+      const view = world.view(Fews);
+      const { ms, rounds } = changing(world, () => {
+        view.each((pos, vel) => {
+          pos.x += 1;
+          pos.y += vel.y * DT;
+        });
+      });
+      expectEach(
+        "Visits of each",
+        view.entities().map((entity) => world.get(entity, Position)!.x),
+        rounds
+      );
+      return ms;
+    },
+  },
+  fieldsAfterChange: {
+    unit: "visit",
+    label: "each: the same, of a component of eight fields",
+    run: () => {
+      const world = new World();
+      populate(world);
+      for (let i = 0; i < 10; i++) {
+        world.spawn(
+          Body.of({
+            x: 0,
+            y: 0,
+            vx: 1,
+            vy: 2,
+            angle: 0,
+            spin: 1,
+            mass: 2,
+            drag: 0.5,
+          })
+        );
+      }
+      const view = world.view(query([Body]));
+      const { ms, rounds } = changing(world, () => {
+        view.each((body) => {
+          body.x += 1;
+          body.y += body.vy * DT;
+          body.vx -= body.vx * body.drag * DT;
+          body.vy -= (body.vy * body.drag * DT) / body.mass;
+          body.angle += body.spin * DT;
+        });
+      });
+      expectEach(
+        "Visits of each",
+        view.entities().map((entity) => world.get(entity, Body)!.x),
+        rounds
+      );
+      return ms;
+    },
+  },
+  nestedAfterChange: {
+    unit: "visit",
+    label: "each: the same ten, each against each, nested",
+    run: () => {
+      const world = new World();
+      populate(world);
+      for (let i = 0; i < 10; i++) {
+        world.spawn(
+          Position.of({ x: 0, y: i }),
+          Velocity.of({ x: 1, y: 2 }),
+          Few
+        );
+      }
+      const view = world.view(Fews);
+      let pairs = 0;
+      // A hundred pairs a round: a hundred rounds a sample are enough.
+      const { ms, rounds } = changing(
+        world,
+        () => {
+          view.each((a) => {
+            view.each((b, vel) => {
+              pairs++;
+              a.y += (b.y - a.y) * vel.x * DT;
+            });
+            a.x += 1;
+          });
+        },
+        100
+      );
+      if (pairs !== rounds * 100) {
+        throw new Error(`${pairs} pairs in ${rounds} visits, not 100 each.`);
+      }
+      expectEach(
+        "Visits of each",
+        view.entities().map((entity) => world.get(entity, Position)!.x),
+        rounds
+      );
+      return ms;
+    },
+  },
+  sparseAfterChange: {
+    unit: "visit",
+    label: "each: the same ten, with a sparse term",
+    run: () => {
+      const world = new World();
+      populate(world);
+      for (let i = 0; i < 10; i++) {
+        world.spawn(
+          Position.of({ x: 0, y: 0 }),
+          Velocity.of({ x: 1, y: 2 }),
+          Heat.of({ degrees: 0 })
+        );
+      }
+      const view = world.view(query([Position, Heat]));
+      const { ms, rounds } = changing(world, () => {
+        view.each((pos, heat) => {
+          heat.degrees += 1;
+          pos.y += DT;
+        });
+      });
+      expectEach(
+        "Visits of each",
+        view.entities().map((entity) => world.get(entity, Heat)!.degrees),
+        rounds
+      );
+      return ms;
+    },
+  },
   changedOne: {
     unit: "visit",
     label: "change query: one write in 100,000, set and visit",
@@ -1004,6 +1217,46 @@ export const variants: Record<string, Variant> = {
         2000,
         500
       );
+    },
+  },
+  despawnQueued: {
+    // A system queues its despawns on its commands, which keep a set of the
+    // entities they despawn, and the app applies them after it.
+    unit: "matches",
+    label: "despawn 1,000 entities through a CommandBuffer",
+    run: () => {
+      const world = new World();
+      populate(world);
+      const commands = new CommandBuffer(world);
+      const made: Entity[] = [];
+      let applied = 0;
+      const ms = measure(
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            commands.despawn(made[i]!);
+          }
+          applied += commands.apply();
+          made.length = 0;
+        },
+        2000,
+        500,
+        () => {
+          for (let i = 0; i < 1000; i++) {
+            made.push(
+              world.spawn(
+                Position.of({ x: i, y: i }),
+                Velocity.of({ x: 1, y: 2 })
+              )
+            );
+          }
+        }
+      );
+      if (applied !== 2500 * 1000 || world.entityCount !== N) {
+        throw new Error(
+          `${applied} despawns applied, which left ${world.entityCount} entities.`
+        );
+      }
+      return ms;
     },
   },
   pointingAt: {
