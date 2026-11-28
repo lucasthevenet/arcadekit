@@ -23,7 +23,9 @@ const Score = Singleton.define(
   { points: 0 }
 );
 const Scored = Event.define("ts/Scored");
-const Add = Action.define("ts/Add", Schema.Struct({ points: Schema.Int }));
+const Add = Action.define("ts/Add", {
+  payload: Schema.Struct({ points: Schema.Int }),
+});
 const add = Action.handler(Add, function* ({ points }) {
   (yield* Singleton.Write(Score)).points += points;
   (yield* Event.Emitter(Scored)).emit(undefined);

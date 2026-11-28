@@ -1447,7 +1447,21 @@ const noEmptyPayload: Rule = {
     CallExpression: (node) => {
       const name = dottedName(node.callee);
       const none = name === undefined ? undefined : withNone.get(name);
-      const [, payload, options] = node.arguments;
+      const [, second] = node.arguments;
+      const options =
+        name === "Action.define" && second?.type === "ObjectExpression"
+          ? second
+          : undefined;
+      const payload =
+        name === "Action.define"
+          ? options?.properties
+              .filter((property) => property.type === "Property")
+              .find(
+                (property) =>
+                  property.key.type === "Identifier" &&
+                  property.key.name === "payload"
+              )?.value
+          : second;
       if (
         none === undefined ||
         payload?.type !== "CallExpression" ||
@@ -1461,9 +1475,9 @@ const noEmptyPayload: Rule = {
       context.report({
         node: payload,
         message: `Schema.Struct({}) is a payload with nothing in it, which every call must still give as {}. ${
-          options === undefined
+          options === undefined || options.properties.length === 1
             ? `Give no schema: ${none}.`
-            : `An action with an error and no payload takes Schema.Void: Action.define("duel/Pass", Schema.Void, { error }), dispatched as app.dispatch(Pass).`
+            : `Leave out the payload: Action.define("duel/Pass", { error }), dispatched as app.dispatch(Pass).`
         }`,
       });
     },

@@ -75,11 +75,10 @@ const Populated = Plugin.make("bench/Populated", {
 
 class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 
-const Nudge = Action.define(
-  "bench/Nudge",
-  Schema.Struct({ target: EntityId, refuse: Schema.Boolean }),
-  { error: Refused }
-);
+const Nudge = Action.define("bench/Nudge", {
+  payload: Schema.Struct({ target: EntityId, refuse: Schema.Boolean }),
+  error: Refused,
+});
 const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   const world = yield* WorldService.writes(Position);
   const position = world.get(target, Position);
@@ -92,11 +91,10 @@ const nudge = Action.handler(Nudge, function* ({ refuse, target }) {
   }
 });
 
-const Sweep = Action.define(
-  "bench/Sweep",
-  Schema.Struct({ refuse: Schema.Boolean }),
-  { error: Refused }
-);
+const Sweep = Action.define("bench/Sweep", {
+  payload: Schema.Struct({ refuse: Schema.Boolean }),
+  error: Refused,
+});
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
   (yield* Query.View(Moving)).each((pos, vel) => {
     pos.x += vel.x * DT;

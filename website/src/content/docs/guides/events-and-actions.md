@@ -59,11 +59,10 @@ class NoSuchFighter extends Schema.TaggedError<NoSuchFighter>()(
   {}
 ) {}
 
-const Strike = Action.define(
-  "duel/Strike",
-  Schema.Struct({ attacker: EntityId, target: EntityId }),
-  { error: NoSuchFighter }
-);
+const Strike = Action.define("duel/Strike", {
+  payload: Schema.Struct({ attacker: EntityId, target: EntityId }),
+  error: NoSuchFighter,
+});
 
 const strike = Action.handler(Strike, function* ({ attacker, target }) {
   const world = yield* World;
@@ -94,7 +93,7 @@ Before the handler runs, the app validates the payload against the schema, inclu
 
 The handler checks the game's rules and refuses with a typed error, a tagged class made with `Schema.TaggedError`. Fail with it and return, as in `return yield* NoSuchFighter.make({})`. Without the `return`, TypeScript doesn't know that the code below is unreachable. The caller handles the refusal by its tag, and the `Exit`'s type lists the possible errors. Give each error its own tag, because two classes with the same tag are caught as one, with no warning.
 
-The action declares the schema of its error in `Action.define`, as `{ error: NoSuchFighter }`, or `{ error: Schema.Union([NoSuchFighter, NotYourTurn]) }` for several. An action without one can't be refused. A handler that fails with an error outside the schema doesn't compile, and the compiler names the error. The schema gives a refusal its JSON form, so every peer and a save hold the same refusal. Each error has a `_tag`, as a `Schema.TaggedError` or a `Schema.TaggedStruct` has, and a schema without one doesn't compile. An action with no payload and an error takes `Schema.Void` as its payload.
+The action declares the schema of its error beside its payload in `Action.define`, as `{ payload, error: NoSuchFighter }`, or `{ error: Schema.Union([NoSuchFighter, NotYourTurn]) }` for several. An action without an `error` can't be refused. A handler that fails with an error outside the schema doesn't compile, and the compiler names the error. The schema gives a refusal its JSON form, so every peer and a save hold the same refusal. Each error has a `_tag`, as a `Schema.TaggedError` or a `Schema.TaggedStruct` has, and a schema without one doesn't compile.
 
 A refusal changes nothing, even after the handler has written to the world, so a handler can check as it goes. A refusal rolls back:
 

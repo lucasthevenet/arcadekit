@@ -692,10 +692,9 @@ describe("a level's models", () => {
     requires: [Transform3d.Position],
   });
   const Level = State.define("gl/Level", ["dock", "space"]);
-  const Go = Action.define(
-    "gl/Go",
-    Schema.Struct({ to: Schema.Literals(["dock", "space"]) })
-  );
+  const Go = Action.define("gl/Go", {
+    payload: Schema.Struct({ to: Schema.Literals(["dock", "space"]) }),
+  });
   const go = Action.handler(Go, function* ({ to }) {
     (yield* State.Setter(Level)).set(to);
   });

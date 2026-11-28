@@ -20,10 +20,9 @@ export const Floor = Singleton.define(
   { tiles: Grid.fill(80, 50, WALL) }
 );
 
-const Dig = Action.define(
-  "rogue/Dig",
-  Schema.Struct({ x: Schema.Int, y: Schema.Int })
-);
+const Dig = Action.define("rogue/Dig", {
+  payload: Schema.Struct({ x: Schema.Int, y: Schema.Int }),
+});
 
 export const dig = Action.handler(Dig, function* ({ x, y }) {
   const floor = yield* Singleton.Write(Floor);
@@ -69,11 +68,10 @@ const Players = Query.all(Pos).pipe(Query.with(Player), Query.writes(Pos));
 
 class Blocked extends Schema.TaggedError<Blocked>()("RogueBlocked", {}) {}
 
-const Step = Action.define(
-  "rogue/Step",
-  Schema.Struct({ dx: Schema.Int, dy: Schema.Int }),
-  { error: Blocked }
-);
+const Step = Action.define("rogue/Step", {
+  payload: Schema.Struct({ dx: Schema.Int, dy: Schema.Int }),
+  error: Blocked,
+});
 
 export const step = Action.handler(Step, function* ({ dx, dy }) {
   const { tiles } = yield* Singleton.Read(Floor);

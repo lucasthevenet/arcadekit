@@ -44,12 +44,15 @@ const childrenOf = (
 const Count = Component.define("tr/Count", { n: Field.i32 });
 const Counted = Query.all(Count).pipe(Query.writes(Count));
 const Phase = State.define("tr/Phase", ["title", "playing"]);
-const Add = Action.define("tr/Add", Schema.Struct({ by: Schema.Int }));
+const Add = Action.define("tr/Add", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
 class NotNow extends Schema.TaggedError<NotNow>()("tr/NotNow", {}) {}
-const Refused = Action.define("tr/Refused", Schema.Struct({}), {
+const Refused = Action.define("tr/Refused", {
+  payload: Schema.Struct({}),
   error: NotNow,
 });
-const Begin = Action.define("tr/Begin", Schema.Struct({}));
+const Begin = Action.define("tr/Begin", { payload: Schema.Struct({}) });
 
 const Grow = System.tick("tr/Grow", function* () {
   (yield* Query.View(Counted)).each((count) => {

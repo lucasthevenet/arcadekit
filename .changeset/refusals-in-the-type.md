@@ -2,11 +2,11 @@
 "arcadekit": minor
 ---
 
-An action declares the schema of its error in `Action.define(name, payload, { error })`, as `Rpc.make` does, and `Action.rejected(action)` reads the refusals of one action with its payload and error typed, the same on every peer and across a save.
+An action declares the schema of its error in `Action.define(name, { payload, error })`, as `Rpc.make` does, and `Action.rejected(action)` reads the refusals of one action with its payload and error typed, the same on every peer and across a save.
 
 **Breaking**
 
-- A handler fails only with the error its action declares. Without `error`, the error is `Schema.Never` and the handler can't refuse the action. A handler that failed with a `Data.TaggedError`, a string or any other undeclared error no longer compiles: make the error a `Schema.TaggedError` and declare it, `{ error: NotYourTurn }`, or `{ error: Schema.Union([NotYourTurn, TooTired]) }` for several. The schema's values and encoded form have a `_tag`. An action with no payload and an error takes `Schema.Void` as its payload.
+- A handler fails only with the error its action declares. Without `error`, the error is `Schema.Never` and the handler can't refuse the action. A handler that failed with a `Data.TaggedError`, a string or any other undeclared error no longer compiles: make the error a `Schema.TaggedError` and declare it, `{ error: NotYourTurn }`, or `{ error: Schema.Union([NotYourTurn, TooTired]) }` for several. The schema's values and encoded form have a `_tag`.
 - `Action.Rejected`'s `error` is the refusal in its JSON form, `{ _tag, ...its fields }`, where it was `{ _tag, message }`. It has a `message` only when the error's schema declares one.
 - A queued action whose handler dies, is interrupted, or fails with an error its action doesn't declare no longer becomes an `Action.Rejected`: what it did is undone, and the tick fails, so `app.tick` throws, as it does for a system that fails.
 - `Action.InvalidPayload` and `Action.UnknownAction` are `Schema.TaggedError` classes, with the same fields.

@@ -12,7 +12,9 @@ import { Action, App, Plugin } from "arcadekit";
 import { Message, Session } from "arcadekit/net";
 import { Effect, Schema } from "effect";
 
-const Move = Action.define("game/Move", Schema.Struct({ dx: Schema.Int }));
+const Move = Action.define("game/Move", {
+  payload: Schema.Struct({ dx: Schema.Int }),
+});
 const move = Action.handler(Move, function* ({ dx }, { from }) {
   // `from` is the peer that issued it: "ada" or "grace"
 });

@@ -348,11 +348,10 @@ describe("a query, which writes only what it names", () => {
 // --- in an app --------------------------------------------------------------------
 
 class TooFast extends Schema.TaggedError<TooFast>()("TooFast", {}) {}
-const Survey = Action.define(
-  "rd/Survey",
-  Schema.Struct({ limit: Schema.Int }),
-  { error: TooFast }
-);
+const Survey = Action.define("rd/Survey", {
+  payload: Schema.Struct({ limit: Schema.Int }),
+  error: TooFast,
+});
 /** Looks at every body, changes one field of each, and may then refuse. */
 const survey = Action.handler(Survey, function* ({ limit }) {
   let fastest = 0;
@@ -468,7 +467,7 @@ describe("a raw column a loop is handed read-only, in an app made with verifyFra
       }
     });
   });
-  const Halt = Action.define("rd/Halt", Schema.Struct({}));
+  const Halt = Action.define("rd/Halt", { payload: Schema.Struct({}) });
   const halt = Action.handler(Halt, function* () {
     (yield* Query.View(Moving)).eachChunk((start, end, _, vel) => {
       for (let i = start; i < end; i++) {
@@ -559,7 +558,7 @@ describe("an id Commands.spawn returns", () => {
     onTargetDespawn: "remove",
   });
   const Fired = Event.define("rd/Fired", Schema.Struct({ shot: EntityId }));
-  const Fire = Action.define("rd/Fire", Schema.Struct({}));
+  const Fire = Action.define("rd/Fire", { payload: Schema.Struct({}) });
 
   it.effect("is not read before its entity is placed, and is once it is", () =>
     Effect.gen(function* () {

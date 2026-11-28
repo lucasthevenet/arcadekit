@@ -121,10 +121,9 @@ const makeGame = () => {
   const Cave = Assets.bundle("as/Cave", {
     backdrop: tracked("/cave.png", log),
   });
-  const Go = Action.define(
-    "as/Go",
-    Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) })
-  );
+  const Go = Action.define("as/Go", {
+    payload: Schema.Struct({ to: Schema.Literals(["menu", "forest", "cave"]) }),
+  });
   const go = Action.handler(Go, function* ({ to }) {
     (yield* State.Setter(Level)).set(to);
   });
@@ -480,10 +479,9 @@ describe("a level's assets", () => {
         const Keep = Assets.during(Forest).pipe(
           System.runIf(State.is(Level, "forest"))
         );
-        const Visit = Action.define(
-          "as/Visit",
-          Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
-        );
+        const Visit = Action.define("as/Visit", {
+          payload: Schema.Struct({ to: Schema.Literals(["menu", "forest"]) }),
+        });
         const visit = Action.handler(Visit, function* ({ to }) {
           (yield* State.Setter(Level)).set(to);
         });
@@ -841,8 +839,8 @@ describe("a level's assets", () => {
         const Forest = Assets.bundle("as/ForestLayout", {
           layout: Assets.json("/forest.json", Layout),
         });
-        const Enter = Action.define("as/Enter", Schema.Struct({}));
-        const Build = Action.define("as/Build", Layout);
+        const Enter = Action.define("as/Enter", { payload: Schema.Struct({}) });
+        const Build = Action.define("as/Build", { payload: Layout });
         const handlers = [
           Action.handler(Enter, function* () {
             (yield* State.Setter(Level)).set("forest");
@@ -1076,7 +1074,9 @@ describe("a level's assets", () => {
           `${(yield* Assets.Status(Forest))._tag} ${(yield* Assets.Status(Raw))._tag}`
         );
       });
-      const Enter = Action.define("as/EnterShared", Schema.Struct({}));
+      const Enter = Action.define("as/EnterShared", {
+        payload: Schema.Struct({}),
+      });
       const counting: Assets.LoaderShape = {
         bytes: (url) =>
           Effect.suspend(() => {
@@ -1290,10 +1290,12 @@ describe("levels as data", () => {
     Singleton.Read(Progress),
     (progress) => progress.level
   );
-  const Build = Action.define(
-    "lv/Build",
-    Schema.Struct({ level: Schema.Int, walls: Schema.Array(Schema.Int) })
-  );
+  const Build = Action.define("lv/Build", {
+    payload: Schema.Struct({
+      level: Schema.Int,
+      walls: Schema.Array(Schema.Int),
+    }),
+  });
   // A level replaces the one before: its walls go, and the new ones come.
   const build = Action.handler(Build, function* ({ walls }) {
     const commands = yield* Commands.spawns(Wall);
@@ -1305,7 +1307,9 @@ describe("levels as data", () => {
     }
     (yield* Singleton.Write(Progress)).builds += 1;
   });
-  const Go = Action.define("lv/Go", Schema.Struct({ level: Schema.Int }));
+  const Go = Action.define("lv/Go", {
+    payload: Schema.Struct({ level: Schema.Int }),
+  });
   const LevelReady = Assets.onReady(Levels, level, build, ({ layout }, at) => ({
     level: at,
     walls: layout.walls,

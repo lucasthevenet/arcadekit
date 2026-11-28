@@ -27,11 +27,10 @@ export const Settings = Singleton.define(
   { music: Field.f32, effects: Field.u8 },
   { music: 1, effects: 1 }
 );
-export const Choose = Action.define(
-  "vm/Choose",
-  Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean })
-);
-export const Catch = Action.define("vm/Catch", Schema.Struct({}));
+export const Choose = Action.define("vm/Choose", {
+  payload: Schema.Struct({ music: Schema.Finite, effects: Schema.Boolean }),
+});
+export const Catch = Action.define("vm/Catch", { payload: Schema.Struct({}) });
 const Caught = Event.define("vm/Caught");
 
 const Rules = Plugin.make("vm/Rules", {

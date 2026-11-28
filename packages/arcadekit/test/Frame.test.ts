@@ -296,7 +296,7 @@ describe("the frame stage", () => {
           }
           return System.tick(name, body);
         };
-        const Pause = Action.define("fr/Pause", Schema.Struct({}));
+        const Pause = Action.define("fr/Pause", { payload: Schema.Struct({}) });
         const pause = Action.handler(Pause, function* () {
           (yield* State.Setter(Phase)).set("paused");
         });
@@ -622,10 +622,9 @@ describe("the frame stage", () => {
     "issues an action as input from outside: logged, applied next tick, replayed without it",
     () =>
       Effect.gen(function* () {
-        const Kick = Action.define(
-          "fr/Kick",
-          Schema.Struct({ by: Schema.Int })
-        );
+        const Kick = Action.define("fr/Kick", {
+          payload: Schema.Struct({ by: Schema.Int }),
+        });
         const kick = Action.handler(Kick, function* ({ by }) {
           (yield* Query.View(Balls)).each((ball) => {
             ball.vx += by;
@@ -1276,7 +1275,7 @@ describe("what a frame or input system keeps", () => {
         void (yield* System.Kept(Orbit)).angle;
       }
     );
-    const Turn = Action.define("fr/Turn", Schema.Struct({}));
+    const Turn = Action.define("fr/Turn", { payload: Schema.Struct({}) });
     Action.handler(
       Turn,
       // @ts-expect-error a handler keeps what it keeps in the world

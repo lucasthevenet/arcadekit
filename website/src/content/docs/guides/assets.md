@@ -107,7 +107,7 @@ const level = Effect.map(
   (progress) => progress.level
 );
 
-const Build = Action.define("game/Build", Layout);
+const Build = Action.define("game/Build", { payload: Layout });
 const Next = Action.define("game/Next");
 
 // A level replaces the one before it.

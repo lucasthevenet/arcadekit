@@ -523,16 +523,17 @@ const Step = Schema.Literals([
   "ring",
   "bug",
 ]);
-const Act = Action.define(
-  "tx/Act",
-  Schema.Struct({
+const Act = Action.define("tx/Act", {
+  payload: Schema.Struct({
     target: EntityId,
     steps: Schema.Array(Step),
     refuse: Schema.Boolean,
   }),
-  { error: Refused }
-);
-const Echo = Action.define("tx/Echo", Schema.Struct({ by: Schema.Int }));
+  error: Refused,
+});
+const Echo = Action.define("tx/Echo", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
 
 /** Does whatever it is told, in order, and only then decides to refuse. */
 const act = Action.handler(Act, function* ({ refuse, steps, target }) {
@@ -1091,10 +1092,9 @@ describe("an action that is refused", () => {
 describe("an action that is accepted", () => {
   it.effect("keeps what it wrote, and reads its own writes while it runs", () =>
     Effect.gen(function* () {
-      const Twice = Action.define(
-        "tx/Twice",
-        Schema.Struct({ target: EntityId })
-      );
+      const Twice = Action.define("tx/Twice", {
+        payload: Schema.Struct({ target: EntityId }),
+      });
       const twice = Action.handler(Twice, function* ({ target }) {
         const world = yield* World.writes(Body);
         world.set(target, Body, { x: 10 });
@@ -1130,10 +1130,9 @@ describe("an action that is accepted", () => {
     "changes which entities exist through Commands alone: its world has no despawn",
     () =>
       Effect.gen(function* () {
-        const Direct = Action.define(
-          "tx/Direct",
-          Schema.Struct({ target: EntityId })
-        );
+        const Direct = Action.define("tx/Direct", {
+          payload: Schema.Struct({ target: EntityId }),
+        });
         const direct = Action.handler(Direct, function* ({ target }) {
           const world = yield* World.writes(Body);
           world.set(target, Body, { x: 42 });
@@ -1162,7 +1161,7 @@ describe("an action that is accepted", () => {
     "cannot dispatch another action from its handler, and is told what to do instead",
     () =>
       Effect.gen(function* () {
-        const Outer = Action.define("tx/Outer", Schema.Struct({}));
+        const Outer = Action.define("tx/Outer", { payload: Schema.Struct({}) });
         let app: App.App | undefined;
         const outer = Action.handler(Outer, function* () {
           (yield* Query.View(Bodies)).each((body) => {

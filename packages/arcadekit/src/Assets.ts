@@ -799,13 +799,12 @@ const handover = <P, A, E, R>(
   name: string,
   rules: Action.Handler<string, P, A, E, R>
 ) => {
-  const action = Action.define(
-    `arcadekit/Assets.onReady(${name})`,
-    Schema.Struct({
+  const action = Action.define(`arcadekit/Assets.onReady(${name})`, {
+    payload: Schema.Struct({
       key: Schema.NullOr(Schema.Union([Schema.Number, Schema.String])),
       payload: rules.action.codec,
-    })
-  );
+    }),
+  });
   const handler: Action.Handler<
     `arcadekit/Assets.onReady(${string})`,
     Handover<P>,
@@ -893,7 +892,7 @@ const handing = <P, A, E, R, K extends Key | null = Key | null>(
  * assets, and `rules`, a handler of the game's, applies it. The moment a
  * level's file is loaded becomes one action of the log.
  *
- *   const Build = Action.define("game/Build", Layout)
+ *   const Build = Action.define("game/Build", { payload: Layout })
  *   const build = Action.handler(Build, function* (layout) { ... })
  *
  *   const LevelReady = Assets.onReady(Levels, level, build, ({ layout }) => layout)

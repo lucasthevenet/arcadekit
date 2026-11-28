@@ -43,10 +43,13 @@ const Phase = State.define("in/Phase", ["title", "playing"]);
 
 const Hit = Event.define("in/Hit", Schema.Struct({ by: Schema.Int }));
 const Spawned = Event.define("in/Spawned", Schema.Struct({}));
-const Strike = Action.define("in/Strike", Schema.Struct({ by: Schema.Int }));
-const Begin = Action.define("in/Begin", Schema.Struct({}));
+const Strike = Action.define("in/Strike", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
+const Begin = Action.define("in/Begin", { payload: Schema.Struct({}) });
 class NotNow extends Schema.TaggedError<NotNow>()("in/NotNow", {}) {}
-const Refuse = Action.define("in/Refuse", Schema.Struct({}), {
+const Refuse = Action.define("in/Refuse", {
+  payload: Schema.Struct({}),
   error: NotNow,
 });
 

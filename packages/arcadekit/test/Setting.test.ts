@@ -140,7 +140,7 @@ describe("a setting", () => {
           { points: Field.i32 },
           { points: 0 }
         );
-        const Add = Action.define("st/Add", Schema.Struct({}));
+        const Add = Action.define("st/Add", { payload: Schema.Struct({}) });
         const heard: number[] = [];
         const Game = App.define({
           systems: [
@@ -196,7 +196,7 @@ describe("a setting", () => {
         yield* Setting.get(Volume);
       }
     );
-    const Add = Action.define("st/Pick", Schema.Struct({}));
+    const Add = Action.define("st/Pick", { payload: Schema.Struct({}) });
     const picked = Action.handler(
       Add,
       // @ts-expect-error nor in a handler, which runs in the tick

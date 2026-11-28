@@ -16,7 +16,9 @@ const Score = Singleton.define(
   { points: Field.i32 },
   { points: 0 }
 );
-const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
+const Add = Action.define("game/Add", {
+  payload: Schema.Struct({ points: Schema.Int }),
+});
 const add = Action.handler(Add, function* ({ points }) {
   (yield* Singleton.Write(Score)).points += points;
 });

@@ -96,7 +96,8 @@ class NothingToHeal extends Schema.TaggedError<NothingToHeal>()(
   {}
 ) {}
 
-const Heal = Action.define("Heal", Schema.Struct({ amount: Schema.Number }), {
+const Heal = Action.define("Heal", {
+  payload: Schema.Struct({ amount: Schema.Number }),
   error: NothingToHeal,
 });
 
@@ -136,7 +137,9 @@ const Combat = Plugin.make("Combat", {
 });
 
 /** Gives everything that has a position some health. */
-const Wound = Action.define("pl/Wound", Schema.Struct({ hp: Schema.Int }));
+const Wound = Action.define("pl/Wound", {
+  payload: Schema.Struct({ hp: Schema.Int }),
+});
 const wound = Action.handler(Wound, function* ({ hp }) {
   const commands = yield* Commands.spawns(Health);
   for (const entity of (yield* Query.View(Query.all(Position))).entities()) {
@@ -218,7 +221,7 @@ describe("plugins", () => {
     "can be combined with systems and handlers the app defines itself",
     () =>
       Effect.gen(function* () {
-        const Ping = Action.define("Ping", Schema.Struct({}));
+        const Ping = Action.define("Ping", { payload: Schema.Struct({}) });
         const ping = Action.handler(Ping, function* () {
           return "pong";
         });
@@ -547,7 +550,7 @@ describe("plugins", () => {
             (yield* Audio).play("boing");
           }
         );
-        const Ping = Action.define("pl/Ping", Schema.Struct({}));
+        const Ping = Action.define("pl/Ping", { payload: Schema.Struct({}) });
         Action.handler(
           Ping,
           // @ts-expect-error a handler runs as the tick does

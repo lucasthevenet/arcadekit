@@ -41,14 +41,13 @@ const drawing = (name: string, into: string[]) =>
   });
 
 class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
-const Go = Action.define(
-  "st/Go",
-  Schema.Struct({
+const Go = Action.define("st/Go", {
+  payload: Schema.Struct({
     to: Schema.Literals(["menu", "playing", "paused"]),
     refuse: Schema.Boolean,
   }),
-  { error: Refused }
-);
+  error: Refused,
+});
 const go = Action.handler(Go, function* ({ refuse, to }) {
   const phase = yield* State.Setter(Phase);
   const from = phase.value;
@@ -220,7 +219,7 @@ describe("a run condition", () => {
           { on: Field.u8 },
           { on: 1 }
         );
-        const Flip = Action.define("st/Flip", Schema.Struct({}));
+        const Flip = Action.define("st/Flip", { payload: Schema.Struct({}) });
         const flip = Action.handler(Flip, function* () {
           const held = yield* Singleton.Write(Switch);
           held.on = held.on === 1 ? 0 : 1;
@@ -908,7 +907,7 @@ describe("hooks", () => {
 
 describe("a state in a save", () => {
   const Level = State.define("st/Level", ["one", "two", "three"]);
-  const Next = Action.define("st/Next", Schema.Struct({}));
+  const Next = Action.define("st/Next", { payload: Schema.Struct({}) });
   const next = Action.handler(Next, function* () {
     const level = yield* State.Setter(Level);
     level.set(level.value === "one" ? "two" : "three");
@@ -1007,7 +1006,7 @@ describe("a state in a save", () => {
       Effect.gen(function* () {
         const Before = State.define("st/Door", ["open", "shut", "ajar"]);
         const After = State.define("st/Door", ["open", "shut"]);
-        const Prop = Action.define("st/Prop", Schema.Struct({}));
+        const Prop = Action.define("st/Prop", { payload: Schema.Struct({}) });
         const prop = Action.handler(Prop, function* () {
           (yield* State.Setter(Before)).set("ajar");
         });
@@ -1055,7 +1054,7 @@ describe("a state in a save", () => {
 });
 
 describe("an entity scoped to a state", () => {
-  const Dry = Action.define("st/Dry", Schema.Struct({}));
+  const Dry = Action.define("st/Dry", { payload: Schema.Struct({}) });
   const dry = Action.handler(Dry, function* () {
     (yield* State.Setter(Weather)).set("dry");
   });
@@ -1336,7 +1335,7 @@ describe("an entity scoped to a state", () => {
       Effect.gen(function* () {
         const Before = State.define("st/Lever", ["up", "down", "gone"]);
         const gone = State.scoped(Before, "gone");
-        const Pull = Action.define("st/Pull", Schema.Struct({}));
+        const Pull = Action.define("st/Pull", { payload: Schema.Struct({}) });
         const pull = Action.handler(Pull, function* () {
           (yield* Commands.spawns(gone)).spawn(gone);
         });

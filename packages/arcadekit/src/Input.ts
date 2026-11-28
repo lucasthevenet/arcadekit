@@ -1149,7 +1149,9 @@ const ReportSchema = Schema.Struct({
  *
  * @category Actions
  */
-export const Report = Action.define("arcadekit/Input.Report", ReportSchema);
+export const Report = Action.define("arcadekit/Input.Report", {
+  payload: ReportSchema,
+});
 
 const report = Action.handler(Report, function* (payload) {
   const held = yield* Singleton.Write(Held);

@@ -574,12 +574,12 @@ class NotYourTurn extends Schema.TaggedError<NotYourTurn>()("NotYourTurn", {
   waitingFor: Schema.Number,
 }) {}
 class Caught extends Schema.TaggedError<Caught>()("Caught", {}) {}
-const EndTurn = Action.define(
-  "sg/EndTurn",
-  Schema.Struct({ player: Schema.Int }),
-  { error: NotYourTurn }
-);
-const Cheat = Action.define("sg/Cheat", Schema.Struct({}), {
+const EndTurn = Action.define("sg/EndTurn", {
+  payload: Schema.Struct({ player: Schema.Int }),
+  error: NotYourTurn,
+});
+const Cheat = Action.define("sg/Cheat", {
+  payload: Schema.Struct({}),
   error: Caught,
 });
 
@@ -759,11 +759,10 @@ describe("a cache rebuilt from the world, kept in a transient field of a singlet
     }
   });
   class Refused extends Schema.TaggedError<Refused>()("sg/Refused", {}) {}
-  const Clear = Action.define(
-    "sg/Clear",
-    Schema.Struct({ refuse: Schema.Boolean }),
-    { error: Refused }
-  );
+  const Clear = Action.define("sg/Clear", {
+    payload: Schema.Struct({ refuse: Schema.Boolean }),
+    error: Refused,
+  });
   const clear = Action.handler(Clear, function* ({ refuse }) {
     (yield* Singleton.Write(Index)).byX = {};
     if (refuse) {

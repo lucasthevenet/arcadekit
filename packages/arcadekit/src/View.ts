@@ -166,8 +166,7 @@ export interface Bridge<
    * Requests one of the bridge's actions from the game, with its payload. It is
    * issued before the game's next tick, logged, and applied or refused by its
    * handler, just as one an input system issues for a key would be. An action
-   * with no payload, defined with its name alone or with `Schema.Void`, is
-   * sent with none: `ui.send(Start)`.
+   * with no payload is sent with none: `ui.send(Start)`.
    */
   readonly send: <D extends Action.Any>(
     // Not `D extends Sends`, under which an action of no handler that takes

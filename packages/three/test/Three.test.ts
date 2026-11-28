@@ -116,30 +116,25 @@ const inputOf = ({ component, value }: typeof Part.Type): ComponentInput => {
   return value === undefined ? def : def.of(value);
 };
 
-const Spawn = Action.define(
-  "th/Spawn",
-  Schema.Struct({ parts: Schema.Array(Part) })
-);
-const Add = Action.define(
-  "th/Add",
-  Schema.Struct({ entity: EntityId, part: Part })
-);
-const Remove = Action.define(
-  "th/Remove",
-  Schema.Struct({ entity: EntityId, component: Schema.String })
-);
-const Change = Action.define(
-  "th/Change",
-  Schema.Struct({
+const Spawn = Action.define("th/Spawn", {
+  payload: Schema.Struct({ parts: Schema.Array(Part) }),
+});
+const Add = Action.define("th/Add", {
+  payload: Schema.Struct({ entity: EntityId, part: Part }),
+});
+const Remove = Action.define("th/Remove", {
+  payload: Schema.Struct({ entity: EntityId, component: Schema.String }),
+});
+const Change = Action.define("th/Change", {
+  payload: Schema.Struct({
     entity: EntityId,
     component: Schema.String,
     value: Schema.Record(Schema.String, Schema.Number),
-  })
-);
-const Despawn = Action.define(
-  "th/Despawn",
-  Schema.Struct({ entity: EntityId })
-);
+  }),
+});
+const Despawn = Action.define("th/Despawn", {
+  payload: Schema.Struct({ entity: EntityId }),
+});
 
 /** The actions a test changes its game with between frames. */
 const Hand = Plugin.make("th/Hand", {
@@ -2510,7 +2505,7 @@ describe("an entity drawn between two ticks", () => {
     () =>
       Effect.gen(function* () {
         // A piece that goes ten along x when it is told to, and not otherwise.
-        const Go = Action.define("th/Go", Schema.Struct({}));
+        const Go = Action.define("th/Go", { payload: Schema.Struct({}) });
         const renderer = makeRenderer();
         const made = yield* start(
           App.make(

@@ -39,8 +39,11 @@ const Lying = Query.all(Coin);
 class NoSuchCoin extends Schema.TaggedError<NoSuchCoin>()("NoSuchCoin", {
   coin: EntityId,
 }) {}
-const Drop = Action.define("rp/Drop", Schema.Struct({ value: Schema.Int }));
-const Take = Action.define("rp/Take", Schema.Struct({ coin: EntityId }), {
+const Drop = Action.define("rp/Drop", {
+  payload: Schema.Struct({ value: Schema.Int }),
+});
+const Take = Action.define("rp/Take", {
+  payload: Schema.Struct({ coin: EntityId }),
   error: NoSuchCoin,
 });
 
@@ -948,11 +951,16 @@ const tallyOf = Effect.fnUntraced(function* (app: Pick<App.Any, "read">) {
 });
 
 class TooBig extends Schema.TaggedError<TooBig>()("TooBig", {}) {}
-const Double = Action.define("rp/Double", Schema.Struct({}), {
+const Double = Action.define("rp/Double", {
+  payload: Schema.Struct({}),
   error: TooBig,
 });
-const Add = Action.define("rp/Add", Schema.Struct({ by: Schema.Int }));
-const Chain = Action.define("rp/Chain", Schema.Struct({ by: Schema.Int }));
+const Add = Action.define("rp/Add", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
+const Chain = Action.define("rp/Chain", {
+  payload: Schema.Struct({ by: Schema.Int }),
+});
 
 // Doubling and adding do not commute, so the tally gives away any change in
 // the order actions were applied in.
@@ -1133,7 +1141,9 @@ describe("app.enqueue from inside the simulation", () => {
    * game code that keeps the app in a variable does. `Relay` adds through the
    * app when it is applied.
    */
-  const Relay = Action.define("rp/Relay", Schema.Struct({ by: Schema.Int }));
+  const Relay = Action.define("rp/Relay", {
+    payload: Schema.Struct({ by: Schema.Int }),
+  });
   const holding = Effect.gen(function* () {
     let enqueue: ((by: number) => Effect.Effect<void>) | undefined;
     const relay = Action.handler(Relay, function* ({ by }) {
@@ -1861,7 +1871,9 @@ const Runner = Component.define("rp/Runner", {
 });
 const Running = Query.all(Runner).pipe(Query.writes(Runner));
 const Runners = Query.all(Runner);
-const Sprint = Action.define("rp/Sprint", Schema.Struct({ by: Schema.Number }));
+const Sprint = Action.define("rp/Sprint", {
+  payload: Schema.Struct({ by: Schema.Number }),
+});
 const Sprinted = Event.define(
   "rp/Sprinted",
   Schema.Struct({ by: Schema.Number })

@@ -44,10 +44,9 @@ const Card = Component.define("game/Card", {
   right: Field.f32,
 });
 const Cards = Query.all(Card);
-const PlayCard = Action.define(
-  "game/PlayCard",
-  Schema.Struct({ card: EntityId })
-);
+const PlayCard = Action.define("game/PlayCard", {
+  payload: Schema.Struct({ card: EntityId }),
+});
 const Pick = Input.button("game/Pick", [Input.pointerButton()]);
 
 const Picking = System.input("game/Picking", function* () {

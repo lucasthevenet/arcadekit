@@ -35,10 +35,9 @@ export const Aimed = Singleton.define(
   { angle: Field.f32 },
   { angle: 0 }
 );
-export const Aim = Action.define(
-  "game/Aim",
-  Schema.Struct({ x: Schema.Finite, y: Schema.Finite })
-);
+export const Aim = Action.define("game/Aim", {
+  payload: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
+});
 const Players = Query.all(Transform2d.Position).pipe(Query.with(Player));
 
 export const Rules = Plugin.make("game/Rules", {

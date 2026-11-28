@@ -76,7 +76,9 @@ const Position = Component.define("game/Position", {
 });
 const Placed = Query.all(Position);
 
-const Throw = Action.define("game/Throw", Schema.Struct({ x: Schema.Number }));
+const Throw = Action.define("game/Throw", {
+  payload: Schema.Struct({ x: Schema.Number }),
+});
 const toss = Action.handler(Throw, function* ({ x }) {
   return (yield* Commands.spawns(Position)).spawn(Position.of({ x, y: 2 }));
 });

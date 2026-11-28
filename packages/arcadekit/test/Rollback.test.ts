@@ -329,7 +329,7 @@ describe("a rollback session", () => {
           "rb/Rang",
           Schema.Struct({ by: Schema.String })
         );
-        const Ring = Action.define("rb/Ring", Schema.Struct({}));
+        const Ring = Action.define("rb/Ring", { payload: Schema.Struct({}) });
         const ring = Action.handler(Ring, function* (_, { from }) {
           (yield* Event.Emitter(Rang)).emit({ by: from ?? "" });
         });
@@ -663,7 +663,7 @@ describe("a rollback session", () => {
           { on: Field.i32 },
           { on: 0 }
         );
-        const Halt = Action.define("rb/Halt", Schema.Struct({}));
+        const Halt = Action.define("rb/Halt", { payload: Schema.Struct({}) });
         const halt = Action.handler(Halt, function* () {
           (yield* Singleton.Write(Halted)).on = 1;
         });

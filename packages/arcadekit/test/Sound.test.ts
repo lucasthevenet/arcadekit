@@ -44,16 +44,16 @@ const Bounced = Event.define(
 );
 const Dropped = Event.define("sd/Dropped", Schema.Struct({}));
 class TooHigh extends Schema.TaggedError<TooHigh>()("TooHigh", {}) {}
-const Drop = Action.define(
-  "sd/Drop",
-  Schema.Struct({ height: Schema.Finite }),
-  { error: TooHigh }
-);
-const Mute = Action.define("sd/Mute", Schema.Struct({ on: Schema.Boolean }));
-const Throw = Action.define(
-  "sd/Throw",
-  Schema.Struct({ speed: Schema.Finite })
-);
+const Drop = Action.define("sd/Drop", {
+  payload: Schema.Struct({ height: Schema.Finite }),
+  error: TooHigh,
+});
+const Mute = Action.define("sd/Mute", {
+  payload: Schema.Struct({ on: Schema.Boolean }),
+});
+const Throw = Action.define("sd/Throw", {
+  payload: Schema.Struct({ speed: Schema.Finite }),
+});
 
 const Fall = System.tick("sd/Fall", function* () {
   const { delta } = yield* Time;
@@ -378,7 +378,7 @@ describe("Sound.Player", () => {
         (yield* Sound.Player).play(Sfx.bang);
       }
     );
-    const Bang = Action.define("sd/Bang", Schema.Struct({}));
+    const Bang = Action.define("sd/Bang", { payload: Schema.Struct({}) });
     Action.handler(
       Bang,
       // @ts-expect-error sound is the frame's

@@ -32,7 +32,8 @@ const Purse = Singleton.define(
 class NotSeated extends Schema.TaggedError<NotSeated>()("NotSeated", {
   from: Schema.UndefinedOr(Schema.String),
 }) {}
-const Tip = Action.define("check/Tip", Schema.Struct({ amount: Schema.Int }), {
+const Tip = Action.define("check/Tip", {
+  payload: Schema.Struct({ amount: Schema.Int }),
   error: NotSeated,
 });
 const tip = Action.handler(Tip, function* ({ amount }, { from }) {

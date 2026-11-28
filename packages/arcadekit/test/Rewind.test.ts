@@ -434,7 +434,7 @@ describe("a game that is put back to a moment", () => {
           on: Field.u8,
           handle: Field.transient<string>(),
         });
-        const Move = Action.define("rw/Move", Schema.Struct({}));
+        const Move = Action.define("rw/Move", { payload: Schema.Struct({}) });
         const Sprites = Query.all(Sprite).pipe(Query.writes(Sprite));
         const move = Action.handler(Move, function* () {
           (yield* Query.View(Sprites)).each((sprite) => {
@@ -464,7 +464,7 @@ describe("a game that is put back to a moment", () => {
       const Holder = Component.define("rw/Holder", {
         thing: Field.json<JsonValue>(null),
       });
-      const Hold = Action.define("rw/Hold", Schema.Struct({}));
+      const Hold = Action.define("rw/Hold", { payload: Schema.Struct({}) });
       const hold = Action.handler(Hold, function* () {
         (yield* Commands.spawns(Holder)).spawn(
           // @ts-expect-error A function is not JSON.
@@ -490,7 +490,7 @@ describe("a game that is put back to a moment", () => {
   it.effect("is not for an action's handler to call", () =>
     Effect.gen(function* () {
       let inside: App.Any | undefined;
-      const Back = Action.define("rw/Back", Schema.Struct({}));
+      const Back = Action.define("rw/Back", { payload: Schema.Struct({}) });
       const taken: Timeline.Moment[] = [];
       const back = Action.handler(Back, function* () {
         yield* Timeline.rewind(inside!, taken[0]!);
@@ -512,7 +512,7 @@ describe("a game that is put back to a moment", () => {
 
 describe("what the input stage issues, across a rewind and a save", () => {
   // The stage issues one shot each time it runs, and the tick applies it.
-  const Fire = Action.define("rw/Fire", Schema.Struct({}));
+  const Fire = Action.define("rw/Fire", { payload: Schema.Struct({}) });
   const pressing = () => {
     const fired: number[] = [];
     const fire = Action.handler(Fire, function* () {
@@ -612,13 +612,17 @@ describe("what the stages between ticks hear across a rewind", () => {
   const Rang = Event.define("rw/Rang", Schema.Struct({ n: Schema.Int }));
   const Bell = Component.define("rw/Bell", { extra: Field.i32 });
   const Bells = Query.all(Bell);
-  const Louder = Action.define("rw/Louder", Schema.Struct({ by: Schema.Int }));
+  const Louder = Action.define("rw/Louder", {
+    payload: Schema.Struct({ by: Schema.Int }),
+  });
   const louder = Action.handler(Louder, function* ({ by }) {
     (yield* Commands.spawns(Bell)).spawn(Bell.of({ extra: by }));
   });
   // A number that says nothing of the tick it is chimed on.
   const Chimed = Event.define("rw/Chimed", Schema.Struct({ n: Schema.Int }));
-  const Chime = Action.define("rw/Chime", Schema.Struct({ n: Schema.Int }));
+  const Chime = Action.define("rw/Chime", {
+    payload: Schema.Struct({ n: Schema.Int }),
+  });
   const chime = Action.handler(Chime, function* ({ n }) {
     (yield* Event.Emitter(Chimed)).emit({ n });
   });
@@ -994,10 +998,9 @@ describe("what the stages between ticks visit across a rewind", () => {
   const Dot = Component.define("rw/Dot", { x: Field.i32 });
   const Dots = Query.all(Dot);
   const Moved = Query.all(Dot).pipe(Query.changed(Dot));
-  const Act = Action.define(
-    "rw/Act",
-    Schema.Struct({ op: Schema.Int, pick: Schema.Int, x: Schema.Int })
-  );
+  const Act = Action.define("rw/Act", {
+    payload: Schema.Struct({ op: Schema.Int, pick: Schema.Int, x: Schema.Int }),
+  });
   // Spawns a dot, despawns one, or moves one.
   const act = Action.handler(Act, function* ({ op, pick, x }) {
     const dots = (yield* Query.View(Dots)).entities();
@@ -1143,7 +1146,7 @@ describe("Session.syncTest", () => {
   it.effect("finds it before the first system, in a handler", () =>
     Effect.gen(function* () {
       let outside = 0;
-      const Bump = Action.define("vr/Bump", Schema.Struct({}));
+      const Bump = Action.define("vr/Bump", { payload: Schema.Struct({}) });
       const bump = Action.handler(Bump, function* () {
         outside++;
         (yield* Commands.spawns(Mark)).spawn(Mark.of({ n: outside }));
@@ -1308,10 +1311,9 @@ const Cell = Singleton.define(
   { x: Field.i32, y: Field.i32 },
   { x: 0, y: 0 }
 );
-const Step = Action.define(
-  "vr/Step",
-  Schema.Struct({ dx: Schema.Int, dy: Schema.Int })
-);
+const Step = Action.define("vr/Step", {
+  payload: Schema.Struct({ dx: Schema.Int, dy: Schema.Int }),
+});
 const Where = View.define("vr/Where", { x: 0, y: 0 });
 /** The keys of the puzzle: the arrows move, Z goes back a turn and Y forward. */
 const Keys = System.input("vr/Keys", function* () {

@@ -196,7 +196,7 @@ describe("a system's stage", () => {
       // @ts-expect-error duplicate system name
       { systems: [one, two] }
     );
-    const Go = Action.define("stg/Go", Schema.Struct({}));
+    const Go = Action.define("stg/Go", { payload: Schema.Struct({}) });
     const first = Action.handler(Go, function* () {});
     const second = Action.handler(Go, function* () {});
     Plugin.make(

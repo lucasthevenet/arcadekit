@@ -40,10 +40,9 @@ const setup = Effect.gen(function* () {
 });
 
 // Moves the turret onto the truck, then scraps the truck.
-const Swap = Action.define(
-  "game/Swap",
-  Schema.Struct({ turret: EntityId, truck: EntityId })
-);
+const Swap = Action.define("game/Swap", {
+  payload: Schema.Struct({ turret: EntityId, truck: EntityId }),
+});
 const swap = Action.handler(Swap, function* ({ turret, truck }) {
   const world = yield* World;
   const commands = yield* Commands.spawns(ChildOf);

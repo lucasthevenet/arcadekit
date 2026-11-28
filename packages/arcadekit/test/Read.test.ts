@@ -36,7 +36,9 @@ const Placed = Query.all(Position);
 const Pushed = Query.all(Position).pipe(Query.writes(Position));
 const Moved = Query.all(Position).pipe(Query.changed(Position));
 
-const Drop = Action.define("rd/Drop", Schema.Struct({ x: Schema.Number }));
+const Drop = Action.define("rd/Drop", {
+  payload: Schema.Struct({ x: Schema.Number }),
+});
 const drop = Action.handler(Drop, function* ({ x }) {
   (yield* Commands.spawns(Position)).spawn(Position.of({ x }));
 });

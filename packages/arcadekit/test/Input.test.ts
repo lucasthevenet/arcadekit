@@ -114,7 +114,7 @@ const Docked = Plugin.make("in/Docked", {
   }),
 });
 /** A point, given from outside the game. */
-const Award = Action.define("in/Award", Schema.Struct({}));
+const Award = Action.define("in/Award", { payload: Schema.Struct({}) });
 const award = Action.handler(Award, function* () {
   (yield* Singleton.Write(Score)).points += 1;
 });
@@ -161,7 +161,7 @@ describe("the input stage", () => {
         const Sometimes = note("Sometimes", "input").pipe(
           System.runIf(State.is(Phase, "paused"))
         );
-        const Pause = Action.define("in/Pause", Schema.Struct({}));
+        const Pause = Action.define("in/Pause", { payload: Schema.Struct({}) });
         const pause = Action.handler(Pause, function* () {
           (yield* State.Setter(Phase)).set("paused");
         });
@@ -318,7 +318,7 @@ describe("the input stage", () => {
     "cannot change the game: whatever would throws, and names what did",
     () =>
       Effect.gen(function* () {
-        const Bump = Action.define("in/Bump", Schema.Struct({}));
+        const Bump = Action.define("in/Bump", { payload: Schema.Struct({}) });
         const bump = Action.handler(Bump, function* () {
           (yield* Singleton.Write(Score)).points += 1;
         });
@@ -480,10 +480,9 @@ describe("the input stage", () => {
     "is not tripped by verifyFrames when a system between ticks issues an action, which the world's hash still covers",
     () =>
       Effect.gen(function* () {
-        const Bump = Action.define(
-          "in/VerifiedBump",
-          Schema.Struct({ by: Schema.Int })
-        );
+        const Bump = Action.define("in/VerifiedBump", {
+          payload: Schema.Struct({ by: Schema.Int }),
+        });
         const bump = Action.handler(Bump, function* ({ by }) {
           (yield* Singleton.Write(Score)).points += by;
         });
@@ -512,10 +511,9 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         const source = Input.makeManualSource();
         yield* Effect.gen(function* () {
-          const Bump = Action.define(
-            "in/Bump",
-            Schema.Struct({ by: Schema.Int })
-          );
+          const Bump = Action.define("in/Bump", {
+            payload: Schema.Struct({ by: Schema.Int }),
+          });
           const bump = Action.handler(Bump, function* ({ by }) {
             (yield* Singleton.Write(Score)).points += by;
           });
@@ -674,7 +672,8 @@ describe("the input stage", () => {
       Effect.gen(function* () {
         class TooMuch extends Schema.TaggedError<TooMuch>()("TooMuch", {}) {}
         const Done = Event.define("in/Done", Schema.Struct({ by: Schema.Int }));
-        const Try = Action.define("in/Try", Schema.Struct({ by: Schema.Int }), {
+        const Try = Action.define("in/Try", {
+          payload: Schema.Struct({ by: Schema.Int }),
           error: TooMuch,
         });
         const attempt = Action.handler(Try, function* ({ by }) {
@@ -782,7 +781,9 @@ describe("the input stage", () => {
     () =>
       Effect.gen(function* () {
         const Done = Event.define("in/Once", Schema.Struct({ at: Schema.Int }));
-        const Emit = Action.define("in/EmitOnce", Schema.Struct({}));
+        const Emit = Action.define("in/EmitOnce", {
+          payload: Schema.Struct({}),
+        });
         const emit = Action.handler(Emit, function* () {
           (yield* Event.Emitter(Done)).emit({ at: (yield* Time).tick + 1 });
         });
@@ -833,7 +834,7 @@ describe("the input stage", () => {
     () =>
       Effect.gen(function* () {
         const Done = Event.define("in/Kept", Schema.Struct({}));
-        const Emit = Action.define("in/Emit", Schema.Struct({}));
+        const Emit = Action.define("in/Emit", { payload: Schema.Struct({}) });
         const emit = Action.handler(Emit, function* () {
           (yield* Event.Emitter(Done)).emit({});
         });
@@ -1053,7 +1054,7 @@ describe("the input stage", () => {
 
 describe("the picture of the devices in the world", () => {
   it("is what Input.plugin provides: a game that reads it and leaves the plugin out does not compile", () => {
-    const Press = Action.define("in/Press", Schema.Struct({}));
+    const Press = Action.define("in/Press", { payload: Schema.Struct({}) });
     const reads = [
       System.tick("in/Keys", function* () {
         (yield* Input.Keyboard).down("Space");
@@ -1718,7 +1719,7 @@ describe("the picture of the devices in the world", () => {
     () =>
       Effect.gen(function* () {
         const seen: string[] = [];
-        const Probe = Action.define("in/Probe", Schema.Struct({}));
+        const Probe = Action.define("in/Probe", { payload: Schema.Struct({}) });
         const probe = Action.handler(Probe, function* () {
           const keys = yield* Input.Keyboard;
           seen.push(
@@ -1812,7 +1813,8 @@ describe("the picture of the devices in the world", () => {
     () =>
       Effect.gen(function* () {
         class NotHeld extends Schema.TaggedError<NotHeld>()("NotHeld", {}) {}
-        const Shoot = Action.define("in/Shoot", Schema.Struct({}), {
+        const Shoot = Action.define("in/Shoot", {
+          payload: Schema.Struct({}),
           error: NotHeld,
         });
         const shoot = Action.handler(Shoot, function* () {
@@ -2162,7 +2164,7 @@ describe("controls", () => {
         App.make(App.define({ plugins: [Controls], systems: [system] }))
       ).toExtend<Effect.Effect<unknown, never>>();
     }
-    const Probe = Action.define("in/ProbeJump", Schema.Struct({}));
+    const Probe = Action.define("in/ProbeJump", { payload: Schema.Struct({}) });
     const probe = Action.handler(Probe, function* () {
       void (yield* Input.Read(Jump)).pressed;
     });
@@ -2625,10 +2627,9 @@ describe("controls", () => {
 
 describe("an input system", () => {
   const Leap = Action.define("in/Leap");
-  const Fire = Action.define(
-    "in/Fire",
-    Schema.Struct({ x: Schema.Finite, y: Schema.Finite })
-  );
+  const Fire = Action.define("in/Fire", {
+    payload: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
+  });
   const done: string[] = [];
   const handlers = [
     Action.handler(Leap, function* () {
@@ -2747,10 +2748,9 @@ describe("an input system", () => {
     "throws for a payload the action's schema refuses, which no other peer could hear of",
     () =>
       Effect.gen(function* () {
-        const Step = Action.define(
-          "in/Step",
-          Schema.Struct({ by: Schema.Int })
-        );
+        const Step = Action.define("in/Step", {
+          payload: Schema.Struct({ by: Schema.Int }),
+        });
         const Walk = System.input("in/Walk", function* () {
           const devices = yield* Input.Devices;
           if (devices.moved.includes(Input.pointerX)) {

@@ -172,7 +172,8 @@ const Draw = System.frame("policy/Draw", function* () {
 });
 
 class TooPoor extends Schema.TaggedError<TooPoor>()("policy/TooPoor", {}) {}
-const Tax = Action.define("policy/Tax", Schema.Struct({ amount: Schema.Int }), {
+const Tax = Action.define("policy/Tax", {
+  payload: Schema.Struct({ amount: Schema.Int }),
   error: TooPoor,
 });
 const tax = Action.handler(Tax, function* ({ amount }) {

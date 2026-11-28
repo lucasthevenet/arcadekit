@@ -13,10 +13,9 @@ describe("what an app is running", () => {
         Effect.sync(() => {
           seen.push([where, app!.phase]);
         });
-      const Note = Action.define(
-        "ph/Note",
-        Schema.Struct({ by: Schema.String })
-      );
+      const Note = Action.define("ph/Note", {
+        payload: Schema.Struct({ by: Schema.String }),
+      });
       const noted = Action.handler(Note, function* ({ by }) {
         yield* note(`handler from ${by}`);
       });
@@ -83,7 +82,7 @@ describe("what an app is running", () => {
         ];
         for (const [name, call, busy] of calls) {
           let app: App.Any<never> | undefined;
-          const Call = Action.define("ph/Call", Schema.Struct({}));
+          const Call = Action.define("ph/Call", { payload: Schema.Struct({}) });
           const calling = Action.handler(Call, function* () {
             yield* Effect.orDie(call(app!));
           });
