@@ -1120,15 +1120,6 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
   );
   for (const source of sources.values()) {
     if (entryFiles.has(source.file)) {
-      for (const internals of source.internals.values()) {
-        for (const internal of internals) {
-          report(source.file, {
-            start: internal.start,
-            end: internal.end,
-            message: `${internal.name} is @internal, but ${source.path} is an entry, which a game imports: an entry's own file exports only what a game uses. Move it to the internal/ folder beside the module and import it from there, or make it public and give it a doc comment.`,
-          });
-        }
-      }
       for (const statement of source.publics) {
         if (statement.type !== "ExportNamedDeclaration") {
           continue;
@@ -1224,9 +1215,9 @@ const analyze = (cwd: string): ReadonlyMap<string, readonly Problem[]> => {
  * What is @internal stays out of what a game imports, as Effect's `no-unused-internal` rule
  * keeps it (packages/tools/oxc in Effect's repository), ported here: Effect's package is
  * private: an @internal export a public signature names, one a public module exports again, and
- * one no source uses. Beyond Effect's, an entry's own file, which a package.json names by its
- * `source` condition, declares no @internal export and no @internal member of a public export:
- * what a game sees after `State.` or on what a system yields is what it may use.
+ * one no source uses. Beyond Effect's, no public export of an entry's own file, which a
+ * package.json names by its `source` condition, has an @internal member: what a system yields
+ * has no member a game must not call. An @internal export may stay in that file.
  * It reads the sources of every package, again whenever one has changed, since what it finds
  * in a file depends on the others. A test is no source, so what only a test uses is unused.
  * Like Effect's, it reads a signature that is written out: an export made by a call, such as
@@ -1237,7 +1228,7 @@ const noUnusedInternal: Rule = {
     type: "problem",
     docs: {
       description:
-        "What is @internal is named by no public signature or export, is declared in no entry's file, and is used by a source.",
+        "What is @internal is named by no public signature or export, is no member of an entry's public export, and is used by a source.",
     },
   },
   create: (context) => {

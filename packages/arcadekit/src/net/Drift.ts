@@ -5,22 +5,9 @@
  * with, `Message.Made`. A peer that hears another was made otherwise stops
  * with `Unlike`. After that, each peer's log records hash checks, its world's
  * hash at a tick, and the peers send them to each other with the messages
- * they send anyway.
- *
- * A `Comparison` is one peer's side of that. It is told the hash checks this
- * peer takes and the ones the others sent, and says which of its own to send.
- * It compares the hashes of a tick once every peer has sent its own and the
- * tick is final. The first tick whose hashes differ makes it report
- * `Drifted`.
- *
- *   const drift = Drift.make({ peer: "ada", made })
- *   drift.told("grace", theirs)                  // what grace was made with
- *   drift.took(0, hash)                          // this peer's, at a tick
- *   drift.heard("grace", 0, [{ tick: 0, hash }]) // with grace's message for tick 0
- *   drift.compare(final, now)                    // Drifted, once they differ
- *
- * It knows no session and no network. A session tells it which ticks are
- * final.
+ * they send anyway. A session compares the hashes of a tick once every peer
+ * has sent its own and the tick is final, and stops with `Drifted` at the
+ * first tick whose hashes differ.
  */
 import { Data } from "effect";
 
@@ -135,9 +122,21 @@ const UNANSWERED = 600;
 
 /**
  * One peer's comparison of its hash checks with the other peers', from
- * `Drift.make`.
+ * `Drift.make`. It is told the hash checks this peer takes and the ones the
+ * others sent, and says which of its own to send. It compares the hashes of a
+ * tick once every peer has sent its own and the tick is final. The first tick
+ * whose hashes differ makes it report `Drifted`.
  *
- * @category Models
+ *   const drift = Drift.make({ peer: "ada", made })
+ *   drift.told("grace", theirs)                  // what grace was made with
+ *   drift.took(0, hash)                          // this peer's, at a tick
+ *   drift.heard("grace", 0, [{ tick: 0, hash }]) // with grace's message for tick 0
+ *   drift.compare(final, now)                    // Drifted, once they differ
+ *
+ * It knows no session and no network. A session tells it which ticks are
+ * final.
+ *
+ * @internal
  */
 export interface Comparison {
   /**
@@ -193,7 +192,7 @@ export interface Comparison {
  * it was made with, which names every peer of the game and the tick the game
  * begins at. That tick is the tick of every peer's first message.
  *
- * @category Constructors
+ * @internal
  */
 export const make = (options: {
   readonly peer: string;

@@ -118,7 +118,7 @@ type ActionOf<HU> = HU extends Action.AnyHandler ? HU["action"] : never;
 /**
  * An action the UI requested, waiting for the input stage.
  *
- * @category Models
+ * @internal
  */
 export interface Sent {
   readonly action: Action.Any;

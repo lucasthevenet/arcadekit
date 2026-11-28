@@ -165,7 +165,7 @@ type Twice<
  * list of others that isn't a tuple, are left out. `Session.make` refuses its
  * options with this message, at compile time.
  *
- * @category Type-level
+ * @internal
  */
 export type Repeated<
   Me extends string,

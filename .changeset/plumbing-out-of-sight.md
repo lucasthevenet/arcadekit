@@ -3,7 +3,7 @@
 "@arcadekit/three": minor
 ---
 
-A module gives what a game uses and nothing else. What its own code needs is in `src/internal/`, so `State.`, `Save.`, `System.` and the rest offer only their public names, and what a system yields has no member a game must not call. The Oxlint rule `arcadekit/no-unused-internal` refuses an `@internal` export, or an `@internal` member of a public export, in the file of an entry. `arcadekit` gives the world's two types, `ReadingWorld` and `WritingWorld`, with the rest of `Services`, and a `Component` module of its own, `arcadekit/Component`, with `define`, `relation` and `tag`.
+A module gives what a game uses and nothing else. What its own code needs is in `src/internal/`, so `State.`, `Save.`, `System.` and the rest offer only their public names, and what a system yields has no member a game must not call. The Oxlint rule `arcadekit/no-unused-internal` refuses an `@internal` member of a public export in the file of an entry. `arcadekit` gives the world's two types, `ReadingWorld` and `WritingWorld`, with the rest of `Services`, and a `Component` module of its own, `arcadekit/Component`, with `define`, `relation` and `tag`.
 
 **Breaking**
 
