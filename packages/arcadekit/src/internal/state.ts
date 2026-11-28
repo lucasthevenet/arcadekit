@@ -186,7 +186,7 @@ export const pending = (
     return undefined;
   }
   const held = world.singleton(state);
-  if (held.entered === 0) {
+  if (!held.entered) {
     return held.next === null
       ? { from: undefined, to: held.value }
       : { from: undefined, to: held.value, followedBy: held.next };
@@ -207,7 +207,7 @@ export const enter = (
 ): void => {
   const held = world.singleton(state);
   if (move.from === undefined) {
-    held.entered = 1;
+    held.entered = true;
     return;
   }
   held.value = move.to;
