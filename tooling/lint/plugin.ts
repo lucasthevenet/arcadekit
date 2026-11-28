@@ -212,6 +212,37 @@ const noCodeFromText: Rule = {
   },
 };
 
+const noExponent: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "No source raises a number to a power with ** or **=, which each engine may round its own way, as it may Math.pow.",
+    },
+  },
+  create: (context) => {
+    const report = (
+      node: NodeOf<"BinaryExpression"> | NodeOf<"AssignmentExpression">
+    ): void =>
+      context.report({
+        node,
+        message: `ECMAScript lets each engine round ${node.operator} its own way, as it does Math.pow, so peers on different engines that ran it in a tick would come apart. Multiply, which IEEE 754 rounds one way, and write a power of two out as its number, 4_294_967_296, or as 1 << n for an n under 31.`,
+      });
+    return {
+      BinaryExpression: (node) => {
+        if (node.operator === "**") {
+          report(node);
+        }
+      },
+      AssignmentExpression: (node) => {
+        if (node.operator === "**=") {
+          report(node);
+        }
+      },
+    };
+  },
+};
+
 /** What runs an Effect by hand, as `Effect.<name>`. */
 const runsByHand = new Set([
   "runSync",
@@ -1490,6 +1521,7 @@ export default {
     "entry-imports": entryImports,
     "no-page": noPage,
     "no-code-from-text": noCodeFromText,
+    "no-exponent": noExponent,
     "no-run-in-tests": noRunInTests,
     "top-level-classes": topLevelClasses,
     "no-outside-state": noOutsideState,

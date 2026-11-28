@@ -312,6 +312,35 @@ new RuleTester().run("no-page", plugin.rules["no-page"], {
   ],
 });
 
+/** A power, and the operator that raises it, as a pattern. */
+const powers = [
+  ["const max = 2 ** 32 - 1;", String.raw`\*\*`],
+  ["const range = 2 ** bits;", String.raw`\*\*`],
+  ["const curve = speed ** 1.5;", String.raw`\*\*`],
+  ["let n = 2; n **= 3;", String.raw`\*\*=`],
+] as const;
+
+new RuleTester().run("no-exponent", plugin.rules["no-exponent"], {
+  valid: [
+    "const max = 4_294_967_295;",
+    "const range = 1 << bits;",
+    "const square = x * x;",
+    "let n = 1; n *= 2;",
+  ].map((code) => ({ name: code, code })),
+  invalid: powers.map(([code, operator]) => ({
+    name: code,
+    code,
+    errors: [
+      {
+        message: new RegExp(
+          `^ECMAScript lets each engine round ${operator} its own way, as it does Math\\.pow`,
+          "u"
+        ),
+      },
+    ],
+  })),
+});
+
 /**
  * A workspace on disk, as no-unused-internal reads one: `packages/kit`, and `packages/other`,
  * which imports it.
