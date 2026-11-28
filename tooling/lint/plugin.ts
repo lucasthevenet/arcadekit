@@ -1417,6 +1417,49 @@ const names: Rule = {
   },
 };
 
+/**
+ * Whether a specifier names a module of the packages, or an entry that gives them: `../Event.ts`,
+ * `arcadekit/Query` and `arcadekit`, but not a camelCase file such as `./internal/system.ts`, nor
+ * the storage core, `arcadekit/ecs`.
+ */
+const ofAModule = (specifier: string): boolean =>
+  specifier.startsWith(".")
+    ? /^[A-Z]/u.test(basename(specifier))
+    : /^(?:arcadekit|@arcadekit\/three)(?:\/|$)/u.test(specifier) &&
+      specifier !== "arcadekit/ecs";
+
+const noRenamedImport: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "A named import from a module of the packages keeps the name the module gives it.",
+    },
+  },
+  create: (context) => ({
+    ImportDeclaration: (node) => {
+      if (!ofAModule(node.source.value)) {
+        return;
+      }
+      for (const specifier of node.specifiers) {
+        if (specifier.type !== "ImportSpecifier") {
+          continue;
+        }
+        const imported =
+          specifier.imported.type === "Identifier"
+            ? specifier.imported.name
+            : specifier.imported.value;
+        if (imported !== specifier.local.name) {
+          context.report({
+            node: specifier,
+            message: `${imported} is imported from "${node.source.value}" as ${specifier.local.name}. An import keeps the name its module gives it, so that a search for ${imported} finds every file that uses it. Import it as ${imported}. Where that name is taken, or is a word no variable can have, as Query's with is, import the module whole with import * as, and read the name after it.`,
+          });
+        }
+      }
+    },
+  }),
+};
+
 /** `Action.define` for `Action.define(...)`: the name of a call to a member of a namespace. */
 const dottedName = (callee: Callee): string | undefined =>
   callee.type === "MemberExpression" &&
@@ -1496,6 +1539,7 @@ export default {
     "id-casts": idCasts,
     "no-unused-internal": noUnusedInternal,
     names,
+    "no-renamed-import": noRenamedImport,
     "no-empty-payload": noEmptyPayload,
   },
 };

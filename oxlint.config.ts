@@ -294,6 +294,7 @@ export default defineConfig({
         "arcadekit/top-level-classes": "error",
         "arcadekit/no-unused-internal": "error",
         "arcadekit/names": "error",
+        "arcadekit/no-renamed-import": "error",
       },
     },
     {
