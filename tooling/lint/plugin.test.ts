@@ -726,6 +726,49 @@ new RuleTester().run("names", plugin.rules.names, {
   ],
 });
 
+/** An import that renames what a module of the packages gives, the name, and the name it is given. */
+const renamings = [
+  [`import { Event as EventDef } from "../Event.ts";`, "Event", "EventDef"],
+  [
+    `import type { Emitter, Reader as EventReader } from "../Event.ts";`,
+    "Reader",
+    "EventReader",
+  ],
+  [`import { Query as Q } from "arcadekit";`, "Query", "Q"],
+  [`import { Session as Peer } from "arcadekit/net";`, "Session", "Peer"],
+  [`import { changed as watch } from "arcadekit/Query";`, "changed", "watch"],
+  [`import { Sprite as Drawn } from "@arcadekit/three";`, "Sprite", "Drawn"],
+] as const;
+
+new RuleTester().run("no-renamed-import", plugin.rules["no-renamed-import"], {
+  valid: [
+    `import { Event, Invalid } from "../Event.ts";`,
+    `import type { Refused } from "../Save.ts";`,
+    `import * as Query from "../Query.ts";`,
+    `import { make as makeSystem } from "./system.ts";`,
+    `import { World as EcsWorld } from "arcadekit/ecs";`,
+    `import { Random as EffectRandom } from "effect";`,
+    `import { Scene as ThreeScene } from "three";`,
+  ].map((code) => ({
+    name: code,
+    code,
+    filename: arcadekit("internal/eventBus.ts"),
+  })),
+  invalid: renamings.map(([code, imported, local]) => ({
+    name: code,
+    code,
+    filename: arcadekit("internal/eventBus.ts"),
+    errors: [
+      {
+        message: new RegExp(
+          `^${imported} is imported from "[^"]+" as ${local}\\. An import keeps the name its module gives it`,
+          "u"
+        ),
+      },
+    ],
+  })),
+});
+
 new RuleTester().run("no-empty-payload", plugin.rules["no-empty-payload"], {
   valid: [
     {
