@@ -72,19 +72,19 @@ const Rules = Plugin.make("fl/Rules", {
   }),
   handlers: [
     Action.handler(Aim, function* ({ x, y }) {
-      const aimed = yield* Aimed.writes;
+      const aimed = yield* Singleton.Write(Aimed);
       aimed.x = x;
       aimed.y = y;
-      (yield* PlayerAt).each((position) => {
+      (yield* Query.View(PlayerAt)).each((position) => {
         aimed.angle = Math.atan2(y - position.y, x - position.x);
       });
     }),
     Action.handler(Step, function* ({ x }) {
-      (yield* PlayerAt.pipe(Query.writes(Transform2d.Position))).each(
-        (position) => {
-          position.x = x;
-        }
-      );
+      (yield* Query.View(
+        PlayerAt.pipe(Query.writes(Transform2d.Position))
+      )).each((position) => {
+        position.x = x;
+      });
     }),
   ],
 });
@@ -92,7 +92,7 @@ const Rules = Plugin.make("fl/Rules", {
 /** The input stage: a click aims at the place of the plane under it. */
 const Click = Input.button("fl/Click", [Input.pointerButton()]);
 const Aiming = System.input("fl/Aiming", function* () {
-  if ((yield* Click).pressed) {
+  if ((yield* Input.Read(Click)).pressed) {
     const at = yield* Three.toPlane(yield* Input.Pointer);
     (yield* Action.Actions).enqueue(Aim, at);
   }
@@ -192,7 +192,7 @@ const play = Effect.fnUntraced(function* (
       source.tap(Input.pointerButton());
       yield* app.input();
       yield* app.tick(1 / 60);
-      return yield* app.read(Aimed);
+      return yield* app.read(Singleton.Read(Aimed));
     }),
   };
 });

@@ -49,7 +49,7 @@ const Go = Action.define(
   Schema.Struct({ to: Schema.Literals(["menu", "forest"]) })
 );
 const go = Action.handler(Go, function* ({ to }) {
-  (yield* Level.sets).set(to);
+  (yield* State.Setter(Level)).set(to);
 });
 const at = (x: number) => Position.of({ x, y: 0, z: 0 });
 /** A tree or a deer comes to stand at x, of a colour if it is given one. */
@@ -218,7 +218,7 @@ const during = (Forest: Forest) =>
 const keepLate = (Forest: Forest) =>
   System.frame("ta/KeepLate", function* () {
     const store = yield* Assets.Store;
-    if ((yield* Level).value === "forest") {
+    if ((yield* State.Reader(Level)).value === "forest") {
       store.hold(Forest, "ta/KeepLate");
     } else {
       store.drop(Forest, "ta/KeepLate");

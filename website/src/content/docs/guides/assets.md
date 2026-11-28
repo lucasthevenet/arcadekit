@@ -21,7 +21,7 @@ const Forest = Assets.bundle("game/Forest", {
 });
 
 const Draw = System.frame("game/Draw", function* () {
-  const forest = yield* Forest; // the bundle's current status
+  const forest = yield* Assets.Status(Forest); // the bundle's current status
   if (forest._tag === "Ready") {
     const picture: ImageBitmap = forest.assets.backdrop;
   }
@@ -42,7 +42,7 @@ const Game = Plugin.make("game/Game", {
 - The system runs in `"preFrame"`, the stage before the frame's own. Every frame system sees the bundle in the same status, whatever order the systems are listed in.
 - Anything still loaded when the app is closed is released with it.
 
-`yield*` on a bundle gives its current status: `Absent`, `Loading`, `Ready`, or `Failed`. `Ready` holds the `assets`, each under its name and with its type, and `Failed` holds the error. `Assets.match(status, { Absent, Loading, Ready, Failed })` returns what the function of its case returns, as a HUD that says how a level is loading needs. The store logs a failed bundle once, keeps nothing of what did load, and retries it the next time its level is entered.
+`yield* Assets.Status(bundle)` gives a bundle's current status: `Absent`, `Loading`, `Ready`, or `Failed`. `Ready` holds the `assets`, each under its name and with its type, and `Failed` holds the error. `Assets.match(status, { Absent, Loading, Ready, Failed })` returns what the function of its case returns, as a HUD that says how a level is loading needs. The store logs a failed bundle once, keeps nothing of what did load, and retries it the next time its level is entered.
 
 ## Share files between bundles
 
@@ -102,7 +102,10 @@ const Progress = Singleton.define(
 const Levels = Assets.family("game/Level", (level: number) => ({
   layout: Assets.json(`/levels/${level}.json`, Layout),
 }));
-const level = Effect.map(Progress, (progress) => progress.level);
+const level = Effect.map(
+  Singleton.Read(Progress),
+  (progress) => progress.level
+);
 
 const Build = Action.define("game/Build", Layout);
 const Next = Action.define("game/Next");
@@ -110,7 +113,9 @@ const Next = Action.define("game/Next");
 // A level replaces the one before it.
 const build = Action.handler(Build, function* ({ walls }) {
   const commands = yield* Commands.spawns(Wall);
-  (yield* Query.all(Wall)).each((_, wall) => commands.despawn(wall));
+  (yield* Query.View(Query.all(Wall))).each((_, wall) =>
+    commands.despawn(wall)
+  );
   for (const at of walls) {
     commands.spawn(Wall.of({ at }));
   }
@@ -120,7 +125,7 @@ const Game = Plugin.make("game/Game", {
   plugins: [Assets.onReady(Levels, level, build, ({ layout }) => layout)],
   handlers: [
     Action.handler(Next, function* () {
-      (yield* Progress.writes).level += 1;
+      (yield* Singleton.Write(Progress)).level += 1;
     }),
   ],
   systems: [Assets.during(Levels, level)],

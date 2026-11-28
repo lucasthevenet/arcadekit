@@ -76,9 +76,9 @@ const Dig = Action.define(
 
 // It moves first and looks after, so that a refusal has a move to undo.
 const step = Action.handler(Step, function* ({ dx, dy }) {
-  const { tiles } = yield* Floor;
+  const { tiles } = yield* Singleton.Read(Floor);
   let refused: string | undefined;
-  (yield* Walkers).each((pos) => {
+  (yield* Query.View(Walkers)).each((pos) => {
     pos.x += dx;
     pos.y += dy;
     if (!tiles.inside(pos.x, pos.y) || tiles.at(pos.x, pos.y) === WALL) {
@@ -86,8 +86,8 @@ const step = Action.handler(Step, function* ({ dx, dy }) {
     }
   });
   if (refused === undefined) {
-    const here = Grid.occupants(tiles, yield* Creatures);
-    (yield* Walkers).each((pos) => {
+    const here = Grid.occupants(tiles, yield* Query.View(Creatures));
+    (yield* Query.View(Walkers)).each((pos) => {
       if (here.at(pos.x, pos.y).length > 1) {
         refused = "a monster";
       }
@@ -99,7 +99,7 @@ const step = Action.handler(Step, function* ({ dx, dy }) {
 });
 
 const dig = Action.handler(Dig, function* ({ x, y, refuse }) {
-  const floor = yield* Floor.writes;
+  const floor = yield* Singleton.Write(Floor);
   floor.tiles = floor.tiles.with(x, y, FLOOR);
   if (refuse) {
     return yield* Blocked.make({ by: "the rule" });
@@ -108,9 +108,9 @@ const dig = Action.handler(Dig, function* ({ x, y, refuse }) {
 
 const Wander = System.tick("gr/Wander", function* () {
   const random = yield* Random;
-  const { tiles } = yield* Floor;
+  const { tiles } = yield* Singleton.Read(Floor);
   const commands = yield* Commands;
-  (yield* Wandering).each((pos, monster, entity) => {
+  (yield* Query.View(Wandering)).each((pos, monster, entity) => {
     const [dx, dy] = Grid.sides[Math.floor(random.next() * 4)]!;
     const x = pos.x + dx;
     const y = pos.y + dy;
@@ -127,7 +127,7 @@ const Wander = System.tick("gr/Wander", function* () {
 
 const Level = Plugin.make("gr/Level", {
   setup: Effect.gen(function* () {
-    const floor = yield* Floor.writes;
+    const floor = yield* Singleton.Write(Floor);
     let tiles = floor.tiles;
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
@@ -161,7 +161,7 @@ const byHand = (app: Pick<App.Any, "read">) =>
   Effect.gen(function* () {
     const world = yield* app.read(World);
     const all = new Map<string, Entity[]>();
-    for (const entity of (yield* app.read(Creatures)).entities()) {
+    for (const entity of (yield* app.read(Query.View(Creatures))).entities()) {
       const { x, y } = world.get(entity, Pos)!;
       const key = `${x},${y}`;
       all.set(key, [...(all.get(key) ?? []), entity]);
@@ -186,8 +186,10 @@ const listed = (here: Grid.Occupants) => {
 
 const occupantsOf = (app: Pick<App.Any, "read">) =>
   Effect.gen(function* () {
-    const { tiles } = yield* app.read(Floor);
-    return listed(Grid.occupants(tiles, yield* app.read(Creatures)));
+    const { tiles } = yield* app.read(Singleton.Read(Floor));
+    return listed(
+      Grid.occupants(tiles, yield* app.read(Query.View(Creatures)))
+    );
   });
 
 describe("who is on a tile", () => {
@@ -204,7 +206,9 @@ describe("who is on a tile", () => {
         }
         // The test saw tiles with more than one, and monsters die.
         expect(stacked).toBeGreaterThan(0);
-        expect((yield* app.read(Query.all(Monster))).count()).toBeLessThan(25);
+        expect(
+          (yield* app.read(Query.View(Query.all(Monster)))).count()
+        ).toBeLessThan(25);
       }
     })
   );
@@ -274,7 +278,9 @@ describe("a map in the world", () => {
         yield* Effect.exit(app.dispatch(Dig, { x: 0, y: 0, refuse: true }))
       ).toEqual(Exit.fail(Blocked.make({ by: "the rule" })));
       expect(world.hash()).toBe(before);
-      expect((yield* app.read(Floor)).tiles.at(0, 0)).toBe(WALL);
+      expect((yield* app.read(Singleton.Read(Floor))).tiles.at(0, 0)).toBe(
+        WALL
+      );
       yield* app.dispatch(Dig, { x: 0, y: 0, refuse: false });
       expect(world.hash()).not.toBe(before);
       const save = yield* Save.make(app);
@@ -282,7 +288,9 @@ describe("a map in the world", () => {
       const loaded = yield* App.make(Rogue, {
         save: yield* Save.decode(bytes),
       });
-      expect((yield* loaded.read(Floor)).tiles.at(0, 0)).toBe(FLOOR);
+      expect((yield* loaded.read(Singleton.Read(Floor))).tiles.at(0, 0)).toBe(
+        FLOOR
+      );
       expect((yield* loaded.read(World)).hash()).toBe(world.hash());
     })
   );
@@ -296,7 +304,7 @@ describe("a map in the world", () => {
       );
       const Wrong = Action.define("gr/Wrong", Schema.Struct({}));
       const wrong = Action.handler(Wrong, function* () {
-        (yield* Small.writes).tiles = Grid.fill(3, 3);
+        (yield* Singleton.Write(Small)).tiles = Grid.fill(3, 3);
       });
       const app = yield* App.make(App.define({ handlers: [wrong] }));
       yield* app.dispatch(Wrong, {});

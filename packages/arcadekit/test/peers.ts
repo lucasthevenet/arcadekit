@@ -99,8 +99,8 @@ export const take = Action.handler(Take, function* ({ by, coin }) {
     return yield* NoSuchCoin.make({ coin });
   }
   (yield* Commands).despawn(coin);
-  (yield* Taken.emits).emit({ value: held.value });
-  const purse = yield* Purse.writes;
+  (yield* Event.Emitter(Taken)).emit({ value: held.value });
+  const purse = yield* Singleton.Write(Purse);
   purse.taken += 1;
   if (by === "ada") {
     purse.ada += held.value;
@@ -113,7 +113,7 @@ export const tip = Action.handler(Tip, function* ({ amount }, { from }) {
   if (from !== "ada" && from !== "grace") {
     return yield* Stranger.make({ from });
   }
-  (yield* Purse.writes)[from] += amount;
+  (yield* Singleton.Write(Purse))[from] += amount;
   return from;
 });
 export const fire = Action.handler(Fire, function* () {
@@ -130,7 +130,7 @@ export const whisper = Action.handler(Whisper, function* () {
 
 export const Drift = System.tick("ls/Drift", function* () {
   const random = yield* Random;
-  (yield* Coins).each((coin) => {
+  (yield* Query.View(Coins)).each((coin) => {
     coin.x += random.next() - 0.5;
   });
 });
@@ -140,11 +140,11 @@ export const Drift = System.tick("ls/Drift", function* () {
  * read, which a tick that is run again has to find where it was.
  */
 export const Tally = System.tick("ls/Tally", function* () {
-  const purse = yield* Purse.writes;
-  for (const taken of (yield* Taken).read()) {
+  const purse = yield* Singleton.Write(Purse);
+  for (const taken of (yield* Event.Reader(Taken)).read()) {
     purse.tallied += taken.value;
   }
-  const born = (yield* Fresh).entities().length;
+  const born = (yield* Query.View(Fresh)).entities().length;
   if (born > 0) {
     purse.born += born;
   }
@@ -182,7 +182,7 @@ export const Fault = System.tick("ls/Fault", function* () {
     return;
   }
   let first = true;
-  (yield* Coins).each((coin) => {
+  (yield* Query.View(Coins)).each((coin) => {
     if (first) {
       coin.x += 1 + Math.random();
       first = false;
@@ -197,10 +197,10 @@ export const untaken: Action.Refused<
   NoSuchCoin
 >[] = [];
 export const Hear = System.input("ls/Hear", function* () {
-  for (const refusal of (yield* Action.Rejected).read()) {
+  for (const refusal of (yield* Event.Reader(Action.Rejected)).read()) {
     refusals.push(refusal.action);
   }
-  untaken.push(...(yield* Action.rejected(Take)).read());
+  untaken.push(...(yield* Event.Reader(Action.rejected(Take))).read());
 });
 /** The space bar fires: an action of the game's own, as a game of several peers issues one. */
 export const Controls = System.input("ls/Controls", function* () {
@@ -416,7 +416,7 @@ export const catchUp = Effect.fnUntraced(function* (
 
 /** A peer's coins, read again each time: a rollback ends a view. */
 export const coinsOf = (peer: Peer) =>
-  Effect.map(peer.app.read(Lying), (coins) => coins.entities());
+  Effect.map(peer.app.read(Query.View(Lying)), (coins) => coins.entities());
 
 /** Each peer's player does something at random, from what its own world holds. */
 export const players = (seed: number) => {

@@ -29,8 +29,9 @@
  * Both builds run this checkout's `bench/core.ts`, and with `--suite app`
  * its `bench/app.ts`, as `bench/checkouts.ts` says, which also says what a
  * variant the base cannot run comes to, and how a commit says it slows one
- * on purpose. `bench/verdict.ts` holds the rule, `judge`, and says why it is
- * the rule, what it finds and what it does not.
+ * on purpose. `bench/verdict.ts` holds the rules, `judge` for the storage
+ * core and `judgeAll` for an app's stages, and says why each is the rule,
+ * what it finds and what it does not.
  *
  * A variant whose two builds are within 2.5% of each other after six runs
  * each is not run again, which is most variants of most changes: the whole
@@ -41,29 +42,47 @@
  * purpose were found slower in fifteen runs of fifteen, a program of ten
  * components 36% faster, and the rest the same.
  *
- * An app's stages take a few microseconds, and a build's fastest run of one
- * is up to a fifth apart from one process to the next, so each build runs
- * them 25 times. On a shared 4-core VM, 15 runs found the input stage 40%
- * slower in no stretch of 15 rounds out of 25, and 21 runs in four stretches
- * of five. Compared with the same source, the suite took ten minutes at 15
- * runs, eight of its fifteen variants let go after six, and found none
- * slower.
+ * An app's stages take a few microseconds, and each build runs them 25
+ * times, judged by every run: a variant is let go after six runs each when
+ * its medians are within 2.5%. On a shared 4-core VM, a loop planted in the
+ * input stage that made it 9.5% slower was found in 10 comparisons of 10,
+ * where judging by the fastest runs found it in 9 and let the tenth go
+ * after six runs; with 15 runs, in 21 of 22 where the fastest runs found it
+ * in 18. Against a second checkout of the same source, it called every
+ * variant the same in 20 comparisons of 20, each in 4.5 to 5.6 minutes,
+ * where judging by the fastest runs took 6.2 to 8.7.
  */
 import { variants as appVariants } from "./app.ts";
 import { ENOUGH, compare, report } from "./checkouts.ts";
 import type { Suite } from "./checkouts.ts";
 import { variants as coreVariants, inUnit } from "./core.ts";
 import type { Variant } from "./core.ts";
-import { CHANCE, FLOOR, failures, judge, settled, table } from "./verdict.ts";
-import type { Line } from "./verdict.ts";
+import {
+  CHANCE,
+  FLOOR,
+  failures,
+  judge,
+  judgeAll,
+  settled,
+  settledAll,
+  table,
+} from "./verdict.ts";
+import type { Line, Verdict } from "./verdict.ts";
 
 /**
- * What each suite compares, and how the report begins. A run prints the
- * median milliseconds of a pass.
+ * What each suite compares, by which rule, and how the report begins and
+ * ends. A run prints the median milliseconds of a pass.
  */
 interface ArcadekitSuite extends Suite<number> {
   readonly variants: Record<string, Variant>;
   readonly what: string;
+  readonly judge: (
+    base: readonly number[],
+    head: readonly number[],
+    onPurpose: boolean
+  ) => Verdict;
+  readonly plainly?: string;
+  readonly rule: string;
 }
 
 const { compared, suite } = compare<number, ArcadekitSuite>({
@@ -78,6 +97,8 @@ const { compared, suite } = compare<number, ArcadekitSuite>({
       read: Number,
       settled,
       what: "The storage core is",
+      judge,
+      rule: `Each build's time is that of its fastest run. A variant is slower when its fastest run is more than ${FLOOR * 100}% slower than the base's and so many of the base's runs beat every one of its own that two builds alike would look so once in ${1 / CHANCE} comparisons or less; one whose builds are within ${(FLOOR / 2) * 100}% after ${ENOUGH} runs each is not run again.`,
     },
     app: {
       file: "app.ts",
@@ -85,8 +106,11 @@ const { compared, suite } = compare<number, ArcadekitSuite>({
       variants: appVariants,
       runs: 25,
       read: Number,
-      settled,
+      settled: settledAll,
       what: "An app's stages are",
+      judge: judgeAll,
+      plainly: "Pairs of runs, one of each, that the faster won",
+      rule: `Each build's time is the median of its runs. A variant is slower when its median run is more than ${FLOOR * 100}% slower than the base's and the base's runs beat its own in so many of the pairs of one run of each that two builds alike would look so once in ${1 / CHANCE} comparisons or less; one whose medians are within ${(FLOOR / 2) * 100}% after ${ENOUGH} runs each is not run again.`,
     },
   },
 });
@@ -97,7 +121,7 @@ const lines: Line[] = compared.map(({ base, head, label, meant, name }) => {
     name,
     label,
     unit: inUnit(variant, 0).unit,
-    verdict: judge(
+    verdict: suite.judge(
       base.map((ms) => inUnit(variant, ms).value),
       head.map((ms) => inUnit(variant, ms).value),
       meant
@@ -111,9 +135,9 @@ report(
       ? `### ${suite.what} no slower`
       : `### ${suite.what} slower: ${failed.join(", ")}`,
     "",
-    table(lines),
+    table(lines, suite.plainly),
     "",
-    `Each build's time is that of its fastest run. A variant is slower when its fastest run is more than ${FLOOR * 100}% slower than the base's and so many of the base's runs beat every one of its own that two builds alike would look so once in ${1 / CHANCE} comparisons or less; one whose builds are within ${(FLOOR / 2) * 100}% after ${ENOUGH} runs each is not run again.`,
+    suite.rule,
     ...(failed.length === 0
       ? []
       : [

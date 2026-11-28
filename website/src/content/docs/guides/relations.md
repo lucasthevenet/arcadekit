@@ -81,8 +81,8 @@ const Children = Query.all(Position, ChildOf).pipe(Query.writes(Position));
 
 // Each child sits one unit above its parent.
 export const Follow = System.tick("Follow", function* () {
-  const children = yield* Children;
-  (yield* Parents).each((parent, entity) => {
+  const children = yield* Query.View(Children);
+  (yield* Query.View(Parents)).each((parent, entity) => {
     children.pointingAt(ChildOf, entity).each((position) => {
       position.x = parent.x;
       position.y = parent.y + 1;
@@ -105,7 +105,7 @@ export const Follow = System.tick("Follow", function* () {
 
 ## Query, watch and save a relation like a component
 
-In every other way, a relation is a component. It is stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.removed`, saved in snapshots and included in the hash. The world derives the links between entities from it, and rebuilds them when it loads a snapshot. Loading refuses a snapshot with a relation that points at no entity.
+In every other way, a relation is a component. It is stored in tables or a sparse set, read in queries, watched with `Query.added` and `Query.Removed`, saved in snapshots and included in the hash. The world derives the links between entities from it, and rebuilds them when it loads a snapshot. Loading refuses a snapshot with a relation that points at no entity.
 
 ## Read more
 

@@ -29,7 +29,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity) => {
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x += velocity.x * delta;
     position.y += velocity.y * delta;
   });
@@ -102,7 +102,7 @@ const Mortal = Query.all(Lifetime).pipe(Query.writes(Lifetime));
 const Expiry = System.tick("game/Expiry", function* () {
   const commands = yield* Commands;
   const { delta } = yield* Time;
-  (yield* Mortal).each((life, entity) => {
+  (yield* Query.View(Mortal)).each((life, entity) => {
     life.seconds -= delta;
     if (life.seconds <= 0) {
       commands.despawn(entity);

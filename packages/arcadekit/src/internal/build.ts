@@ -283,6 +283,7 @@ const assemble = <
     );
 
     const spans = new Loop.Spans(context);
+    const before: Parts["before"] = new Set();
     const inbox = new Inbox.Inbox({
       world,
       commands,
@@ -292,6 +293,7 @@ const assemble = <
       runner,
       time,
       handlers,
+      before,
       run: (name, handled) => runFork(spans.action(name, handled)),
     });
     const schedule = Schedule.make(allSystems, spans.enabled);
@@ -351,6 +353,7 @@ const assemble = <
       dispatcher,
       log,
       after,
+      before,
       undrawn,
       locals,
       save: () =>
@@ -408,10 +411,13 @@ const assemble = <
         }),
     };
     /** What ran, then what code outside the game has the app do once it has. */
-    const then = <A, E>(ran: Exit.Exit<A, E>): Effect.Effect<A, E> =>
-      after.size === 0 || Exit.isFailure(ran)
-        ? ran
-        : Effect.as(moved(parts), ran.value);
+    const then = <A, E>(ran: Exit.Exit<A, E>): Effect.Effect<A, E> => {
+      if (Exit.isFailure(ran)) {
+        return ran;
+      }
+      const left = moved(parts);
+      return left === undefined ? ran : Effect.as(left, ran.value);
+    };
     const tick = (delta: number): Effect.Effect<void, TickError<S, P>> =>
       Effect.suspend(() => {
         if (inbox.diverted !== undefined) {

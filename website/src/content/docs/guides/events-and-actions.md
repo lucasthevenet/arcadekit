@@ -20,8 +20,8 @@ const Landed = Event.define(
 );
 
 const Ground = System.tick("physics/Ground", function* () {
-  const landed = yield* Landed.emits;
-  (yield* Bodies).each((body, entity) => {
+  const landed = yield* Event.Emitter(Landed);
+  (yield* Query.View(Bodies)).each((body, entity) => {
     if (body.y <= 0) {
       landed.emit({ entity }); // a plain call, fine inside a loop
     }
@@ -29,7 +29,7 @@ const Ground = System.tick("physics/Ground", function* () {
 });
 
 const Dust = System.tick("fx/Dust", function* () {
-  for (const { entity } of (yield* Landed).read()) {
+  for (const { entity } of (yield* Event.Reader(Landed)).read()) {
     // every event this system hasn't seen
   }
 });
@@ -122,7 +122,7 @@ A handler receives the action's origin alongside the payload:
 
 ```ts sketch
 const pass = Action.handler(Pass, function* (_, { from }) {
-  const turn = yield* Turn;
+  const turn = yield* Singleton.Read(Turn);
   if (turn.player !== from) {
     return yield* NotYourTurn.make({});
   }

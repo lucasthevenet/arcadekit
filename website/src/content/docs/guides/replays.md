@@ -18,7 +18,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score.writes).points += points;
+  (yield* Singleton.Write(Score)).points += points;
 });
 const Rules = Plugin.make("game/Rules", {
   handlers: [add],
@@ -160,14 +160,14 @@ const Ball = Component.define("game/Ball", { x: Field.f32 });
 const Balls = Query.all(Ball).pipe(Query.writes(Ball));
 
 const Roll = System.tick("game/Roll", function* () {
-  (yield* Balls).each((ball) => {
+  (yield* Query.View(Balls)).each((ball) => {
     ball.x += 1;
   });
 }).pipe(System.runIf(State.is(Phase, "playing")));
 
 const Pause = Action.define("game/Pause");
 const pause = Action.handler(Pause, function* () {
-  (yield* Phase.sets).set("paused");
+  (yield* State.Setter(Phase)).set("paused");
 });
 
 const Rules = Plugin.make("game/Rules", {

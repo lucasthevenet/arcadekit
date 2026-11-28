@@ -7,7 +7,7 @@
  *
  *   // The game publishes its value, once per frame.
  *   const ShowHud = View.publish(Hud, function*() {
- *     const score = yield* Score
+ *     const score = yield* Singleton.Read(Score)
  *     return { score: score.points, lives: score.lives }
  *   })
  *   const Game = Plugin.make("Game", {
@@ -441,7 +441,7 @@ export function mount(
  * UI's.
  *
  *   const ShowHud = View.publish(Hud, function*() {
- *     const score = yield* Score
+ *     const score = yield* Singleton.Read(Score)
  *     return { score: score.points, lives: score.lives }
  *   })
  *
@@ -467,13 +467,13 @@ export function mount(
  * compared as data, from what they were when it last ran:
  *
  *   const ShowShop = View.publish(Shop, {
- *     when: function*() { return (yield* Purse).gold }
+ *     when: function*() { return (yield* Singleton.Read(Purse)).gold }
  *   }, function*() {
- *     return priceEveryItem(yield* Purse, yield* Items)
+ *     return priceEveryItem(yield* Singleton.Read(Purse), yield* Query.View(Items))
  *   })
  *
- * `when` and the body return data, such as `(yield* Purse).gold` or a spread
- * of `yield* Purse`. A singleton read whole, `yield* Purse` or
+ * `when` and the body return data, such as `(yield* Singleton.Read(Purse)).gold` or a spread
+ * of `yield* Singleton.Read(Purse)`. A singleton read whole, `yield* Singleton.Read(Purse)` or
  * `(yield* World).singleton(Purse)`, doesn't compile as either, even inside
  * arrays and objects up to 32 levels deep: it is the world's own object, the
  * same every frame, so it would never differ.

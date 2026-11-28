@@ -7,11 +7,11 @@
  *     { tiles: Grid.fill(80, 50, WALL) }
  *   )
  *
- *   const floor = yield* Floor
+ *   const floor = yield* Singleton.Read(Floor)
  *   floor.tiles.at(3, 4)                                  // WALL
- *   (yield* Floor.writes).tiles = floor.tiles.with(3, 4, DOOR)
+ *   (yield* Singleton.Write(Floor)).tiles = floor.tiles.with(3, 4, DOOR)
  *
- *   const here = Grid.occupants(floor.tiles, yield* Creatures)
+ *   const here = Grid.occupants(floor.tiles, yield* Query.View(Creatures))
  *   here.first(3, 4)                                      // who stands there
  *
  * A map is a `Grid.Tiles`: a number from 0 to 255 for each tile, in a field
@@ -287,7 +287,7 @@ let places: number[] = [];
  * Returns who is on each tile of `map`: the entities of `view`, by the `x`
  * and `y` of the query's first term.
  *
- *   const here = Grid.occupants(floor.tiles, yield* Creatures)
+ *   const here = Grid.occupants(floor.tiles, yield* Query.View(Creatures))
  *   const blocker = here.first(player.x + 1, player.y)
  *
  * **Details**

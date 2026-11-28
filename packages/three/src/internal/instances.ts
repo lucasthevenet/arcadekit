@@ -59,9 +59,9 @@ const drawer = (options: InstancesShared & Placing) => {
       smooth ? yield* storesOf(flat, color !== undefined) : undefined
     );
     if (Painted === undefined) {
-      (yield* Plain).eachChunk(drawn.drawPlain);
+      (yield* Query.View(Plain)).eachChunk(drawn.drawPlain);
     } else {
-      (yield* Painted).eachChunk(drawn.draw);
+      (yield* Query.View(Painted)).eachChunk(drawn.draw);
     }
     drawn.finish();
   };

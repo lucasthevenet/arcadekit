@@ -42,7 +42,7 @@ const Stick = Component.define("v2/Stick", { x: Field.f32, y: Field.f32 });
 const Steered = Query.all(Velocity, Stick).pipe(Query.writes(Velocity));
 
 const Steer = System.tick("v2/Steer", function* () {
-  (yield* Steered).each((velocity, stick) => {
+  (yield* Query.View(Steered)).each((velocity, stick) => {
     Vec2.clampLength(velocity, stick.x, stick.y, 1);
   });
 });
@@ -66,7 +66,7 @@ describe("a row of a query", () => {
       );
       yield* app.tick(1 / 60);
       const speeds: number[] = [];
-      (yield* app.read(Query.all(Velocity))).each((velocity) => {
+      (yield* app.read(Query.View(Query.all(Velocity)))).each((velocity) => {
         speeds.push(Vec2.length(velocity.x, velocity.y));
       });
       // A diagonal is no faster than a straight line: f32 columns hold it.

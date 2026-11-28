@@ -98,7 +98,7 @@ const Sweep = Action.define(
   { error: Refused }
 );
 const sweep = Action.handler(Sweep, function* ({ refuse }) {
-  (yield* Moving).each((pos, vel) => {
+  (yield* Query.View(Moving)).each((pos, vel) => {
     pos.x += vel.x * DT;
     pos.y += vel.y * DT;
   });
@@ -115,7 +115,7 @@ const Written = Query.all(Position, Velocity).pipe(
 );
 const scanPlain = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* Written).each((pos, vel) => {
+  (yield* Query.View(Written)).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
@@ -123,7 +123,7 @@ const scanPlain = Action.handler(Scan, function* () {
 const Looked = Query.all(Position, Velocity);
 const scanReads = Action.handler(Scan, function* () {
   let sum = 0;
-  (yield* Looked).each((pos, vel) => {
+  (yield* Query.View(Looked)).each((pos, vel) => {
     sum += pos.x + vel.x;
   });
   return sum;
@@ -152,7 +152,7 @@ const dispatching = (
   Effect.runSync(
     Effect.gen(function* () {
       const app = yield* dispatchable();
-      const target = (yield* app.read(Seen)).entities()[N >> 1]!;
+      const target = (yield* app.read(Query.View(Seen))).entities()[N >> 1]!;
       const dispatch = send(app, target);
       return yield* measureEffect(() => Effect.exit(dispatch()), runs, warmup);
     })
@@ -166,7 +166,7 @@ const rewinding = (back: boolean): number =>
   Effect.runSync(
     Effect.gen(function* () {
       const Movement = System.tick("Movement", function* () {
-        (yield* Moving).eachChunk((start, end, pos, vel) => {
+        (yield* Query.View(Moving)).eachChunk((start, end, pos, vel) => {
           for (let n = start; n < end; n++) {
             pos.x[n] = pos.x[n]! + vel.x[n]! * DT;
           }
@@ -220,14 +220,14 @@ const rollingBack = (): number =>
       // What it drew, outside the app as a canvas is, so the loop is kept.
       const drawn = { rows: 0 };
       const Draw = System.frame("Draw", function* () {
-        (yield* Moved).eachChunk((start, end) => {
+        (yield* Query.View(Moved)).eachChunk((start, end) => {
           drawn.rows += end - start;
         });
       });
       const app = yield* App.make(
         App.define({ plugins: [Populated], systems: [Write, Draw] })
       );
-      ten = (yield* app.read(Seen)).entities().slice(0, 10);
+      ten = (yield* app.read(Query.View(Seen))).entities().slice(0, 10);
       yield* app.tick(DT);
       yield* app.frame(0);
       const moment = yield* Timeline.capture(app);
@@ -274,7 +274,7 @@ const scanned = (handler: typeof scanPlain): number =>
   );
 
 const Movement = System.tick("Movement", function* () {
-  const moving = yield* Moving;
+  const moving = yield* Query.View(Moving);
   const { delta } = yield* Time;
   moving.each((pos, vel) => {
     pos.x += vel.x * delta;
@@ -283,7 +283,7 @@ const Movement = System.tick("Movement", function* () {
 });
 
 const MovementRaw = System.tick("MovementRaw", function* () {
-  const moving = yield* Moving;
+  const moving = yield* Query.View(Moving);
   const { delta } = yield* Time;
   moving.eachChunk((start, end, pos, vel) => {
     const px = pos.x;

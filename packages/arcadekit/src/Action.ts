@@ -12,11 +12,11 @@
  *   const PlayCard = Action.define("cards/PlayCard", Schema.Struct({ card: EntityId, target: EntityId }), { error: NotYourTurn })
  *
  *   const playCard = Action.handler(PlayCard, function*({ card, target }) {
- *     const turn = yield* Turn
+ *     const turn = yield* Singleton.Read(Turn)
  *     if (turn.player !== owner) return yield* NotYourTurn.make({})
  *     const commands = yield* Commands
  *     commands.despawn(card)
- *     const played = yield* CardPlayed.emits
+ *     const played = yield* Event.Emitter(CardPlayed)
  *     played.emit({ card, target })
  *   })
  *
@@ -97,7 +97,7 @@ export interface Refused<P, E> {
  *
  * @category Models
  */
-export interface Action<N extends string, P, E = unknown> {
+export interface Action<N extends string, in out P, out E = unknown> {
   readonly name: N;
   /**
    * Validates the payload and converts it to and from JSON. Derived from the
@@ -111,8 +111,6 @@ export interface Action<N extends string, P, E = unknown> {
   readonly error: Schema.Codec<E, unknown>;
   /** The event of the action's refusals, which `Action.rejected` returns. */
   readonly rejected: Event.Event<Refused<P, E>>;
-  /** Holds no value. It keeps the payload type on the action, invariant. */
-  readonly _P?: (payload: P) => P;
 }
 
 /** A schema whose values and encoded form each have a `_tag`. */
@@ -282,7 +280,7 @@ export interface AnyHandler {
  * names the peer that issued the action.
  *
  *   const pass = Action.handler(Pass, function* (_, { from }) {
- *     const turn = yield* Turn
+ *     const turn = yield* Singleton.Read(Turn)
  *     if (turn.player !== from) return yield* NotYourTurn.make({})
  *     ...
  *   })

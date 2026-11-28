@@ -60,7 +60,7 @@ const Tracks = Sound.sheet("game/Tracks", { theme: "/theme.ogg" });
 const Score = Sound.music(
   "game/Score",
   function* () {
-    const phase = yield* Phase;
+    const phase = yield* State.Reader(Phase);
     if (phase.is("menu")) {
       return undefined; // silence
     }
@@ -111,7 +111,7 @@ const Choose = Action.define(
 );
 
 const Volumes = System.frame("game/Volumes", function* () {
-  const settings = yield* Settings;
+  const settings = yield* Singleton.Read(Settings);
   const player = yield* Sound.Player;
   player.volume(Sound.MusicBus, settings.music);
   player.volume(Sound.EffectsBus, settings.effects === 1 ? 1 : 0);
@@ -121,7 +121,7 @@ const Menu = Plugin.make("game/Menu", {
   plugins: [Sound.plugin],
   handlers: [
     Action.handler(Choose, function* ({ music, effects }) {
-      const settings = yield* Settings.writes;
+      const settings = yield* Singleton.Write(Settings);
       settings.music = music;
       settings.effects = effects ? 1 : 0;
     }),

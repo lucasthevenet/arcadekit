@@ -47,7 +47,7 @@ const Moving = Query.all(Position, Velocity).pipe(Query.writes(Position));
 
 const Movement = System.tick("game/Movement", function* () {
   const { delta } = yield* Time;
-  (yield* Moving).each((position, velocity) => {
+  (yield* Query.View(Moving)).each((position, velocity) => {
     position.x += velocity.x * delta;
     position.y += velocity.y * delta;
   });

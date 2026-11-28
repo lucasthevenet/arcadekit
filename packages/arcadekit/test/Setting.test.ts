@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Schema, pipe } from "effect";
 
 import {
   Action,
@@ -30,18 +30,21 @@ describe("a setting", () => {
         const visit = <A, E>(
           effect: Effect.Effect<A, E, Setting.Store>
         ): Effect.Effect<A, E> => Effect.provide(effect, Setting.layer(kept));
-        expect(yield* visit(Volume)).toBe(1);
-        expect(yield* visit(Keys)).toEqual({ jump: "Space" });
+        expect(yield* visit(Setting.get(Volume))).toBe(1);
+        expect(yield* visit(Setting.get(Keys))).toEqual({ jump: "Space" });
         yield* visit(Setting.set(Volume, 0.25));
-        yield* visit(Keys.pipe(Setting.set({ jump: "KeyW" })));
-        expect(yield* visit(Volume)).toBe(0.25);
+        yield* visit(pipe(Keys, Setting.set({ jump: "KeyW" })));
+        expect(yield* visit(Setting.get(Volume))).toBe(0.25);
         // Another visit, which reads what the first one kept.
-        expect(yield* visit(Volume)).toBe(0.25);
-        expect(yield* visit(Keys)).toEqual({ jump: "KeyW" });
+        expect(yield* visit(Setting.get(Volume))).toBe(0.25);
+        expect(yield* visit(Setting.get(Keys))).toEqual({ jump: "KeyW" });
         expect(kept.get("st/Keys")).toBe('{"jump":"KeyW"}');
         // Another program's settings are its own.
         expect(
-          yield* Effect.provide(Volume, Setting.layer(Setting.makeMemory()))
+          yield* Effect.provide(
+            Setting.get(Volume),
+            Setting.layer(Setting.makeMemory())
+          )
         ).toBe(1);
       })
   );
@@ -60,7 +63,7 @@ describe("a setting", () => {
             })
           )
         );
-        expect(yield* Volume).toBe(1);
+        expect(yield* Setting.get(Volume)).toBe(1);
       }).pipe(Effect.provide(Setting.layer(Setting.makeMemory())))
   );
 
@@ -86,7 +89,9 @@ describe("a setting", () => {
             })
           )
         );
-        expect(yield* Effect.provide(Volume, Setting.layer(full))).toBe(1);
+        expect(
+          yield* Effect.provide(Setting.get(Volume), Setting.layer(full))
+        ).toBe(1);
       })
   );
 
@@ -94,7 +99,7 @@ describe("a setting", () => {
     "fails to read what its schema no longer takes, or text that isn't JSON, until it is set again",
     () =>
       Effect.gen(function* () {
-        expect(yield* Effect.exit(Volume)).toEqual(
+        expect(yield* Effect.exit(Setting.get(Volume))).toEqual(
           Exit.fail(
             new Setting.Invalid({
               key: "st/Volume",
@@ -103,7 +108,7 @@ describe("a setting", () => {
             })
           )
         );
-        expect(yield* Effect.exit(Keys)).toEqual(
+        expect(yield* Effect.exit(Setting.get(Keys))).toEqual(
           Exit.fail(
             new Setting.Invalid({
               key: "st/Keys",
@@ -112,11 +117,11 @@ describe("a setting", () => {
             })
           )
         );
-        expect(yield* Effect.orElseSucceed(Volume, () => Volume.initial)).toBe(
-          1
-        );
+        expect(
+          yield* Effect.orElseSucceed(Setting.get(Volume), () => Volume.initial)
+        ).toBe(1);
         yield* Setting.set(Volume, 0.5);
-        expect(yield* Volume).toBe(0.5);
+        expect(yield* Setting.get(Volume)).toBe(0.5);
       }).pipe(
         Effect.provide(
           Setting.layer(
@@ -140,10 +145,10 @@ describe("a setting", () => {
         const Game = App.define({
           systems: [
             System.frame("st/Hear", function* () {
-              heard.push(yield* Volume);
+              heard.push(yield* Setting.get(Volume));
             }),
             System.input("st/Bound", function* () {
-              const { jump } = yield* Keys;
+              const { jump } = yield* Setting.get(Keys);
               if (jump === "KeyW") {
                 (yield* Action.Actions).enqueue(Add, {});
               }
@@ -151,7 +156,7 @@ describe("a setting", () => {
           ],
           handlers: [
             Action.handler(Add, function* () {
-              (yield* Score.writes).points++;
+              (yield* Singleton.Write(Score)).points++;
             }),
           ],
         });
@@ -166,7 +171,7 @@ describe("a setting", () => {
           }
           return {
             hash: (yield* app.read(World)).hash(),
-            points: (yield* app.read(Score)).points,
+            points: (yield* app.read(Singleton.Read(Score))).points,
           };
         });
         const quiet = yield* play(Setting.makeMemory({ "st/Volume": "0.5" }));
@@ -188,7 +193,7 @@ describe("a setting", () => {
       "st/Reads",
       // @ts-expect-error a setting is outside the world, which a tick reads
       function* () {
-        yield* Volume;
+        yield* Setting.get(Volume);
       }
     );
     const Add = Action.define("st/Pick", Schema.Struct({}));
@@ -196,12 +201,12 @@ describe("a setting", () => {
       Add,
       // @ts-expect-error nor in a handler, which runs in the tick
       function* () {
-        yield* Keys;
+        yield* Setting.get(Keys);
       }
     );
     Plugin.make("st/Setup", {
       // @ts-expect-error nor in a plugin's setup, which runs as a tick does
-      setup: Effect.asVoid(Volume),
+      setup: Effect.asVoid(Setting.get(Volume)),
     });
     expect([Reads, picked]).toHaveLength(2);
   });

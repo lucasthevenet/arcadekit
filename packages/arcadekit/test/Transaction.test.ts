@@ -539,7 +539,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
   const world = yield* World.writes(Body);
   const commands = yield* Commands.spawns(Body, Sheet, Aura, Marked);
   const random = yield* Random;
-  const noted = yield* Noted.emits;
+  const noted = yield* Event.Emitter(Noted);
   const actions = yield* Action.Actions;
   for (const step of steps) {
     switch (step) {
@@ -548,13 +548,13 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
         break;
       }
       case "each": {
-        (yield* Bodies).each((body) => {
+        (yield* Query.View(Bodies)).each((body) => {
           body.y += 1;
         });
         break;
       }
       case "chunk": {
-        (yield* Sheets).eachChunk((start, end, row) => {
+        (yield* Query.View(Sheets)).eachChunk((start, end, row) => {
           for (let i = start; i < end; i++) {
             row.signed[i] = row.signed[i]! - 1;
             row.note[i] = `seen ${row.signed[i]}`;
@@ -563,7 +563,7 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
         break;
       }
       case "sparse": {
-        (yield* Auras).each((aura) => {
+        (yield* Query.View(Auras)).each((aura) => {
           aura.double += 0.5;
         });
         break;
@@ -601,17 +601,17 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
       case "read": {
         // What it has heard since it last listened goes into the world, so
         // that an event read twice, or never, shows.
-        const heard = (yield* Rung)
+        const heard = (yield* Event.Reader(Rung))
           .read()
           .reduce((sum, { at }) => sum + 100 + at, 0);
-        (yield* Bodies).each((body) => {
+        (yield* Query.View(Bodies)).each((body) => {
           body.y += heard;
         });
         break;
       }
       case "ring": {
         // An event of the kind it reads, so that it can read twice.
-        (yield* Rung.emits).emit({ at: 0 });
+        (yield* Event.Emitter(Rung)).emit({ at: 0 });
         break;
       }
       case "bug": {
@@ -628,24 +628,24 @@ const act = Action.handler(Act, function* ({ refuse, steps, target }) {
 const echoes: number[] = [];
 const echo = Action.handler(Echo, function* ({ by }) {
   echoes.push(by);
-  (yield* Bodies).each((body) => {
+  (yield* Query.View(Bodies)).each((body) => {
     body.x += by;
   });
 });
 
 const notes: string[] = [];
 const Listen = System.tick("Listen", function* () {
-  for (const { step } of (yield* Noted).read()) {
+  for (const { step } of (yield* Event.Reader(Noted)).read()) {
     notes.push(step);
   }
 });
 const Ring = System.tick("Ring", function* () {
-  (yield* Rung.emits).emit({ at: (yield* Time).tick });
+  (yield* Event.Emitter(Rung)).emit({ at: (yield* Time).tick });
 });
 /** Hears each ring in the tick it is rung in: once, whatever is refused. */
 const rings: number[] = [];
 const Hear = System.tick("Hear", function* () {
-  for (const { at } of (yield* Rung).read()) {
+  for (const { at } of (yield* Event.Reader(Rung)).read()) {
     rings.push(at);
   }
 });
@@ -688,7 +688,7 @@ const game = (hashEvery = 1) =>
   Effect.gen(function* () {
     const app = yield* App.make(Game, { seed: 9, hashEvery });
     const world = yield* app.read(World);
-    const bodies = yield* app.read(Query.all(Body));
+    const bodies = yield* app.read(Query.View(Query.all(Body)));
     // In the order they were spawned in: each begins at an x of its own.
     const began = (entity: Entity): number => world.get(entity, Body)!.x;
     const entities = bodies.entities().toSorted((a, b) => began(a) - began(b));
@@ -1101,10 +1101,10 @@ describe("an action that is accepted", () => {
         const seen = world.get(target, Body)!.x;
         world.set(target, Body, { x: seen * 2 });
         let total = 0;
-        (yield* Bodies).each((body) => {
+        (yield* Query.View(Bodies)).each((body) => {
           body.y = 1;
         });
-        (yield* Bodies).each((body) => {
+        (yield* Query.View(Bodies)).each((body) => {
           total += body.y;
         });
         return [world.get(target, Body)!.x, total] as const;
@@ -1165,7 +1165,7 @@ describe("an action that is accepted", () => {
         const Outer = Action.define("tx/Outer", Schema.Struct({}));
         let app: App.App | undefined;
         const outer = Action.handler(Outer, function* () {
-          (yield* Bodies).each((body) => {
+          (yield* Query.View(Bodies)).each((body) => {
             body.x = 7;
           });
           yield* Effect.orDie(app!.dispatchByName("tx/Echo", { by: 1 }));

@@ -125,7 +125,7 @@ const Clock = Singleton.define("chess/Clock", { left: Field.f32 }, { left: 0 });
 
 // The game ticks while the clock runs, since each tick changes it.
 const Countdown = System.tick("chess/Countdown", function* () {
-  const clock = yield* Clock.writes;
+  const clock = yield* Singleton.Write(Clock);
   if (clock.left > 0) {
     clock.left = Math.max(0, clock.left - (yield* Time).delta);
   }

@@ -24,6 +24,7 @@ import {
   Driver,
   Event,
   Field,
+  Grid,
   Plugin,
   Query,
   Random,
@@ -33,6 +34,7 @@ import {
   Sound,
   State,
   System,
+  Test,
   Time,
   Timeline,
   Timer,
@@ -82,14 +84,14 @@ const Scatter = Action.define(
 const Pulse = Action.define("sv/Pulse", Schema.Struct({}));
 
 const add = Action.handler(Add, function* ({ by }) {
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value += by;
   });
 });
 // Doubling and adding do not commute, so the tally shows any change of order.
 const double = Action.handler(Double, function* () {
   let refuse = false;
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.value *= 2;
     refuse = tally.value > 1e9;
   });
@@ -107,7 +109,7 @@ const scatter = Action.handler(Scatter, function* ({ count }) {
   }
 });
 const pulse = Action.handler(Pulse, function* () {
-  (yield* Tallies).each((tally) => {
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.pulses++;
   });
 });
@@ -121,9 +123,9 @@ const Sounded = Event.define(
 let ticksRun = 0;
 const Listen = System.tick("Listen", function* () {
   ticksRun++;
-  const sounded = (yield* Sounded).read();
-  const refused = (yield* Action.Rejected).read().length;
-  (yield* Tallies).each((tally) => {
+  const sounded = (yield* Event.Reader(Sounded)).read();
+  const refused = (yield* Event.Reader(Action.Rejected)).read().length;
+  (yield* Query.View(Tallies)).each((tally) => {
     for (const sound of sounded) {
       // The date is a Date here, as it was emitted: seconds since 1970.
       tally.heard += sound.at.getTime() / 1000;
@@ -134,7 +136,7 @@ const Listen = System.tick("Listen", function* () {
 const Drift = System.tick("Drift", function* () {
   const random = yield* Random;
   const commands = yield* Commands;
-  (yield* Motes).each((mote, entity) => {
+  (yield* Query.View(Motes)).each((mote, entity) => {
     mote.x += random.next() - 0.5;
     if (random.int(1, 12) === 1) {
       commands.despawn(entity);
@@ -154,7 +156,7 @@ const Bot = System.tick("Bot", function* () {
 });
 const Sounding = System.tick("Sound", function* () {
   const { tick } = yield* Time;
-  (yield* Sounded.emits).emit({ tick, at: new Date(tick * 1000) });
+  (yield* Event.Emitter(Sounded)).emit({ tick, at: new Date(tick * 1000) });
 });
 /**
  * Reads what Sounding emits on the tick it is emitted, and Listen on the next:
@@ -162,8 +164,8 @@ const Sounding = System.tick("Sound", function* () {
  * counted once here, so reading one again after a load would show.
  */
 const Echo = System.tick("Echo", function* () {
-  const echoes = (yield* Sounded).read().length;
-  (yield* Tallies).each((tally) => {
+  const echoes = (yield* Event.Reader(Sounded)).read().length;
+  (yield* Query.View(Tallies)).each((tally) => {
     tally.echoes += echoes;
   });
 });
@@ -205,7 +207,9 @@ const talliesOf = (app: Pick<App.Any, "read">) =>
   app.read(
     Effect.gen(function* () {
       const world = yield* World;
-      return (yield* Counted).entities().map((e) => world.get(e, Tally));
+      return (yield* Query.View(Counted))
+        .entities()
+        .map((e) => world.get(e, Tally));
     })
   );
 
@@ -597,7 +601,7 @@ describe("a game that cannot be saved as it stands", () => {
       const Mend = Action.define("sv/Mend", Schema.Struct({}));
       const mend = Action.handler(Mend, function* () {
         const world = yield* World.writes(Blob);
-        for (const entity of (yield* Query.all(Blob)).entities()) {
+        for (const entity of (yield* Query.View(Query.all(Blob))).entities()) {
           world.set(entity, Blob, { v: "fine" });
         }
       });
@@ -906,7 +910,7 @@ describe("a save loaded in place", () => {
         const Phased = App.define({
           handlers: [
             Action.handler(Begin, function* () {
-              (yield* Phase.sets).set("playing");
+              (yield* State.Setter(Phase)).set("playing");
             }),
           ],
         });
@@ -925,8 +929,12 @@ describe("a save loaded in place", () => {
             const freshWorld = yield* fresh.read(World);
             yield* app.tick(1 / 60);
             yield* fresh.tick(1 / 60);
-            expect((yield* app.read(Phase)).value).toBe("playing");
-            expect((yield* fresh.read(Phase)).value).toBe("playing");
+            expect((yield* app.read(State.Reader(Phase))).value).toBe(
+              "playing"
+            );
+            expect((yield* fresh.read(State.Reader(Phase))).value).toBe(
+              "playing"
+            );
             expect(world.hash()).toBe(freshWorld.hash());
           })
         );
@@ -943,14 +951,14 @@ describe("a save loaded in place", () => {
         const Rings = App.define({
           systems: [
             System.frame("sv/Hear", function* () {
-              for (const rang of (yield* Rang).read()) {
+              for (const rang of (yield* Event.Reader(Rang)).read()) {
                 heard.push(rang.n);
               }
             }),
           ],
           handlers: [
             Action.handler(Ring, function* ({ n }) {
-              (yield* Rang.emits).emit({ n });
+              (yield* Event.Emitter(Rang)).emit({ n });
             }),
           ],
         });
@@ -1093,34 +1101,36 @@ const Rolled = Plugin.make("sv/Rolls", {
   systems: [
     System.tick("sv/Roll", function* () {
       const { delta } = yield* Time;
-      (yield* Rolling).each((ball) => {
+      (yield* Query.View(Rolling)).each((ball) => {
         ball.x += ball.speed * delta;
       });
     }),
     System.frame("sv/Draw", function* () {
       const xs: number[] = [];
-      (yield* Balls).each((ball) => {
+      (yield* Query.View(Balls)).each((ball) => {
         xs.push(ball.x);
       });
       drawn.push(xs);
     }),
     View.publish(Distance, function* () {
       let sum = 0;
-      (yield* Balls).each((ball) => {
+      (yield* Query.View(Balls)).each((ball) => {
         sum += ball.x;
       });
       return sum;
     }),
     Sound.music("sv/Theme", function* () {
-      return (yield* Lit).value === "lit" ? Tunes.theme : undefined;
+      return (yield* State.Reader(Lit)).value === "lit"
+        ? Tunes.theme
+        : undefined;
     }),
   ],
   handlers: [
     Action.handler(Kick, function* ({ by }) {
-      (yield* Rolling).each((ball) => {
+      (yield* Query.View(Rolling)).each((ball) => {
         ball.speed += by;
       });
-      (yield* Lit.sets).set("lit");
+      (yield* State.Setter(Lit)).set("lit");
     }),
   ],
   setup: Effect.map(Commands.spawns(Ball), (commands) => {
@@ -1198,7 +1208,7 @@ describe("a game saved to a slot", () => {
         frames(10);
         expect(drawn.length).toBe(draws + 10);
         const xs: number[] = [];
-        (yield* app.read(Balls)).each((ball) => {
+        (yield* app.read(Query.View(Balls))).each((ball) => {
           xs.push(ball.x);
         });
         expect(drawn.at(-1)).toEqual(xs);
@@ -1229,25 +1239,51 @@ describe("a game saved to a slot", () => {
 const Coins = Singleton.define("sv/Coins", { got: Field.i32 }, { got: 0 });
 const Grab = Action.define("sv/Grab", Schema.Struct({}));
 const Finish = Action.define("sv/Finish", Schema.Struct({}));
+const finish = Action.handler(Finish, function* () {
+  (yield* Event.Emitter(Save.Asked)).emit({ slot: "finished" });
+});
 const Levels = App.define({
   systems: [
     // The level ends with the third coin, and the rules ask to keep it.
     System.tick("sv/LevelEnd", function* () {
-      if ((yield* Coins).got === 3) {
-        (yield* Save.Asked.emits).emit({ slot: "level" });
+      if ((yield* Singleton.Read(Coins)).got === 3) {
+        (yield* Event.Emitter(Save.Asked)).emit({ slot: "level" });
       }
     }),
     // And every second of the game's time.
     System.tick("sv/Every", function* () {
-      (yield* Save.Asked.emits).emit({ slot: "auto" });
+      (yield* Event.Emitter(Save.Asked)).emit({ slot: "auto" });
     }).pipe(Timer.every(1)),
   ],
   handlers: [
     Action.handler(Grab, function* () {
-      (yield* Coins.writes).got++;
+      (yield* Singleton.Write(Coins)).got++;
     }),
-    Action.handler(Finish, function* () {
-      (yield* Save.Asked.emits).emit({ slot: "finished" });
+    finish,
+  ],
+});
+
+const Finished = Save.slot("finished");
+const Status = View.define<Save.SlotStatus>("sv/Status", { _tag: "Off" });
+const Small = Singleton.define(
+  "sv/Small",
+  { tiles: Grid.tiles(2, 2) },
+  { tiles: Grid.fill(2, 2) }
+);
+const Spoil = Action.define("sv/Spoil", Schema.Struct({}));
+const Told = App.define({
+  plugins: [View.plugin],
+  systems: [
+    View.publish(Status, function* () {
+      return yield* Save.Status(Finished);
+    }),
+  ],
+  handlers: [
+    finish,
+    // A grid of another size is a save that can't be taken.
+    Action.handler(Spoil, function* () {
+      (yield* Singleton.Write(Small)).tiles = Grid.fill(3, 3);
+      (yield* Event.Emitter(Save.Asked)).emit({ slot: Finished.name });
     }),
   ],
 });
@@ -1405,4 +1441,144 @@ describe("a save the rules ask for", () => {
         )
     );
   }
+  it.effect(
+    "has its slot's status told to the game's UI: off, unasked, failed until a later ask keeps it, and off once nothing keeps the saves",
+    () => {
+      let full = true;
+      const slots = Save.makeMemory();
+      const store: Save.StoreShape = {
+        ...slots,
+        set: (slot, bytes) =>
+          full
+            ? Effect.fail(
+                new Save.StoreFailed({ slot, message: "It is full." })
+              )
+            : slots.set(slot, bytes),
+      };
+      return Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
+        });
+        yield* game.step();
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* Save.autosave(game.app);
+            yield* game.step();
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+            full = false;
+            yield* game.app.dispatch(Finish, {});
+            yield* game.step();
+          })
+        );
+        yield* game.step();
+        expect(told).toEqual([
+          { _tag: "Off" },
+          { _tag: "Unasked" },
+          {
+            _tag: "Failed",
+            error: new Save.StoreFailed({
+              slot: "finished",
+              message: "It is full.",
+            }),
+          },
+          { _tag: "Saved" },
+          { _tag: "Off" },
+        ]);
+        expect(yield* slots.slots).toEqual(["finished"]);
+      }).pipe(
+        Effect.provide(Layer.merge(Save.layer(store), Logger.layer([]))),
+        Effect.scoped
+      );
+    }
+  );
+
+  it.effect("that can't be taken is told as Save.Refused", () => {
+    const slots = Save.makeMemory();
+    return Effect.gen(function* () {
+      const game = yield* Test.make(Told);
+      const told: Save.SlotStatus[] = [];
+      game.ui.subscribe(Status, (status) => {
+        told.push(status);
+      });
+      yield* Save.autosave(game.app);
+      yield* game.app.dispatch(Spoil, {});
+      yield* game.step();
+      expect(told.at(-1)).toEqual({
+        _tag: "Failed",
+        error: new Save.Refused({
+          message: `"sv/Small.tiles" holds a value its codec refuses: a map of 3 by 3 is in a field of 2 by 2`,
+        }),
+      });
+      expect(yield* slots.slots).toEqual([]);
+    }).pipe(
+      Effect.provide(Layer.merge(Save.layer(slots), Logger.layer([]))),
+      Effect.scoped
+    );
+  });
+
+  it.effect(
+    "that a store of the game's own throws for is told as Save.StoreFailed",
+    () =>
+      Effect.gen(function* () {
+        const game = yield* Test.make(Told);
+        const told: Save.SlotStatus[] = [];
+        game.ui.subscribe(Status, (status) => {
+          told.push(status);
+        });
+        yield* Save.autosave(game.app);
+        yield* game.app.dispatch(Finish, {});
+        yield* game.step();
+        expect(told.at(-1)).toEqual({
+          _tag: "Failed",
+          error: new Save.StoreFailed({
+            slot: "finished",
+            message: "The quota is exceeded.",
+          }),
+        });
+      }).pipe(
+        Effect.provide(
+          Layer.merge(
+            Save.layer({
+              ...Save.makeMemory(),
+              set: () =>
+                Effect.sync(() => {
+                  throw new Error("The quota is exceeded.");
+                }),
+            }),
+            Logger.layer([])
+          )
+        ),
+        Effect.scoped
+      )
+  );
+
+  it("whose slot's status is not for the code of the tick to read", () => {
+    const Reads = System.tick(
+      "sv/Reads",
+      // @ts-expect-error what the store did is outside the world, which a tick reads
+      function* () {
+        yield* Save.Status(Finished);
+      }
+    );
+    expect(Reads.name).toBe("sv/Reads");
+  });
+
+  it("has a status that Save.match is given every case of", () => {
+    expect(
+      Save.match(
+        { _tag: "Saved" },
+        {
+          Off: () => "off",
+          Unasked: () => "unasked",
+          Saved: () => "saved",
+          Failed: ({ error }) => error.message,
+        }
+      )
+    ).toBe("saved");
+    // @ts-expect-error a status left out is a case that doesn't compile
+    Save.match({ Off: () => "", Unasked: () => "", Saved: () => "" });
+  });
 });

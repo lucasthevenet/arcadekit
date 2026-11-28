@@ -21,7 +21,7 @@ const Score = Singleton.define(
 );
 const Add = Action.define("game/Add", Schema.Struct({ points: Schema.Int }));
 const add = Action.handler(Add, function* ({ points }) {
-  (yield* Score.writes).points += points;
+  (yield* Singleton.Write(Score)).points += points;
 });
 export const Rules = Plugin.make("game/Rules", {
   handlers: [add],
@@ -32,7 +32,7 @@ it.effect("adds points", () =>
     const game = yield* Test.make(App.define({ plugins: [Rules] }));
     yield* game.app.enqueue(Add, { points: 3 });
     yield* game.step();
-    expect((yield* game.app.read(Score)).points).toBe(3);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(3);
   })
 );
 ```
@@ -59,11 +59,11 @@ it.effect("hears a key and a stick", () =>
     const Coin = Input.button("game/Coin", ["Space", Input.padButton(0, 0)]);
     const Lean = Input.axis("game/Lean", { pad: Input.padAxis(0, 0) });
     const Count = System.tick("game/Count", function* () {
-      const score = yield* Score.writes;
-      if ((yield* Coin).pressed) {
+      const score = yield* Singleton.Write(Score);
+      if ((yield* Input.Read(Coin)).pressed) {
         score.points += 1;
       }
-      if ((yield* Lean) > 0.5) {
+      if ((yield* Input.Read(Lean)) > 0.5) {
         score.points += 10;
       }
     });
@@ -76,7 +76,7 @@ it.effect("hears a key and a stick", () =>
     game.input.press("Space");
     game.input.move(Input.padAxis(0, 0), 0.8);
     yield* game.step(); // reads the devices, then ticks
-    expect((yield* game.app.read(Score)).points).toBe(11);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(11);
   })
 );
 ```
@@ -117,7 +117,7 @@ it.effect("starts with the points the level's file says", () =>
     });
     const Begin = Action.define("game/Begin", Schema.Int);
     const begin = Action.handler(Begin, function* (points) {
-      (yield* Score.writes).points = points;
+      (yield* Singleton.Write(Score)).points = points;
     });
     const game = yield* Test.make(
       App.define({
@@ -128,7 +128,7 @@ it.effect("starts with the points the level's file says", () =>
     );
     yield* game.step(); // loads the file in its frame
     yield* game.step(); // hands it to the rules
-    expect((yield* game.app.read(Score)).points).toBe(5);
+    expect((yield* game.app.read(Singleton.Read(Score))).points).toBe(5);
   })
 );
 ```

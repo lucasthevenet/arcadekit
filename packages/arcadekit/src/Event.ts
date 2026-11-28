@@ -5,12 +5,12 @@
  *   const Collided = Event.define("physics/Collided", Schema.Struct({ a: EntityId, b: EntityId }))
  *
  *   // in a system of the tick
- *   const collided = yield* Collided.emits
+ *   const collided = yield* Event.Emitter(Collided)
  *   collided.emit({ a, b })                 // plain call, fine inside loops
  *   for (const hit of collided.read()) ...  // unseen ones, from before this run
  *
  *   // in any stage
- *   for (const hit of (yield* Collided).read()) ...
+ *   for (const hit of (yield* Event.Reader(Collided)).read()) ...
  *
  * Every system sees every event exactly once, whatever order the systems run
  * in. A system that runs before the emitter sees the event on the next tick,
@@ -33,17 +33,20 @@
  * event leaves the program: in a save, which holds the events waiting to be
  * read, or through `Event.encode` and `Event.decode`, for a tool.
  */
-import { Cause, Data, Effect, Effectable, Exit, Schema } from "effect";
+import { Cause, Data, Exit, Schema } from "effect";
+import type { Effect } from "effect";
 
 import type { WithSpawned } from "./ecs/spawned.ts";
 import { EventBus, defining } from "./internal/eventBus.ts";
+import { lookup, service } from "./internal/lookup.ts";
+import type { Given } from "./internal/lookup.ts";
 import { Events } from "./Services.ts";
 import type { Sim } from "./Services.ts";
 
 /**
- * The handle to one event type that `yield* SomeEvent` gives the code of any
- * stage, which reads the events its holder has not seen yet. To emit, the
- * code of the tick asks for `yield* SomeEvent.emits`.
+ * The handle to one event type that `yield* Event.Reader(SomeEvent)` gives
+ * the code of any stage, which reads the events its holder has not seen yet.
+ * To emit, the code of the tick asks for `yield* Event.Emitter(SomeEvent)`.
  *
  * @category Models
  */
@@ -57,8 +60,8 @@ export interface Reader<P> {
 }
 
 /**
- * The handle to one event type that `yield* SomeEvent.emits` gives the code
- * of the tick: a system of the tick, a handler or a plugin's setup. It emits
+ * The handle to one event type that `yield* Event.Emitter(SomeEvent)` gives
+ * the code of the tick: a system of the tick, a handler or a plugin's setup. It emits
  * events and reads the ones its holder hasn't seen yet. The holder reads its
  * own events on its next run.
  *
@@ -76,48 +79,64 @@ export interface Emitter<P> extends Reader<P> {
 }
 
 /**
- * An event type, as `Event.define` makes it. It is an Effect, and `yield*`
- * returns its `Event.Reader` in the current app.
+ * An event type, as `Event.define` makes it. The code of any stage reads it
+ * with `yield* Event.Reader(SomeEvent)`, and the code of the tick emits it
+ * with `yield* Event.Emitter(SomeEvent)`.
  *
  * @category Models
  */
-export class Event<P> extends Effectable.Class<Reader<P>, never, Events> {
+export class Event<P> {
   readonly name: string;
   /** Converts a payload to and from JSON. Derived from the event's schema. */
   readonly codec: Schema.Codec<P, unknown>;
-  private effect: Effect.Effect<Reader<P>, never, Events> | undefined;
-  private emitting: Effect.Effect<Emitter<P>, never, Events | Sim> | undefined;
 
   constructor(name: string, codec: Schema.Codec<P, unknown>) {
-    super();
     this.name = name;
     this.codec = codec;
     defining(this as Event<unknown>);
   }
-
-  asEffect(): Effect.Effect<Reader<P>, never, Events> {
-    return (this.effect ??= Effect.map(Effect.service(Events), (bus) => {
-      const handle = bus.handle(this);
-      return { read: () => handle.read() };
-    }));
-  }
-
-  /**
-   * The same events, with `emit`. Asking for it adds `Sim` to the system's
-   * requirements, and a system of the frame or input stage that requires
-   * `Sim` doesn't compile.
-   */
-  get emits(): Effect.Effect<Emitter<P>, never, Events | Sim> {
-    return (this.emitting ??= Effect.map(Effect.service(Events), (bus) => {
-      if (!(bus instanceof EventBus)) {
-        throw new Error(
-          `${this.name}.emits was asked for outside the tick. The frame stage and the input stage read events, and only the tick emits.`
-        );
-      }
-      return bus.handle(this);
-    }));
-  }
 }
+
+const readerOf = <P>(given: Given, event: Event<P>): Reader<P> => {
+  const handle = service(given, Events).handle(event);
+  return { read: () => handle.read() };
+};
+
+/**
+ * Asks for an event's `Event.Reader` in the current app, which reads the
+ * events its holder has not seen yet. The code of any stage can ask.
+ *
+ *   for (const hit of (yield* Event.Reader(Collided)).read()) ...
+ *
+ * @category Capabilities
+ */
+export const Reader = <P>(
+  event: Event<P>
+): Effect.Effect<Reader<P>, never, Events> => lookup(readerOf, event);
+
+const emitterOf = <P>(given: Given, event: Event<P>): Emitter<P> => {
+  const bus = service(given, Events);
+  if (!(bus instanceof EventBus)) {
+    throw new Error(
+      `Event.Emitter(${event.name}) was asked for outside the tick. The frame stage and the input stage read events, and only the tick emits.`
+    );
+  }
+  return bus.handle(event);
+};
+
+/**
+ * Asks for an event's `Event.Emitter` in the current app: the same events,
+ * with `emit`. Asking for it adds `Sim` to the system's requirements, and a
+ * system of the frame or input stage that requires `Sim` doesn't compile.
+ *
+ *   const collided = yield* Event.Emitter(Collided)
+ *   collided.emit({ a, b })
+ *
+ * @category Capabilities
+ */
+export const Emitter = <P>(
+  event: Event<P>
+): Effect.Effect<Emitter<P>, never, Events | Sim> => lookup(emitterOf, event);
 
 /**
  * Defines an event type, with the schema of its payload. The payload type is
@@ -213,7 +232,7 @@ export const STORE = "arcadekit/events";
 
 /**
  * The app's events as `yield* Events` hands them, which read and have no
- * `emit`. A system of the tick emits through an event's `emits`.
+ * `emit`. A system of the tick emits through `Event.Emitter`.
  *
  * @category Models
  */

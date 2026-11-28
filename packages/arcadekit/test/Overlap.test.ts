@@ -261,7 +261,7 @@ const Enemies = Query.all(Transform2d.Position, Overlap.Circle, Enemy);
 
 const Fly = System.tick("ov/Fly", function* () {
   const { delta } = yield* Time;
-  (yield* Flying).each((position, bullet) => {
+  (yield* Query.View(Flying)).each((position, bullet) => {
     position.x += bullet.dx * delta;
   });
 });
@@ -269,24 +269,34 @@ const Fly = System.tick("ov/Fly", function* () {
 const Hit = System.tick("ov/Hit", function* () {
   const world = yield* World.writes(Enemy);
   const commands = yield* Commands;
-  const tally = yield* Tally.writes;
-  Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
-    const hp = world.get(enemy, Enemy)!.hp - 1;
-    world.set(enemy, Enemy, { hp });
-    tally.hits = [...tally.hits, [bullet, enemy]];
-    return hp > 0 ? "first" : "both";
-  });
+  const tally = yield* Singleton.Write(Tally);
+  Overlap.pairs(
+    commands,
+    yield* Query.View(Bullets),
+    yield* Query.View(Enemies),
+    (bullet, enemy) => {
+      const hp = world.get(enemy, Enemy)!.hp - 1;
+      world.set(enemy, Enemy, { hp });
+      tally.hits = [...tally.hits, [bullet, enemy]];
+      return hp > 0 ? "first" : "both";
+    }
+  );
 });
 
 const Spend = System.tick("ov/Spend", function* () {
   const commands = yield* Commands;
-  const tally = yield* Tally.writes;
-  Overlap.pairs(commands, yield* Bullets, yield* Enemies, (bullet, enemy) => {
-    tally.hits = [...tally.hits, [bullet, enemy]];
-    commands.despawn(bullet);
-    commands.despawn(enemy);
-    return "neither";
-  });
+  const tally = yield* Singleton.Write(Tally);
+  Overlap.pairs(
+    commands,
+    yield* Query.View(Bullets),
+    yield* Query.View(Enemies),
+    (bullet, enemy) => {
+      tally.hits = [...tally.hits, [bullet, enemy]];
+      commands.despawn(bullet);
+      commands.despawn(enemy);
+      return "neither";
+    }
+  );
 });
 
 /** A spawn of enemies and bullets, as the test lays them out. */
@@ -346,8 +356,12 @@ describe("a shooter", () => {
       );
       yield* app.tick(0);
       const world = yield* app.read(World);
-      const enemies = (yield* app.read(Query.all(Enemy))).entities();
-      const bullets = (yield* app.read(Query.all(Bullet))).entities();
+      const enemies = (yield* app.read(
+        Query.View(Query.all(Enemy))
+      )).entities();
+      const bullets = (yield* app.read(
+        Query.View(Query.all(Bullet))
+      )).entities();
       // The first bullet killed the first enemy, and the second bullet,
       // which no enemy is left to stop, flies on.
       const left = enemies.map((enemy) => [
@@ -359,7 +373,7 @@ describe("a shooter", () => {
         [10.5, 5],
       ]);
       expect(bullets).toHaveLength(1);
-      expect((yield* app.read(Tally)).hits).toHaveLength(2);
+      expect((yield* app.read(Singleton.Read(Tally))).hits).toHaveLength(2);
     })
   );
 
@@ -376,10 +390,14 @@ describe("a shooter", () => {
           [0.1, -0.1, 10.2],
           Spend
         );
-        const enemies = (yield* app.read(Query.all(Enemy))).entities();
-        const bullets = (yield* app.read(Query.all(Bullet))).entities();
+        const enemies = (yield* app.read(
+          Query.View(Query.all(Enemy))
+        )).entities();
+        const bullets = (yield* app.read(
+          Query.View(Query.all(Bullet))
+        )).entities();
         yield* app.tick(0);
-        expect((yield* app.read(Tally)).hits).toEqual([
+        expect((yield* app.read(Singleton.Read(Tally))).hits).toEqual([
           [bullets[0], enemies[0]],
           [bullets[2], enemies[1]],
         ]);
@@ -411,14 +429,14 @@ describe("a shooter", () => {
           const app = yield* shooter(enemies, bullets);
           // Spawned in order, so each id has the health it was given.
           const health = new Map(
-            (yield* app.read(Query.all(Enemy)))
+            (yield* app.read(Query.View(Query.all(Enemy))))
               .entities()
               .map((enemy, i) => [enemy, enemies[i]!.hp] as const)
           );
           for (let i = 0; i < 180; i++) {
             yield* app.tick(1 / 60);
           }
-          const { hits } = yield* app.read(Tally);
+          const { hits } = yield* app.read(Singleton.Read(Tally));
           expect(hits.length, `seed ${seed}`).toBeGreaterThan(20);
           const shots = hits.map(([bullet]) => bullet);
           expect(new Set(shots).size).toBe(shots.length);
@@ -433,7 +451,7 @@ describe("a shooter", () => {
             // Gone exactly when its health ran out.
             expect(world.isAlive(enemy)).toBe(count < hp);
           }
-          expect((yield* app.read(Query.all(Bullet))).count()).toBe(
+          expect((yield* app.read(Query.View(Query.all(Bullet)))).count()).toBe(
             bullets.length - hits.length
           );
         }

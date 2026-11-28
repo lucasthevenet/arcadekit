@@ -51,12 +51,12 @@ const PlayCard = Action.define(
 const Pick = Input.button("game/Pick", [Input.pointerButton()]);
 
 const Picking = System.input("game/Picking", function* () {
-  if (!(yield* Pick).pressed) {
+  if (!(yield* Input.Read(Pick)).pressed) {
     return;
   }
   const { x } = yield* Input.Pointer;
   const actions = yield* Action.Actions;
-  (yield* Cards).each((card, entity) => {
+  (yield* Query.View(Cards)).each((card, entity) => {
     if (card.left <= x && x < card.right) {
       actions.enqueue(PlayCard, { card: entity });
     }
