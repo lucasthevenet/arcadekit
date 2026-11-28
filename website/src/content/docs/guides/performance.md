@@ -32,7 +32,7 @@ Every variant does the same work, `pos += vel * dt`:
 - An Effect per entity costs seven times as much as `each`, so a system is one Effect with a plain loop inside.
 - As a filter, a sparse tag that few entities have costs a loop little. A sparse tag that many entities have, interleaved with entities that don't, breaks tables into short runs and erases `eachChunk`'s advantage. Store such a component in a table. See [components](components.md).
 - A query that requires a sparse tag held by 1 entity in 100 takes about 39 µs per pass to visit its 1,000 matches.
-- `each` rebinds its accessors for each table it visits, at about 100 ns per term, so a world of many small tables pays for it. With 100,000 entities in 8,192 tables, `each` measured 25 ns per entity.
+- `each` rebinds its accessors for each table it visits, at about 100 ns per term, so a world of many small tables pays for it. With 100,000 entities in 8,192 tables, `each` measured 25 ns per entity (`fragmentedTables`).
 - Running a loop over 100,000 entities through `app.tick` adds 0.1 ns per entity to one over raw columns, and nothing measurable to one with `each`.
 
 ## Hashing, snapshots, and rewinds
@@ -53,10 +53,10 @@ Every variant does the same work, `pos += vel * dt`:
 
 - The hash, a capture and a rewind cost what changed since the last hash or capture, not the size of the world. Each component of each table counts as changed once a loop of a query that [writes](queries.md#name-what-a-query-writes) it visits the table, or `world.set` writes it, or an entity joins or leaves the table. What did not change costs one step per component of each table.
 - Hashing what changed costs about 1.4 ns per 32-bit field per entity, with an entity's id counting as two fields when its table's rows changed. A sparse component's field costs about four times as much, because its members are hashed one by one so that their order doesn't matter.
-- A capture copies what changed and shares the rest with the moment before. Ten moments of a game that moves every entity each tick hold 9.6 MB, where ten snapshots hold 28 MB, and 2.5 MB when one table in a hundred moves.
-- A rewind copies back what changed since the moment. It also drops every query's view, which each system builds again when it next runs: about 2.5 µs per view, measured with 50 views over 100 tables.
-- An app's hash also encodes each queued action and each waiting event through its schema. An event with a payload of four fields costs about 0.8 µs, and 256 events cost 0.2 ms at every hash check.
-- A [hash check](replays.md) hashes every column, whatever changed, so that a write that went around `Query.writes` still shows up. It is one hash every `hashEvery` ticks, 60 by default: over the world of 100,000 entities, hash checks average 14 to 16 µs per tick.
+- A capture copies what changed and shares the rest with the moment before. Ten moments of a game that moves every entity each tick hold 9.6 MB (`tenMoments`), where ten snapshots hold 28 MB, and 2.5 MB when one table in a hundred moves (`tenMomentsFew`).
+- A rewind copies back what changed since the moment. It also drops every query's view, which each system builds again when it next runs: about 2.5 µs per view, measured with 50 views over 100 tables (`rewindViews`).
+- An app's hash also encodes each queued action and each waiting event through its schema. An event with a payload of four fields costs about 0.8 µs, and 256 events cost 0.2 ms at every hash check (`hashWaiting`).
+- A [hash check](replays.md) hashes every column, whatever changed, so that a write that went around `Query.writes` still shows up. It is one hash every `hashEvery` ticks, 60 by default: over the world of 100,000 entities, hash checks average 14 to 16 µs per tick (`hashCheck`).
 - A [rollback session](sessions.md) pays one capture per uncertain tick: 0.085 to 0.096 ms for 100,000 entities when a tick moves all of them. A misprediction costs a rewind, 0.06 ms, plus running the ticks since then again.
 
 ## Change queries
@@ -105,7 +105,7 @@ arcadekit's own plugins cost this much when each has little to do:
 - **Sound** was measured with one system that plays cues for two kinds of event, or one that keeps a channel's music, to an output that does nothing. The cue system costs a frame two reads of empty event queues, 3.6 µs over a frame whose one system stops at once, plus 0.35 µs per cue played. When sound goes nowhere, the system checks for an output and stops.
 - **A game at rest** was measured as one that [ticks only when needed](running-a-game.md#tick-only-when-needed), with device state, a state, and a view.
 - `verifyFrames` hashes the world before the frame stage and after each of its systems, and copies and compares each column that `eachChunk` hands out read-only. For one system that reads raw columns over 100,000 entities, it adds 2.8 to 3.4 ms. Use it in [tests](testing-by-hand.md#run-the-frame-stage-by-hand).
-- `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, a tick costs about 340 µs with the check, against 27 µs without it. Use it in [tests](testing-peers.md#check-that-a-rewind-runs-the-same).
+- `Session.syncTest` checks rewinds with a capture of the game, a rewind, a second run, and a world hash per system, every tick. For a game of 1,000 entities and two systems, a tick costs about 340 µs with the check (`syncTest`), against 27 µs without it (`syncTestWithout`). Use it in [tests](testing-peers.md#check-that-a-rewind-runs-the-same).
 
 ## Spawns and despawns
 
@@ -140,7 +140,13 @@ The benchmarks are in the repository, not in the published packages. Run them fr
 pnpm --filter arcadekit bench
 ```
 
-They are in [`packages/arcadekit/bench`](../../../../../packages/arcadekit/bench). Each variant runs in its own process, because V8 specialises a call site for the functions it has seen. A variant that runs after others in the same process measures slower than it is. Run each variant in its own process when you benchmark your own systems too.
+They are in [`packages/arcadekit/bench`](../../../../../packages/arcadekit/bench). A number of this page that no table holds names its variant after it, such as `hashCheck`. Give the name to run that variant alone. It prints its median in milliseconds, or the bytes it holds:
+
+```sh
+pnpm --filter arcadekit bench hashCheck
+```
+
+Each variant runs in its own process, because V8 specialises a call site for the functions it has seen. A variant that runs after others in the same process measures slower than it is. Run each variant in its own process when you benchmark your own systems too.
 
 ## Read more
 

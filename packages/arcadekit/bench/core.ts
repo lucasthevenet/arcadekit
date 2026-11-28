@@ -107,6 +107,23 @@ const spread = (world: World): void => {
   }
 };
 
+// Thirteen tags make 8,192 tables, and `scatter` fills them all.
+const scatterTags = Array.from({ length: 13 }, (_, i) =>
+  Component.tag(`bench/Scatter${i}`)
+);
+
+/** The same entities as `populate`, over 8,192 tables of 12 or 13 each. */
+const scatter = (world: World): void => {
+  for (let i = 0; i < N; i++) {
+    const table = i % 8192;
+    world.spawn(
+      Position.of({ x: i, y: i }),
+      Velocity.of({ x: 1, y: 2 }),
+      ...scatterTags.filter((_, bit) => (table >> bit) & 1)
+    );
+  }
+};
+
 /**
  * `populate`, where the first 100 entities are parents and 1,000 others,
  * spread over the rest, are their children, 10 each: returns the parents.
@@ -165,9 +182,12 @@ export const measure = (
 
 export interface Variant {
   readonly label: string;
-  /** How to report the time: divided by all entities, or for the whole pass. */
-  readonly unit?: "entity" | "matches" | "dispatch" | "visit";
-  /** Median milliseconds of a pass. */
+  /**
+   * How to report the time: divided by all entities, or for the whole pass.
+   * `bytes` is no time: what the variant's work holds in memory.
+   */
+  readonly unit?: "entity" | "matches" | "dispatch" | "visit" | "bytes";
+  /** Median milliseconds of a pass, or with `bytes`, the bytes held. */
   readonly run: () => number;
 }
 
@@ -182,7 +202,9 @@ export const inUnit = (
       ? { value: ms * 1000, unit: "µs per dispatch" }
       : variant.unit === "visit"
         ? { value: ms * 1e6, unit: "ns per visit" }
-        : { value: (ms * 1e6) / N, unit: "ns/entity" };
+        : variant.unit === "bytes"
+          ? { value: ms / 1e6, unit: "MB held" }
+          : { value: (ms * 1e6) / N, unit: "ns/entity" };
 
 export const variants: Record<string, Variant> = {
   raw: {
@@ -380,6 +402,30 @@ export const variants: Record<string, Variant> = {
             px[i]! += vx[i]! * DT;
             py[i]! += vy[i]! * DT;
           }
+        });
+      });
+    },
+  },
+
+  fragmentedTables: {
+    // Each table a loop visits has its accessors pointed at it, once per
+    // term: a world of many small tables pays that per table.
+    label: "each: same entities spread over 8,192 tables",
+    run: () => {
+      const world = new World();
+      scatter(world);
+      const view = world.view(Moving);
+      let tables = 0;
+      view.eachChunk(() => {
+        tables++;
+      });
+      if (tables !== 8192) {
+        throw new Error(`The entities are in ${tables} tables, not 8,192.`);
+      }
+      return measure(() => {
+        view.each((pos, vel) => {
+          pos.x += vel.x * DT;
+          pos.y += vel.y * DT;
         });
       });
     },
@@ -622,6 +668,54 @@ export const variants: Record<string, Variant> = {
         80,
         () => step(world, OneTable)
       );
+    },
+  },
+
+  rewindViews: {
+    // A rewind drops every view, and a system makes its own again when it
+    // next asks for it: here, one of 50 queries, each matched against the
+    // 100 tables. A pass is one view.
+    unit: "matches",
+    label: "a view made again after a rewind: 1 of 50, 100 tables",
+    run: () => {
+      const world = new World();
+      spread(world);
+      const moment = world._capture();
+      // Fifty queries, each with tags of its own, so no two share a view.
+      const specs = Array.from({ length: 50 }, (_, k) =>
+        query([Position, Velocity], {
+          withDefs: spreadTags.filter((_, bit) => (k >> bit) & 1),
+        })
+      );
+      const kept = world.view(specs[0]!);
+      world._rewind(moment, []);
+      if (world.view(specs[0]!) === kept) {
+        throw new Error("The rewind kept the views it is to drop.");
+      }
+      // Query `k` matches each table whose number has the bits of `k`.
+      let perPass = 0;
+      for (let k = 0; k < specs.length; k++) {
+        for (let table = 28; table < 128; table++) {
+          perPass += (table & k) === k ? N / 100 : 0;
+        }
+      }
+      let matched = 0;
+      const ms = measure(
+        () => {
+          for (let s = 0; s < specs.length; s++) {
+            matched += world.view(specs[s]!).count();
+          }
+        },
+        300,
+        80,
+        () => world._rewind(moment, [])
+      );
+      if (matched !== 380 * perPass) {
+        throw new Error(
+          `The views matched ${matched} entities, not ${380 * perPass}.`
+        );
+      }
+      return ms / specs.length;
     },
   },
 
