@@ -1005,6 +1005,33 @@ describe("what the UI sends", () => {
   );
 
   it.effect(
+    "with a payload its schema refuses, is refused where it is sent, and the game plays on",
+    () =>
+      Effect.gen(function* () {
+        const { app, ui } = yield* playWithUi({ gold: 5 });
+        // The compiler takes 1.5 for a number; the schema wants a whole one.
+        const refused = ui.send(Buy, { price: 1.5 });
+        const bought = ui.send(Buy, { price: 3 });
+        yield* app.input();
+        yield* app.tick(1);
+        expect(refused).toEqual(
+          Exit.fail(
+            Action.InvalidPayload.make({
+              action: "vw/Buy",
+              message: 'Expected an integer\n  at ["price"]',
+            })
+          )
+        );
+        expect(bought).toEqual(Exit.void);
+        // Neither queued nor logged: only the purchase the schema took.
+        expect(app.actionLog.filter(isAction)).toEqual([
+          { tick: 0, name: "vw/Buy", payload: { price: 3 }, queued: true },
+        ]);
+        expect(yield* goldOf(app)).toBe(2);
+      })
+  );
+
+  it.effect(
     "can be sent as the UI is mounted, and is heard before the first tick",
     () =>
       Effect.gen(function* () {

@@ -91,7 +91,7 @@ Browser.runMain(
 Each method of an app returns an Effect, which a program and a test yield. A button's `onclick`, or a function typed in the browser's console, runs outside any Effect. Such a function runs the app's method with `runSync`, which `ready` makes from the program's context, as above.
 
 - `runSync` returns what `app.enqueue` or `app.inspect` gives. It throws what the method fails with to the function that called it, such as the `Action.InvalidPayload` of a payload that the action's schema doesn't take. `Effect.runForkWith` would lose the failure in a fiber that nobody reads.
-- A UI doesn't need the app, because the app hands it [the view bridge](ui.md). Its buttons call `ui.send(NewGame)`, which runs no Effect.
+- A UI doesn't need the app, because the app hands it [the view bridge](ui.md). Its buttons call `ui.send(NewGame)`, which runs no Effect. `send` returns the same `Action.InvalidPayload` as an `Exit`, and throws nothing.
 - The page hands the browser's console its functions the same way. See [inspect an app](debugging.md#inspect-an-app).
 
 ## Run a game under a Content Security Policy

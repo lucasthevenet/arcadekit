@@ -1,6 +1,7 @@
 import { Cause, Exit, Schema } from "effect";
 
-import { INTAKE } from "../Action.ts";
+import { INTAKE, InvalidPayload } from "../Action.ts";
+import type { Any } from "../Action.ts";
 import { SnapshotError } from "../ecs/snapshot.ts";
 import { isPlain } from "../ecs/store.ts";
 import type { Store } from "../ecs/store.ts";
@@ -12,6 +13,27 @@ import type { Store } from "../ecs/store.ts";
  */
 export const said = (error: unknown): string =>
   error instanceof Error ? error.message || error.name : String(error);
+
+/**
+ * A payload's JSON form, or `Action.InvalidPayload` for one its action's
+ * schema does not take: what is refused where input from outside is issued.
+ *
+ * @internal
+ */
+export const jsonFormOf = (
+  action: Any,
+  payload: unknown
+): Exit.Exit<unknown, InvalidPayload> => {
+  const json = Schema.encodeUnknownExit(action.codec)(payload);
+  return Exit.isSuccess(json)
+    ? Exit.succeed(json.value)
+    : Exit.fail(
+        InvalidPayload.make({
+          action: action.name,
+          message: said(Cause.squash(json.cause)),
+        })
+      );
+};
 
 /**
  * An action waiting for the next tick.

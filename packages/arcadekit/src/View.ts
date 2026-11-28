@@ -46,9 +46,10 @@
  * actions, a game with a UI and the same game without one have the same hash,
  * log and save.
  */
-import { Context, Effect, Equal, Layer } from "effect";
+import { Context, Effect, Equal, Exit, Layer } from "effect";
 
 import * as Action from "./Action.ts";
+import { jsonFormOf } from "./internal/intake.ts";
 import { make as makeSystem } from "./internal/system.ts";
 import { Intake, Ui } from "./internal/view.ts";
 import * as Plugin from "./Plugin.ts";
@@ -167,13 +168,17 @@ export interface Bridge<
    * issued before the game's next tick, logged, and applied or refused by its
    * handler, just as one an input system issues for a key would be. An action
    * with no payload is sent with none: `ui.send(Start)`.
+   *
+   * It returns a failure, `Action.InvalidPayload`, for a payload the action's
+   * schema does not take, as `app.enqueue` does, and nothing is issued or
+   * logged. A refusal by the handler comes later, as an event.
    */
   readonly send: <D extends Action.Any>(
     // Not `D extends Sends`, under which an action of no handler that takes
     // no payload is reported as a payload missing.
     action: D & Sends,
     ...payload: Action.PayloadArgument<PayloadOf<D>>
-  ) => void;
+  ) => Exit.Exit<void, Action.InvalidPayload>;
 }
 
 const NOTHING: readonly Sent[] = Object.freeze([]);
@@ -224,7 +229,12 @@ const open = (): Opened => {
       };
     },
     send(action, ...payload) {
+      const json = jsonFormOf(action, payload[0]);
+      if (Exit.isFailure(json)) {
+        return json;
+      }
       sent.push({ action, payload: payload[0] });
+      return Exit.void;
     },
   };
   return {
