@@ -140,10 +140,11 @@ const held = (app: Game, stages: boolean): Exit.Exit<Held, Save.Refused> => {
  * a moment of this app captured since it last loaded a save with `app.load`:
  * it dies otherwise.
  *
- * The game plays on from there. The frame and input stages, and code outside
- * the game that reads an event, hear every event it emits from then on,
- * including one they heard before the rewind. Of the future the rewind gives
- * up, they hear nothing they hadn't read already.
+ * The game plays on from there, with none of the turns `Timeline.keep` had
+ * kept, which are of the game it left. The frame and input stages, and code
+ * outside the game that reads an event, hear every event it emits from then
+ * on, including one they heard before the rewind. Of the future the rewind
+ * gives up, they hear nothing they hadn't read already.
  *
  * With `again`, the game goes back to run the same ticks again with what is
  * now known of them, as a session that runs ahead does. Each of them then
@@ -172,18 +173,13 @@ export const rewind = (
   Effect.suspend(() => {
     between(app, "rewind", "A game is put back between ticks.");
     const again = options?.again === true;
-    const parts = partsOf(app);
-    const turns = kept.get(parts.world);
-    // The game it leaves, in case the rewind is itself a turn.
-    turns?.arriving();
     putBack(app, moment, again);
     if (again) {
       // A game put back to run the same ticks again has not gone anywhere yet.
       return Effect.void;
     }
-    if (turns !== undefined) {
-      turns.ahead.length = 0;
-    }
+    const parts = partsOf(app);
+    kept.get(parts.world)?.rewound();
     return moved(parts) ?? Effect.void;
   });
 
@@ -311,6 +307,13 @@ class Turns {
     this.standing ??= this.take();
   }
 
+  /** Gives up every turn, of the game a rewind from outside left. */
+  rewound(): void {
+    this.back.length = 0;
+    this.ahead.length = 0;
+    this.standing = undefined;
+  }
+
   private take(): Held {
     const taken = held(this.app, false);
     if (Exit.isFailure(taken)) {
@@ -412,8 +415,8 @@ const turnsOf = (app: Game, call: string): Turns => {
  *   forward to, until the next move: a move, a load or a rewind gives up
  *   every turn ahead. A tick with no move gives up none, so a game that ticks
  *   by itself keeps its redo as a game that ticks only when needed does.
- * - `app.load` gives up every turn kept, since they are of the game the load
- *   replaced.
+ * - `app.load` and `Timeline.rewind` give up every turn kept, since they are
+ *   of the game the load replaced or the rewind left.
  *
  * **Gotchas**
  *

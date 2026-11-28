@@ -1576,6 +1576,29 @@ describe("the turns of a game kept by Timeline.keep", () => {
   );
 
   it.effect(
+    "are given up by a rewind from outside, with the game it left",
+    () =>
+      withApp(App.make(Puzzle), (app, world) =>
+        Effect.gen(function* () {
+          yield* Timeline.keep(app);
+          const start = world.hash();
+          const moment = yield* captured(app);
+          yield* app.dispatch(Step, { dx: 1, dy: 0 });
+          yield* app.dispatch(Step, { dx: 0, dy: 1 });
+          yield* Timeline.rewind(app, moment);
+          expect(world.hash()).toBe(start);
+          expect(yield* Timeline.undo(app)).toBe(false);
+          expect(world.hash()).toBe(start);
+          // A turn played from there is a turn of the game as it is now.
+          yield* app.dispatch(Step, { dx: 0, dy: 1 });
+          expect(yield* Timeline.undo(app)).toBe(true);
+          expect(world.hash()).toBe(start);
+          expect(yield* Timeline.undo(app)).toBe(false);
+        }).pipe(Effect.scoped)
+      )
+  );
+
+  it.effect(
     "go forward again a turn the rules went back, and stay there",
     () => {
       /** A move the rules take back on the next tick. */
